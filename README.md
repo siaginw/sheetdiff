@@ -1,36 +1,131 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SheetDiff — version tracking for Google Sheets
 
-## Getting Started
+SheetDiff snapshots your team's Google Sheets and shows **GitHub-style diffs** between any two
+snapshots — added rows, removed rows, changed cells as `old → new` — so the people who *collect*
+your data always know what changed since they last pulled it.
 
-First, run the development server:
+**The workflow it fixes:** a team enters data into shared sheets, a manager pulls that data daily
+into another system (InEight, an ERP, anywhere). Someone fixes a number *after* the pull — the
+manager never finds out, the downstream system goes stale. SheetDiff makes that change impossible
+to miss: **"Mark as collected"** sets a baseline, and every change since shows up as a red badge
+on the dashboard.
+
+## Highlights
+
+- **Read-only by design.** SheetDiff connects with a Google scope that can read sheets but never
+  modify them.
+- **Filter-proof.** Snapshots are read through Google's API, which returns every row and column
+  regardless of filters or filter views. Someone leaving a filter on cannot corrupt a snapshot.
+- **Sort-proof.** Rows are matched between snapshots by a key column (auto-detected, or pick your
+  own per tab). Sorting a sheet produces "moved" markers, never false changes.
+- **No noise.** `40` vs `40.00` vs `$40` are the same number. Trailing blanks don't diff.
+- **Scheduled or manual snapshots.** Hourly / daily at a time / weekly, or "Snapshot now".
+- **GitHub-style UI.** Summary chips (`+3 rows · −1 row · ~5 cells in 2 rows`), search,
+  changes-only toggle, snapshot timeline with per-snapshot stats, virtualized table for big sheets.
+
+## Quick start
+
+Requires Node.js 20+.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run setup      # creates .env with a random APP_SECRET
+npm run db:push    # creates the SQLite database (data/sheetdiff.db)
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Until you configure Google (below), the app runs but you can't connect a real account.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Try it without Google (demo data)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run seed-demo
+# then open http://localhost:3000/auth/demo
+```
 
-## Learn More
+This seeds a fake user, a fake "Daily Production Log" sheet, and two snapshots containing a
+realistic mix of changes (a quantity fix, an added row, a removed row, a re-sort). Great for
+kicking the tires on the diff view before doing the Google setup.
 
-To learn more about Next.js, take a look at the following resources:
+## Google setup (one-time, ~10 minutes)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+SheetDiff needs its own OAuth client so it can read sheets with *your* account.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and create a project
+   (any name, e.g. "SheetDiff").
+2. **APIs & Services → Library** → search for **Google Sheets API** → **Enable**.
+3. **APIs & Services → OAuth consent screen**:
+   - User type: **External**, create.
+   - App name: anything (e.g. "SheetDiff"), add your email where asked.
+   - You can skip scopes/branding; add yourself as a **test user** on the last step.
+   - "Testing" mode is fine for a team — up to 100 test users, free.
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
+   - Application type: **Web application**
+   - Authorized redirect URIs: add exactly `http://localhost:3000/auth/callback`
+   - Create, then copy the **Client ID** and **Client secret**.
+5. Put them in your `.env`:
 
-## Deploy on Vercel
+   ```
+   GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-secret
+   GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+6. Restart `npm run dev`, open the app, and click **Connect Google Sheets**.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus basic profile
+(name/email/picture). It never asks for — and cannot use — write access.
+
+## Using SheetDiff
+
+1. **Add sheet** — paste a Google Sheets URL. Pick which tabs to track and (optionally) which
+   column identifies rows on each tab; auto-detection usually gets it right. The first snapshot
+   is taken immediately.
+2. **Snapshot** — manually with *Snapshot now*, or set a schedule per sheet (Schedule button).
+   Scheduled snapshots run while the app is running.
+3. **Diff** — the sheet page shows the diff between any two snapshots (defaults to
+   *last collection → latest*). Timeline on the left; click an entry to diff up to it.
+   Search and the changes-only toggle live in the toolbar.
+4. **Mark as collected** — after pulling data into your downstream system, click
+   *Mark as collected* on the snapshot you pulled from. The dashboard then shows
+   *"N changes since collection"* for each sheet — that badge is the whole point.
+
+## Development
+
+```bash
+npm test           # diff engine test suite (24 tests)
+npm run db:push    # apply schema changes to the SQLite db
+npm run build      # production build
+```
+
+Stack: Next.js (App Router) + TypeScript, Tailwind + shadcn/ui, SQLite via Drizzle ORM,
+`googleapis` for OAuth + Sheets API, TanStack Virtual for large diff tables.
+
+### Where things live
+
+| Path | What |
+|---|---|
+| `src/lib/diff/engine.ts` | The diff engine — pure logic, fully unit-tested |
+| `src/lib/diff/normalize.ts` | Value/key normalization (numeric equivalence etc.) |
+| `src/lib/snapshots.ts` | Capture runs, gzip'd snapshot storage, schedule math |
+| `src/lib/google.ts` | OAuth, token refresh + encrypted storage, Sheets reads |
+| `src/lib/scheduler.ts` | In-process scheduler (checks every minute) |
+| `src/lib/actions.ts` | Server actions (snapshot, baseline, schedule, settings) |
+| `src/components/diff/diff-view.tsx` | The GitHub-style diff UI (client) |
+| `data/sheetdiff.db` | SQLite database (snapshots as gzip'd JSON blobs) |
+
+### How diffs stay honest
+
+- Rows are identified by a **key column** when one exists (header like ID/Date/…, or any column
+  whose values are unique). Without one, rows are matched by full-row content. Position is never
+  used as identity — that's what makes re-sorts harmless.
+- Columns are matched by header text, so inserting a column mid-sheet doesn't scramble cell
+  pairing; a lone renamed header is paired instead of reported as remove+add.
+- Values are compared trimmed, and numerically when both sides parse as numbers.
+- Snapshots read via `values:batchGet` include every row/column regardless of filters — filters
+  are a visual layer in Google Sheets, invisible to the API.
+
+## Not in v1 (by design)
+
+Email digests, Excel support, export/sync to InEight, multi-user deployment, editing data,
+formula/formatting diffs. Each is a clean future addition — the data model and scopes leave room.

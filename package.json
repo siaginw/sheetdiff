@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "setup": "node scripts/generate-env.mjs",
+    "seed-demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(), // uuid
@@ -64,7 +64,7 @@ export const snapshots = sqliteTable(
     rowCount: integer("row_count").notNull(),
     colCount: integer("col_count").notNull(),
     // gzip'd JSON: { headers: string[], rows: string[][] }
-    dataBlob: text("data_blob", { mode: "buffer" }).notNull(),
+    dataBlob: blob("data_blob", { mode: "buffer" }).notNull(),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
   (t) => [

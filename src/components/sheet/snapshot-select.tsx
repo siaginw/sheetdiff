@@ -1,0 +1,81 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+export interface SnapshotOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * From/To snapshot pickers. Navigation-based so the whole page (diff, chips,
+ * timeline) re-renders from fresh server data on every change.
+ */
+export function SnapshotSelect({
+  spreadsheetId,
+  tabParam,
+  options,
+  from,
+  to,
+}: {
+  spreadsheetId: string;
+  tabParam: string;
+  options: SnapshotOption[];
+  from: string;
+  to: string;
+}) {
+  const router = useRouter();
+
+  const navigate = (nextFrom: string, nextTo: string) => {
+    const params = new URLSearchParams();
+    if (tabParam) params.set("tab", tabParam);
+    if (nextFrom) params.set("from", nextFrom);
+    if (nextTo) params.set("to", nextTo);
+    router.push(`/sheets/${spreadsheetId}?${params.toString()}`);
+  };
+
+  const items = options.map((o) => ({ value: o.id, label: o.label }));
+
+  const trigger = (
+    value: string,
+    onChange: (v: string) => void,
+    aria: string,
+    keyPrefix: string,
+  ) => (
+    <Select
+      key={keyPrefix}
+      items={items}
+      value={value}
+      onValueChange={(v) => {
+        if (typeof v === "string") onChange(v);
+      }}
+    >
+      <SelectTrigger aria-label={aria} className="h-8 w-52 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="max-h-72">
+        {options.map((o) => (
+          <SelectItem key={o.id} value={o.id} className="text-xs">
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {trigger(from, (v) => navigate(v, to), "Compare from snapshot", "from")}
+      <ArrowRight className="size-3.5 text-muted-foreground" />
+      {trigger(to, (v) => navigate(from, v), "Compare to snapshot", "to")}
+    </div>
+  );
+}
