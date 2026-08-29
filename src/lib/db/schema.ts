@@ -8,6 +8,10 @@ export const users = sqliteTable("users", {
   avatarUrl: text("avatar_url"),
   // Encrypted JSON: { refresh_token, access_token, expiry_date }
   tokensEnc: text("tokens_enc").notNull(),
+  // Daily digest email (null = digest off)
+  digestEmail: text("digest_email"),
+  digestTime: text("digest_time").notNull().default("07:00"), // "HH:MM" local
+  lastDigestAt: integer("last_digest_at", { mode: "number" }),
   createdAt: integer("created_at", { mode: "number" }).notNull(),
 });
 
@@ -59,7 +63,7 @@ export const snapshots = sqliteTable(
       .references(() => tabs.id, { onDelete: "cascade" }),
     // Groups the per-tab snapshots taken in one capture run
     runId: text("run_id").notNull(),
-    trigger: text("trigger", { enum: ["manual", "scheduled"] }).notNull(),
+    trigger: text("trigger", { enum: ["manual", "scheduled", "import"] }).notNull(),
     isBaseline: integer("is_baseline", { mode: "boolean" }).notNull().default(false),
     rowCount: integer("row_count").notNull(),
     colCount: integer("col_count").notNull(),
@@ -77,3 +81,43 @@ export type User = typeof users.$inferSelect;
 export type Spreadsheet = typeof spreadsheets.$inferSelect;
 export type Tab = typeof tabs.$inferSelect;
 export type Snapshot = typeof snapshots.$inferSelect;
+
+/**
+ * Audit notes: scoped to a whole snapshot run (timeline note), to a tab, or to
+ * a specific changed row (rowKey matches DiffRow.rowKey).
+ */
+export const notes = sqliteTable(
+  "notes",
+  {
+    id: text("id").primaryKey(),
+    spreadsheetId: text("spreadsheet_id")
+      .notNull()
+      .references(() => spreadsheets.id, { onDelete: "cascade" }),
+    tabId: text("tab_id").references(() => tabs.id, { onDelete: "cascade" }),
+    runId: text("run_id"),
+    rowKey: text("row_key"),
+    body: text("body").notNull(),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => [index("notes_sheet_created_idx").on(t.spreadsheetId, t.createdAt)],
+);
+
+/**
+ * Per-change "synced downstream" acknowledgments. A change (tab + rowKey) is
+ * resolved when its ack is NEWER than the snapshot that introduced the change.
+ */
+export const changeAcks = sqliteTable(
+  "change_acks",
+  {
+    id: text("id").primaryKey(),
+    tabId: text("tab_id")
+      .notNull()
+      .references(() => tabs.id, { onDelete: "cascade" }),
+    rowKey: text("row_key").notNull(),
+    ackedAt: integer("acked_at", { mode: "number" }).notNull(),
+  },
+  (t) => [uniqueIndex("change_acks_tab_row_idx").on(t.tabId, t.rowKey)],
+);
+
+export type Note = typeof notes.$inferSelect;
+export type ChangeAck = typeof changeAcks.$inferSelect;

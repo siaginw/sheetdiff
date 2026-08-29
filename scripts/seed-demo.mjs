@@ -2,6 +2,10 @@
  * Dev-only demo data: seeds a fake user + sheet + two snapshots so the whole
  * diff pipeline can be explored WITHOUT connecting Google. Safe to re-run.
  * After running, sign in as the demo user at http://localhost:3000/auth/demo
+ *
+ * The data mirrors a real audit: run 1 has the classic errors (wrong ending
+ * station creating a 2 ft gap, a shot entered twice as plow AND bore), run 2
+ * is "after the audit" with everything fixed.
  */
 import crypto from "node:crypto";
 import zlib from "node:zlib";
@@ -14,8 +18,7 @@ const enc = (data) => zlib.gzipSync(Buffer.from(JSON.stringify(data)));
 const now = Date.now();
 const HOUR = 3_600_000;
 
-// wipe previous smoke data
-db.exec("DELETE FROM snapshots; DELETE FROM tabs; DELETE FROM spreadsheets; DELETE FROM users;");
+db.exec("DELETE FROM change_acks; DELETE FROM notes; DELETE FROM snapshots; DELETE FROM tabs; DELETE FROM spreadsheets; DELETE FROM users;");
 
 const userId = crypto.randomUUID();
 db.prepare(
@@ -25,48 +28,71 @@ db.prepare(
 const sheetId = crypto.randomUUID();
 db.prepare(
   "INSERT INTO spreadsheets (id, user_id, google_id, title, url, schedule_kind, last_snapshot_at, created_at) VALUES (?,?,?,?,?,?,?,?)",
-).run(sheetId, userId, "fakeGoogleId123", "Daily Production Log", "https://docs.google.com/spreadsheets/d/fakeGoogleId123/edit", "off", now - 1 * HOUR, now - 48 * HOUR);
+).run(sheetId, userId, "fakeGoogleId123", "US2 Daily Production", "https://docs.google.com/spreadsheets/d/fakeGoogleId123/edit", "off", now - 1 * HOUR, now - 48 * HOUR);
 
-const tabId = crypto.randomUUID();
-db.prepare(
-  "INSERT INTO tabs (id, spreadsheet_id, title, position, tracked, key_column) VALUES (?,?,?,0,1,NULL)",
-).run(tabId, sheetId, "Entries");
+const HEADERS = ["Shot", "Start Station", "End Station", "Type"];
 
-// run 1 (yesterday, baseline): 4 rows
+const tabPE4 = crypto.randomUUID();
+const tabPE7 = crypto.randomUUID();
+db.prepare("INSERT INTO tabs (id, spreadsheet_id, title, position, tracked, key_column) VALUES (?,?,?,0,1,0)").run(tabPE4, sheetId, "PE4");
+db.prepare("INSERT INTO tabs (id, spreadsheet_id, title, position, tracked, key_column) VALUES (?,?,?,1,1,0)").run(tabPE7, sheetId, "PE7");
+
+// run 1 (yesterday, BEFORE the audit): S3 ends at 15741 (wrong — should be
+// 15743, creating a 2 ft gap before S4), S3 is entered twice (plow + bore),
+// S5 ends 164+80 instead of 164+82.
 const run1 = crypto.randomUUID();
 db.prepare(
   "INSERT INTO snapshots (id, tab_id, run_id, trigger, is_baseline, row_count, col_count, data_blob, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
 ).run(
-  crypto.randomUUID(), tabId, run1, "scheduled", 1, 4, 4,
+  crypto.randomUUID(), tabPE4, run1, "scheduled", 1, 6, 4,
   enc({
-    headers: ["ID", "Crew", "Task", "Qty"],
+    headers: HEADERS,
     rows: [
-      ["1", "Jake", "Framing", "40"],
-      ["2", "Ana", "Electrical", "100"],
-      ["3", "Mo", "Plumbing", "55"],
-      ["4", "Bea", "Drywall", "12"],
+      ["S1", "0", "500", "plow"],
+      ["S2", "500", "14800", "bore"],
+      ["S3", "14800", "15741", "plow"],
+      ["S3", "14800", "15741", "bore"],
+      ["S4", "15743", "16000", "plow"],
+      ["S5", "16000", "164+80", "bore"],
     ],
   }),
   now - 26 * HOUR,
 );
 
-// run 2 (an hour ago): qty fixed 40->55 (numeric noise 100->"100.00"), row 3 removed, row 5 added, rows sorted
+// run 2 (an hour ago, AFTER the audit): dup removed, stations fixed —
+// "everything in sheets should be up to par now"
 const run2 = crypto.randomUUID();
 db.prepare(
   "INSERT INTO snapshots (id, tab_id, run_id, trigger, is_baseline, row_count, col_count, data_blob, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
 ).run(
-  crypto.randomUUID(), tabId, run2, "manual", 0, 4, 4,
+  crypto.randomUUID(), tabPE4, run2, "manual", 0, 5, 4,
   enc({
-    headers: ["ID", "Crew", "Task", "Qty"],
+    headers: HEADERS,
     rows: [
-      ["4", "Bea", "Drywall", "12"],
-      ["1", "Jake", "Framing", "55"],
-      ["2", "Ana", "Electrical", "100.00"],
-      ["5", "Kim", "Paint", "30"],
+      ["S1", "0", "500", "plow"],
+      ["S2", "500", "14800", "bore"],
+      ["S3", "14800", "15743", "plow"],
+      ["S4", "15743", "16000", "plow"],
+      ["S5", "16000", "164+82", "bore"],
     ],
   }),
   now - 1 * HOUR,
 );
+
+// PE7 also carries S5 — the classic "shows up in both" from the audit notes.
+db.prepare(
+  "INSERT INTO snapshots (id, tab_id, run_id, trigger, is_baseline, row_count, col_count, data_blob, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+).run(
+  crypto.randomUUID(), tabPE7, crypto.randomUUID(), "scheduled", 1, 1, 4,
+  enc({
+    headers: HEADERS,
+    rows: [["S5", "16000", "164+82", "bore"]],
+  }),
+  now - 20 * HOUR,
+);
+
+const tabCache = new Map();
+
 
 console.log("SEED_OK");
 console.log("Open http://localhost:3000/auth/demo to sign in as the demo user.");

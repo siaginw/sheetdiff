@@ -2,6 +2,7 @@ import Link from "next/link";
 import { GitCompareArrows, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { DigestSettingsDialog } from "@/components/sheet/digest-settings";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,11 @@ export function AppHeader({ user }: { user: User | null }) {
                   <div className="text-sm font-medium">{user.name ?? "Signed in"}</div>
                   <div className="text-xs text-muted-foreground truncate">{user.email}</div>
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DigestSettingsDialog
+                  digestEmail={user.digestEmail}
+                  digestTime={user.digestTime ?? "07:00"}
+                />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
                   <form action={logout} className="w-full">

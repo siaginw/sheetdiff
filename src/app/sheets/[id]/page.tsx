@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   Camera,
@@ -27,12 +28,16 @@ import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
 import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
 import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots } from "@/lib/db/schema";
+import { spreadsheets, tabs, snapshots, notes, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
+import { runChecks, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
+import { ChecksPanel } from "@/components/sheet/checks-panel";
+import { ImportDialog } from "@/components/sheet/import-dialog";
+import { NoteDialog } from "@/components/sheet/note-dialog";
 
 const TIMELINE_STATS_LIMIT = 30;
 
@@ -73,13 +78,15 @@ export default async function SheetPage({
     .where(eq(snapshots.tabId, activeTab.id))
     .orderBy(desc(snapshots.createdAt));
 
-  // recent blobs for stats + headers
-  const recent = await db
-    .select()
-    .from(snapshots)
-    .where(eq(snapshots.tabId, activeTab.id))
-    .orderBy(desc(snapshots.createdAt))
-    .limit(TIMELINE_STATS_LIMIT + 1);
+  // recent blobs for stats + headers (import runs excluded from "latest sheet")
+  const recent = (
+    await db
+      .select()
+      .from(snapshots)
+      .where(eq(snapshots.tabId, activeTab.id))
+      .orderBy(desc(snapshots.createdAt))
+      .limit(TIMELINE_STATS_LIMIT + 1)
+  ).filter((s) => s.trigger !== "import");
 
   const latest = recent[0] ?? null;
   const latestData = latest ? decodeSnapshot(latest.dataBlob) : null;
@@ -100,12 +107,20 @@ export default async function SheetPage({
     });
   }
 
-  // resolve from/to
+  // resolve from/to (after a GIS import, land on sheet → import)
   const validId = (v: unknown): string | null =>
     typeof v === "string" && timeline.some((s) => s.id === v) ? v : null;
 
-  let toId = validId(sp.to) ?? timeline[0]?.id ?? null;
+  const importedParam = typeof sp.imported === "string" ? sp.imported : null;
+  let toId: string | null;
   let fromId = validId(sp.from);
+  if (importedParam && !fromId) {
+    const importedSnap = timeline.find((s) => s.runId === importedParam && s.trigger === "import");
+    toId = importedSnap?.id ?? null;
+    fromId = importedSnap ? latest?.id ?? null : null;
+  } else {
+    toId = validId(sp.to) ?? timeline.find((s) => s.trigger !== "import")?.id ?? timeline[0]?.id ?? null;
+  }
   if (toId && !fromId) {
     const toIdx = timeline.findIndex((s) => s.id === toId);
     const baseline = timeline.slice(toIdx).find((s) => s.isBaseline && s.id !== toId);
@@ -114,7 +129,7 @@ export default async function SheetPage({
   }
   if (fromId && toId && fromId === toId) {
     fromId = null;
-    toId = timeline[0]?.id ?? null;
+    toId = timeline.find((s) => s.trigger !== "import")?.id ?? timeline[0]?.id ?? null;
   }
 
   const toSnap = timeline.find((s) => s.id === toId) ?? null;
@@ -123,16 +138,73 @@ export default async function SheetPage({
 
   const selectOptions = timeline.map((s) => ({
     id: s.id,
-    label: `${s.isBaseline ? "★ " : ""}${absoluteTime(s.createdAt)} · ${s.trigger === "manual" ? "manual" : "scheduled"}`,
+    label: `${s.isBaseline ? "★ " : ""}${s.trigger === "import" ? "⭳ " : ""}${absoluteTime(s.createdAt)} · ${
+      s.trigger === "import" ? "GIS import" : s.trigger === "manual" ? "manual" : "scheduled"
+    }`,
   }));
 
+  // ---- notes + acks ----
+  const sheetNotes = await db
+    .select()
+    .from(notes)
+    .where(eq(notes.spreadsheetId, sheet.id))
+    .orderBy(desc(notes.createdAt));
+  const rowNotes = new Map(
+    sheetNotes.filter((n) => n.rowKey && n.tabId === activeTab.id).map((n) => [n.rowKey!, n.body]),
+  );
+  type SheetNote = (typeof sheetNotes)[number];
+  const notesByRun = new Map<string, SheetNote[]>();
+  for (const n of sheetNotes) {
+    if (!n.runId) continue;
+    const list = notesByRun.get(n.runId) ?? [];
+    list.push(n);
+    notesByRun.set(n.runId, list);
+  }
+  const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, activeTab.id));
+  const rowAcks: Record<string, number> = {};
+  for (const a of ackRows) rowAcks[a.rowKey] = a.ackedAt;
+
+  // ---- checks on latest snapshots of every tracked tab ----
+  const checkFindings: CheckFinding[] = [];
+  if (latestData) {
+    const inputs: TabChecksInput[] = [];
+    for (const t of allTabs.filter((t) => t.tracked)) {
+      const tSnaps = await db
+        .select()
+        .from(snapshots)
+        .where(eq(snapshots.tabId, t.id))
+        .orderBy(desc(snapshots.createdAt))
+        .limit(1);
+      const tSnap = tSnaps.find((s) => s.trigger !== "import");
+      if (tSnap) {
+        inputs.push({ tabTitle: t.title, data: decodeSnapshot(tSnap.dataBlob), keyColumn: t.keyColumn ?? null });
+      }
+    }
+    checkFindings.push(...runChecks(inputs));
+  }
+
   const trackedCount = allTabs.filter((t) => t.tracked).length;
+
+  const IMPORT_ERRORS: Record<string, string> = {
+    "import-no-file": "Pick a file to import first.",
+    "import-bad-file": "Couldn't read that file — use .csv or .xlsx.",
+    "import-no-match":
+      "Nothing imported: no tracked tab matched the file. For .csv, pick the tab it maps to; for .xlsx, sheet names must match your tabs.",
+  };
+  const importError =
+    typeof sp.error === "string" ? (IMPORT_ERRORS[sp.error] ?? null) : null;
 
   return (
     <div className="min-h-dvh bg-muted/30">
       <AppHeader user={user} />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {/* top bar */}
+        {importError ? (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{importError}</span>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <Button variant="ghost" size="sm" className="-ml-2 mb-1 text-muted-foreground" render={<Link href="/" />}>
@@ -178,6 +250,10 @@ export default async function SheetPage({
               </form>
             ) : null}
             <ScheduleDialog sheet={sheet} />
+            <ImportDialog
+              spreadsheetId={sheet.id}
+              tabs={allTabs.filter((t) => t.tracked).map((t) => ({ id: t.id, title: t.title }))}
+            />
             <form action={snapshotNow}>
               <input type="hidden" name="spreadsheetId" value={sheet.id} />
               <Button type="submit" size="sm">
@@ -226,6 +302,8 @@ export default async function SheetPage({
                   const isTo = s.id === toId;
                   const isFrom = s.id === fromId;
                   const st = statsFor.get(s.id);
+                  const runNotes = notesByRun.get(s.runId) ?? [];
+                  const isImport = s.trigger === "import";
                   return (
                     <li key={s.id} className="relative pl-7 pr-2">
                       <Link
@@ -240,7 +318,9 @@ export default async function SheetPage({
                               ? "border-primary bg-primary"
                               : isFrom
                                 ? "border-dashed border-muted-foreground bg-card"
-                                : "border-border bg-card group-hover:border-muted-foreground/50"
+                                : isImport
+                                  ? "rotate-45 border-diff-hunk-fg/60 bg-card"
+                                  : "border-border bg-card group-hover:border-muted-foreground/50"
                           }`}
                         />
                         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -248,7 +328,7 @@ export default async function SheetPage({
                             {relativeTime(s.createdAt)}
                           </span>
                           <span className="font-mono text-[10.5px] text-muted-foreground/80">
-                            {s.trigger === "manual" ? "manual" : "auto"}
+                            {isImport ? "GIS import" : s.trigger === "manual" ? "manual" : "auto"}
                           </span>
                           {s.isBaseline ? (
                             <span className="flex items-center gap-1 rounded-full bg-diff-move-bg px-1.5 py-px font-mono text-[10px] font-medium text-diff-move-fg">
@@ -270,7 +350,7 @@ export default async function SheetPage({
                               {st.chg > 0 && <span className="text-diff-move-fg">~{st.chg}</span>}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground/50">no changes</span>
+                            <span className="text-muted-foreground/50">{isImport ? "" : "no changes"}</span>
                           )}
                         </span>
                         {isFrom && !isTo ? (
@@ -279,6 +359,25 @@ export default async function SheetPage({
                           </span>
                         ) : null}
                       </Link>
+                      {runNotes.length > 0 ? (
+                        <div className="mb-1 ml-2 mr-1 rounded-md bg-diff-hunk-bg/40 px-2 py-1">
+                          {runNotes.slice(0, 2).map((n) => (
+                            <p key={n.id} className="line-clamp-2 text-[11px] leading-snug text-foreground/75">
+                              🗒 {n.body}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      {!isImport ? (
+                        <div className="absolute right-1 top-1.5 opacity-50 transition-opacity hover:opacity-100 focus-within:opacity-100">
+                          <NoteDialog
+                            spreadsheetId={sheet.id}
+                            runId={s.runId}
+                            tabId={activeTab.id}
+                            existingNote={runNotes[0]?.body}
+                          />
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -288,6 +387,9 @@ export default async function SheetPage({
 
           {/* diff panel */}
           <section className="min-w-0">
+            {/* gap linter */}
+            {timeline.length > 0 ? <ChecksPanel findings={checkFindings} /> : null}
+
             {/* tab strip */}
             <div className="mb-4 flex flex-wrap items-end gap-1 border-b pb-0">
               {allTabs.map((t) => {
@@ -377,8 +479,17 @@ export default async function SheetPage({
                 <DiffView
                   result={diff}
                   tabTitle={activeTab.title}
+                  spreadsheetId={sheet.id}
+                  tabId={activeTab.id}
+                  rowAcks={rowAcks}
+                  rowNotes={Object.fromEntries(rowNotes)}
+                  toCreatedAt={toSnap?.createdAt ?? 0}
                   fromLabel={fromSnap ? absoluteTime(fromSnap.createdAt) : "?"}
-                  toLabel={toSnap ? absoluteTime(toSnap.createdAt) : "?"}
+                  toLabel={
+                    toSnap
+                      ? `${absoluteTime(toSnap.createdAt)}${toSnap.trigger === "import" ? " · GIS import" : ""}`
+                      : "?"
+                  }
                 />
               </>
             )}

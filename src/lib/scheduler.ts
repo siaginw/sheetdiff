@@ -61,4 +61,29 @@ async function tick() {
       }
     }
   }
+
+  // daily digest emails
+  try {
+    const { usersDueForDigest, sendDigestTo } = await import("./digest");
+    const { db: ddb } = await import("./db");
+    const { users } = await import("./db/schema");
+    const dueUsers = await usersDueForDigest(now);
+    for (const u of dueUsers) {
+      try {
+        const result = await sendDigestTo(u);
+        if (result.sent) {
+          await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
+          console.log(`[scheduler] digest sent to ${u.digestEmail}`);
+        } else if (result.reason === "smtp-not-configured") {
+          // avoid re-checking every minute
+          await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
+          console.warn("[scheduler] digest skipped: SMTP_HOST/SMTP_USER/SMTP_PASS not configured");
+        }
+      } catch (err) {
+        console.error(`[scheduler] digest for ${u.digestEmail} failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+  } catch (err) {
+    console.error("[scheduler] digest pass failed:", err);
+  }
 }

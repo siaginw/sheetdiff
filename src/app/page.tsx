@@ -13,12 +13,13 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots } from "@/lib/db/schema";
+import { spreadsheets, tabs, snapshots, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
 import { relativeTime, scheduleLabel } from "@/lib/format";
 import { decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots } from "@/lib/diff/engine";
+import { isResolved } from "@/lib/sync";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "google-not-configured":
@@ -32,14 +33,16 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 interface SheetStatus {
   changes: number;
+  unresolved: number;
   detail: { added: number; removed: number; changed: number };
   baselineAt: number | null;
   latestAt: number | null;
 }
 
-/** Changes on every tracked tab between the latest baseline run and now. */
+/** Changes on every tracked tab between the latest baseline run and now,
+ *  minus anything already acknowledged as entered downstream. */
 async function getSheetStatus(sheetId: string, tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
-  const status: SheetStatus = { changes: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
+  const status: SheetStatus = { changes: 0, unresolved: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
   const tracked = tabRows.filter((t) => t.tracked);
   if (tracked.length === 0) return status;
 
@@ -50,7 +53,7 @@ async function getSheetStatus(sheetId: string, tabRows: (typeof tabs.$inferSelec
     .orderBy(desc(snapshots.createdAt));
 
   for (const tab of tracked) {
-    const tabSnaps = all.filter((s) => s.tabId === tab.id);
+    const tabSnaps = all.filter((s) => s.tabId === tab.id && s.trigger !== "import");
     if (tabSnaps.length === 0) continue;
     const latest = tabSnaps[0];
     status.latestAt = Math.max(status.latestAt ?? 0, latest.createdAt);
@@ -66,6 +69,13 @@ async function getSheetStatus(sheetId: string, tabRows: (typeof tabs.$inferSelec
     status.detail.added += diff.summary.addedRows;
     status.detail.removed += diff.summary.removedRows;
     status.detail.changed += diff.summary.changedRows;
+
+    const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, tab.id));
+    const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
+    for (const row of diff.rows) {
+      if (row.status === "unchanged" || row.status === "moved") continue;
+      if (!isResolved(ackMap, row.rowKey, latest.createdAt)) status.unresolved++;
+    }
   }
   status.changes = status.detail.added + status.detail.removed + status.detail.changed;
   return status;
@@ -358,11 +368,11 @@ export default async function Home({
                     </div>
                     <div className="flex items-center gap-4">
                       {st.baselineAt ? (
-                        st.changes > 0 ? (
+                        st.unresolved > 0 ? (
                           <Link
                             href={`/sheets/${sheet.id}`}
                             className="flex items-center gap-2.5 font-mono text-xs"
-                            title={`since collection ${relativeTime(st.baselineAt)}`}
+                            title={`${st.changes} change${st.changes === 1 ? "" : "s"} since collection ${relativeTime(st.baselineAt)} · ${st.unresolved} not yet entered downstream`}
                           >
                             <span className="flex gap-1.5 font-semibold">
                               {d.added > 0 && <span className="text-diff-add-fg">+{d.added}</span>}
@@ -370,10 +380,13 @@ export default async function Home({
                               {d.changed > 0 && <span className="text-diff-move-fg">~{d.changed}</span>}
                             </span>
                             <DiffStatBlocks added={d.added} removed={d.removed} changed={d.changed} />
+                            {st.unresolved < st.changes ? (
+                              <span className="text-[10.5px] text-muted-foreground">{st.unresolved} to enter</span>
+                            ) : null}
                           </Link>
                         ) : (
                           <Badge variant="secondary" className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg">
-                            <CheckCircle2 className="size-3" /> up to date since collection
+                            <CheckCircle2 className="size-3" /> {st.changes} entered · up to date
                           </Badge>
                         )
                       ) : (

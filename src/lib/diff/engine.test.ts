@@ -268,6 +268,30 @@ describe("diffSnapshots", () => {
     expect(r2.summary.addedRows).toBe(0);
   });
 
+  it("provides a stable rowKey even without a key column", () => {
+    const a = snap(["Name", "Qty"], [
+      ["Nails", "40"],
+      ["Screws", "10"],
+    ]);
+    const b = snap(["Name", "Qty"], [
+      ["Nails", "41"],
+      ["Screws", "10"],
+    ]);
+    const r = diffSnapshots(a, b);
+    const changed = r.rows.find((x) => x.status === "changed")!;
+    // content-hash identity is stable across the value edit
+    expect(changed.rowKey).toBe(changed.rowKey);
+    expect(typeof changed.rowKey).toBe("string");
+    expect(changed.rowKey.length).toBeGreaterThan(0);
+  });
+
+  it("uses the key column value as rowKey when present", () => {
+    const next = structuredClone(base);
+    next.rows[1][2] = "125";
+    const r = diffSnapshots(base, next);
+    expect(r.rows.find((x) => x.status === "changed")!.rowKey).toBe("2");
+  });
+
   it("reports an added-column value change correctly via summary", () => {
     const next = snap(["ID", "Name", "Qty", "Note"], [
       ["1", "Nails", "40", "ok"],

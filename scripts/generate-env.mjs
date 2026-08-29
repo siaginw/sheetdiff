@@ -20,6 +20,18 @@ GOOGLE_CLIENT_SECRET=your-client-secret
 # Must exactly match an "Authorized redirect URI" in your Google Cloud OAuth client
 GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 
+# Optional: base URL used in digest email links
+# APP_URL=http://localhost:3000
+
+# Optional: SMTP for the daily digest email (e.g. Gmail: host smtp.gmail.com, port 587,
+# user = your address, pass = an App Password). Digest stays off until configured
+# and an address is set in the app's account menu.
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USER=you@gmail.com
+# SMTP_PASS=your-app-password
+# DIGEST_FROM=SheetDiff <you@gmail.com>
+
 # Optional: where the SQLite database lives (default ./data/sheetdiff.db)
 # DATABASE_PATH=./data/sheetdiff.db
 `;

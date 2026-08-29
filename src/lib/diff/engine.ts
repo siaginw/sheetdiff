@@ -13,7 +13,7 @@
  *    remove+add.
  */
 
-import { norm, sameValue, normalizeKey, rowHash, colLetter } from "./normalize";
+import { norm, sameValue, normalizeKey, rowHash, colLetter, hashString } from "./normalize";
 
 export interface SnapshotData {
   headers: string[];
@@ -32,6 +32,8 @@ export type RowStatus = "added" | "removed" | "changed" | "moved" | "unchanged";
 export interface DiffRow {
   status: RowStatus;
   key: string | null;
+  /** stable row identity (key column value, else content hash) — used by acks/notes */
+  rowKey: string;
   /** data-row index (0-based, excluding header) in A / B, null when absent */
   oldIndex: number | null;
   newIndex: number | null;
@@ -277,11 +279,19 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   const emitB = (k: number) => {
     const i = matchB[k];
     const key = keyCol !== null && keyColA !== null ? normalizeKey(b.rows[k][keyCol]) || null : null;
+    // stable identity for acks: key column when present, else hash of the OLD
+    // row (stable across value edits, so a re-change after an ack re-flags it)
+    const rowKey =
+      key ??
+      hashString(
+        (i === -1 ? b.rows[k] : a.rows[i]).map((v) => norm(v)).join("\u0000"),
+      );
     if (i === -1) {
       summary.addedRows++;
       diffRows.push({
         status: "added",
         key,
+        rowKey,
         oldIndex: null,
         newIndex: k,
         movedFrom: null,
@@ -298,6 +308,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
       diffRows.push({
         status: "changed",
         key,
+        rowKey,
         oldIndex: i,
         newIndex: k,
         movedFrom,
@@ -309,6 +320,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
       diffRows.push({
         status: "moved",
         key,
+        rowKey,
         oldIndex: i,
         newIndex: k,
         movedFrom,
@@ -321,6 +333,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
       diffRows.push({
         status: "unchanged",
         key,
+        rowKey,
         oldIndex: i,
         newIndex: k,
         movedFrom: null,
@@ -332,9 +345,11 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
 
   const emitRemoved = (i: number) => {
     summary.removedRows++;
+    const removedKey = keyCol !== null && keyColA !== null ? normalizeKey(a.rows[i][keyColA]) || null : null;
     diffRows.push({
       status: "removed",
-      key: keyCol !== null && keyColA !== null ? normalizeKey(a.rows[i][keyColA]) || null : null,
+      key: removedKey,
+      rowKey: removedKey ?? hashString(a.rows[i].map((v) => norm(v)).join("\u0000")),
       oldIndex: i,
       newIndex: null,
       movedFrom: null,

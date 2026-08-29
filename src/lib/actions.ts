@@ -9,7 +9,10 @@ import { db } from "./db";
 import { spreadsheets, tabs, snapshots, type ScheduleKind } from "./db/schema";
 import { getSessionUserId, SESSION_COOKIE } from "./session";
 import { parseSpreadsheetId, fetchSpreadsheetMeta } from "./google";
-import { captureSnapshot, computeNextRun } from "./snapshots";
+import { captureSnapshot, computeNextRun, toSnapshotData, encodeSnapshot } from "./snapshots";
+import { setAck } from "./sync";
+import { parseImportFile } from "./import";
+import { notes as notesTable, users } from "./db/schema";
 
 async function requireUserId(): Promise<string> {
   const id = await getSessionUserId();
@@ -151,4 +154,144 @@ export async function logout(): Promise<void> {
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
   redirect("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* audit notes                                                         */
+/* ------------------------------------------------------------------ */
+
+export async function addNote(fd: FormData): Promise<void> {
+  const userId = await requireUserId();
+  const spreadsheetId = str(fd, "spreadsheetId");
+  const body = str(fd, "body").trim();
+  if (!body) return;
+  const tabId = str(fd, "tabId") || null;
+  const runId = str(fd, "runId") || null;
+  const rowKey = str(fd, "rowKey") || null;
+  await db.insert(notesTable).values({
+    id: crypto.randomUUID(),
+    spreadsheetId,
+    tabId,
+    runId,
+    rowKey,
+    body: body.slice(0, 2000),
+    createdAt: Date.now(),
+  });
+  void userId;
+  revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/");
+}
+
+export async function deleteNote(fd: FormData): Promise<void> {
+  await requireUserId();
+  const id = str(fd, "id");
+  const spreadsheetId = str(fd, "spreadsheetId");
+  await db.delete(notesTable).where(eq(notesTable.id, id));
+  revalidatePath(`/sheets/${spreadsheetId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* per-change sync acknowledgments                                     */
+/* ------------------------------------------------------------------ */
+
+export async function toggleAck(fd: FormData): Promise<void> {
+  await requireUserId();
+  const spreadsheetId = str(fd, "spreadsheetId");
+  const tabId = str(fd, "tabId");
+  const rowKey = str(fd, "rowKey");
+  const on = str(fd, "on") === "1";
+  await setAck(tabId, rowKey, on);
+  revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* digest settings                                                     */
+/* ------------------------------------------------------------------ */
+
+export async function saveDigestSettings(fd: FormData): Promise<void> {
+  const userId = await requireUserId();
+  const email = str(fd, "digestEmail").trim();
+  const time = /^\d{1,2}:\d{2}$/.test(str(fd, "digestTime")) ? str(fd, "digestTime") : "07:00";
+  await db
+    .update(users)
+    .set({ digestEmail: email || null, digestTime: time })
+    .where(eq(users.id, userId));
+  revalidatePath("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* GIS import                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Import a GIS export (CSV/XLSX) as snapshot run with trigger "import".
+ * XLSX sheets are matched to tracked tabs by name; CSV maps to the chosen
+ * tab (or the only tracked tab).
+ */
+export async function importGis(fd: FormData): Promise<void> {
+  const userId = await requireUserId();
+  const spreadsheetId = str(fd, "spreadsheetId");
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(`/sheets/${spreadsheetId}?error=import-no-file`);
+  }
+
+  const sheetRows = await db.select().from(spreadsheets).where(eq(spreadsheets.id, spreadsheetId));
+  const sheet = sheetRows[0];
+  if (!sheet || sheet.userId !== userId) redirect("/");
+  const tracked = await db.select().from(tabs).where(eq(tabs.spreadsheetId, spreadsheetId));
+
+  let parsed: Awaited<ReturnType<typeof parseImportFile>>;
+  try {
+    parsed = await parseImportFile(file);
+  } catch {
+    redirect(`/sheets/${spreadsheetId}?error=import-bad-file`);
+  }
+
+  const runId = crypto.randomUUID();
+  const now = Date.now();
+  let stored = 0;
+  let firstTabId: string | null = null;
+
+  const store = (tabId: string, grid: string[][]) => {
+    const data = toSnapshotData(grid);
+    db.insert(snapshots).values({
+      id: crypto.randomUUID(),
+      tabId,
+      runId,
+      trigger: "import",
+      isBaseline: false,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt: now,
+    }).run();
+    stored++;
+    if (!firstTabId) firstTabId = tabId;
+  };
+
+  if (parsed.kind === "csv") {
+    const target =
+      tracked.find((t) => t.id === str(fd, "tabId") && t.tracked) ??
+      tracked.find((t) => t.tracked) ??
+      null;
+    if (target) store(target.id, parsed.tables.csv);
+  } else {
+    for (const [sheetName, grid] of Object.entries(parsed.tables)) {
+      const match = tracked.find((t) => t.tracked && t.title.toLowerCase() === sheetName.toLowerCase());
+      if (match) store(match.id, grid);
+    }
+  }
+
+  if (stored === 0) {
+    redirect(`/sheets/${spreadsheetId}?error=import-no-match`);
+  }
+
+  revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/");
+  // land on the diff: latest sheet snapshot -> the fresh import
+  redirect(`/sheets/${spreadsheetId}?tab=${encodeURIComponent(
+    tracked.find((t) => t.id === firstTabId)?.title ?? "",
+  )}&imported=${runId}`);
 }

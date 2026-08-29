@@ -84,11 +84,34 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 2. **Snapshot** — manually with *Snapshot now*, or set a schedule per sheet (Schedule button).
    Scheduled snapshots run while the app is running.
 3. **Diff** — the sheet page shows the diff between any two snapshots (defaults to
-   *last collection → latest*). Timeline on the left; click an entry to diff up to it.
-   Search and the changes-only toggle live in the toolbar.
+   *last collection → latest*), rendered like a code review: red `−` lines, green `+` lines,
+   and a `~ column: old → new` annotation spelling out every changed value. Timeline on the
+   left; click an entry to diff up to it.
 4. **Mark as collected** — after pulling data into your downstream system, click
    *Mark as collected* on the snapshot you pulled from. The dashboard then shows
    *"N changes since collection"* for each sheet — that badge is the whole point.
+
+## Audit workflow features
+
+- **Audit notes** — attach the *why* to any snapshot (timeline 💬 button) or changed row
+  (per-row note button): "ending station was entered wrong — GIS has 15743, 2 ft gap". Notes
+  appear next to the diff, in the timeline, and in the daily digest, so nobody has to dig
+  through chat history.
+- **Per-change acknowledgment** — hover any changed/added/removed row and click ✓ to mark it
+  *entered downstream* (InEight or wherever). The dashboard counts what's still to enter;
+  if a row changes again after being acknowledged, it re-flags itself automatically.
+- **Checks (the gap linter)** — every snapshot runs station-continuity, duplicate-shot, and
+  cross-tab checks: `2 ft gap: row 3 ends at 15741 but row 4 starts at 15743`,
+  `"S3" appears 2× — duplicate shot?`, `"S5" appears in PE4 and PE7`. Station formats
+  understood: plain feet (`15743`) and survey notation (`4+47`, `164+82`).
+- **GIS import** — *Compare GIS export* takes a `.csv` or `.xlsx` export from your GIS and
+  diffs it against the latest sheet snapshot: shots missing on either side, station
+  mismatches, type disagreements. Excel tabs are matched to tracked tabs by name; CSV maps
+  to a tab you pick. Imports appear in the timeline as `⭳ GIS import` entries.
+- **Daily digest email** — account menu → *Daily digest…*: each morning, an email with what
+  changed since the last collection, unresolved changes, check findings, and audit notes.
+  Needs SMTP settings in `.env` (Gmail App Password works — see the commented block in `.env`).
+  Sent while the app is running.
 
 ## Development
 

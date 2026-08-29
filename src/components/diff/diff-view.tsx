@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowUpDown,
   CheckCircle2,
+  Check,
   Minus,
   PenLine,
   Plus,
@@ -13,6 +14,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { NoteDialog } from "@/components/sheet/note-dialog";
+import { toggleAck } from "@/lib/actions";
+import { wordDiff, shouldWordDiff } from "@/lib/diff/worddiff";
 import type { DiffResult, DiffRow } from "@/lib/diff/engine";
 
 /* ------------------------------------------------------------------ */
@@ -74,6 +78,70 @@ function DiffStat({ s }: { s: DiffResult["summary"] }) {
   );
 }
 
+/** Trailing per-row actions: "synced ✓" acknowledgment + audit note. */
+function RowActions({
+  row,
+  spreadsheetId,
+  tabId,
+  acked,
+  note,
+}: {
+  row: DiffRow;
+  spreadsheetId: string;
+  tabId: string;
+  acked: boolean;
+  note?: string;
+}) {
+  return (
+    <span
+      className={`ml-auto flex shrink-0 items-center gap-0.5 pr-1 transition-opacity ${
+        acked ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+      }`}
+    >
+      <form action={toggleAck}>
+        <input type="hidden" name="spreadsheetId" value={spreadsheetId} />
+        <input type="hidden" name="tabId" value={tabId} />
+        <input type="hidden" name="rowKey" value={row.rowKey} />
+        <input type="hidden" name="on" value={acked ? "0" : "1"} />
+        <button
+          type="submit"
+          aria-label={acked ? "Mark as not yet entered" : "Mark as entered downstream"}
+          title={acked ? "Entered downstream — click to un-resolve" : "Mark as entered in the downstream system"}
+          className={`rounded-md p-1 transition-colors ${
+            acked
+              ? "text-diff-add-fg"
+              : "text-muted-foreground/50 hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Check className={`size-3.5 ${acked ? "fill-current" : ""}`} />
+        </button>
+      </form>
+      <NoteDialog
+        spreadsheetId={spreadsheetId}
+        tabId={tabId}
+        rowKey={row.rowKey}
+        existingNote={note}
+      />
+    </span>
+  );
+}
+
+function WordDiffValues({ from, to }: { from: string; to: string }) {
+  return (
+    <>
+      {wordDiff(from, to).map((seg, i) =>
+        seg.kind === "same" ? (
+          <span key={i} className="text-muted-foreground">{seg.text}</span>
+        ) : seg.kind === "removed" ? (
+          <span key={i} className="rounded-sm bg-diff-del-token px-0.5 text-diff-del-fg line-through decoration-diff-del-fg/60">{seg.text}</span>
+        ) : (
+          <span key={i} className="rounded-sm bg-diff-add-token px-0.5 font-semibold text-diff-add-fg">{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* unified code view — the GitHub code-review look                     */
 /* ------------------------------------------------------------------ */
@@ -120,10 +188,14 @@ function CodeLine({
   item,
   columns,
   widths,
+  actions,
+  dimmed,
 }: {
   item: LineItem;
   columns: DiffResult["columns"];
   widths: number[];
+  actions?: React.ReactNode;
+  dimmed?: boolean;
 }) {
   if (item.kind === "gap") {
     return (
@@ -139,17 +211,23 @@ function CodeLine({
       <div className="flex h-7 items-center gap-2 border-b border-diff-hunk-bg/60 bg-diff-hunk-bg/30 px-3 py-px font-mono text-[11px]">
         <span className="w-4 shrink-0 text-center font-bold text-diff-move-fg">~</span>
         <span className="w-[62px] shrink-0" />
-        <span className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5 pr-2">
           {item.cells.map((c) => (
             <span key={c.col} className="whitespace-nowrap">
               <span className="text-foreground/70">{c.header}:</span>{" "}
-              <span className="font-medium text-diff-del-fg line-through decoration-diff-del-fg/60">
-                {c.from === "" ? "blank" : c.from}
-              </span>
-              <span className="mx-1.5 text-foreground/50">→</span>
-              <span className="font-semibold text-diff-add-fg">
-                {c.to === "" ? "blank" : c.to}
-              </span>
+              {shouldWordDiff(c.from, c.to) ? (
+                <WordDiffValues from={c.from} to={c.to} />
+              ) : (
+                <>
+                  <span className="font-medium text-diff-del-fg line-through decoration-diff-del-fg/60">
+                    {c.from === "" ? "blank" : c.from}
+                  </span>
+                  <span className="mx-1.5 text-foreground/50">→</span>
+                  <span className="font-semibold text-diff-add-fg">
+                    {c.to === "" ? "blank" : c.to}
+                  </span>
+                </>
+              )}
             </span>
           ))}
         </span>
@@ -159,12 +237,13 @@ function CodeLine({
 
   if (item.kind === "move") {
     return (
-      <div className="flex h-8 items-center gap-2 bg-diff-move-bg px-3 font-mono text-xs" title={`moved from row ${(item.row.oldIndex ?? 0) + 1}`}>
+      <div className="group flex h-8 items-center gap-2 bg-diff-move-bg px-3 font-mono text-xs" title={`moved from row ${(item.row.oldIndex ?? 0) + 1}`}>
         <span className="flex w-4 shrink-0 justify-center">
           <ArrowUpDown className="size-3.5 text-diff-move-fg" />
         </span>
         <LineNumbers old={item.row.oldIndex} new={item.row.newIndex} />
         <Cells values={item.row.values} columns={columns} widths={widths} tone="move" changed={new Set()} />
+        {actions}
       </div>
     );
   }
@@ -177,13 +256,13 @@ function CodeLine({
 
   return (
     <div
-      className={`flex h-8 items-center gap-2 px-3 font-mono text-xs ${
+      className={`group flex h-8 items-center gap-2 px-3 font-mono text-xs transition-opacity ${
         tone === "add"
           ? "bg-diff-add-bg"
           : tone === "del"
             ? "bg-diff-del-bg"
             : "text-muted-foreground"
-      }`}
+      } ${dimmed ? "opacity-50" : ""}`}
     >
       <span
         className={`w-4 shrink-0 text-center text-sm font-bold leading-none ${
@@ -207,6 +286,7 @@ function CodeLine({
         tone={tone}
         changed={item.kind === "sign" ? item.changedCols : new Set()}
       />
+      {actions}
     </div>
   );
 }
@@ -305,11 +385,24 @@ export function DiffView({
   fromLabel,
   toLabel,
   tabTitle,
+  spreadsheetId,
+  tabId,
+  rowAcks = {},
+  rowNotes = {},
+  toCreatedAt = 0,
 }: {
   result: DiffResult;
   fromLabel: string;
   toLabel: string;
   tabTitle: string;
+  spreadsheetId: string;
+  tabId: string;
+  /** rowKey -> ackedAt */
+  rowAcks?: Record<string, number>;
+  /** rowKey -> note body */
+  rowNotes?: Record<string, string>;
+  /** createdAt of the "to" snapshot — resolves acks */
+  toCreatedAt?: number;
 }) {
   const [query, setQuery] = useState("");
   const [changesOnly, setChangesOnly] = useState(true);
@@ -434,16 +527,43 @@ export function DiffView({
       ) : mode === "code" ? (
         <div ref={scrollRef} className="max-h-[calc(100dvh-300px)] min-h-72 overflow-auto">
           <div style={{ height: codeVirtualizer.getTotalSize(), position: "relative" }}>
-            {codeVirtualizer.getVirtualItems().map((vr) => (
-              <div
-                key={vr.key}
-                data-index={vr.index}
-                ref={codeVirtualizer.measureElement}
-                style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vr.start}px)` }}
-              >
-                <CodeLine item={lines[vr.index]} columns={result.columns} widths={widths} />
-              </div>
-            ))}
+            {codeVirtualizer.getVirtualItems().map((vr) => {
+              const item = lines[vr.index];
+              // one set of row actions per row: on "+" lines and removed "-" lines
+              const isChangeLine =
+                item.kind === "sign" && (item.sign === "+" || item.row.status === "removed");
+              const row = "row" in item ? item.row : null;
+              const acked =
+                row !== null && toCreatedAt > 0
+                  ? (rowAcks[row.rowKey] ?? 0) >= toCreatedAt
+                  : false;
+              return (
+                <div
+                  key={vr.key}
+                  data-index={vr.index}
+                  ref={codeVirtualizer.measureElement}
+                  style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vr.start}px)` }}
+                >
+                  <CodeLine
+                    item={item}
+                    columns={result.columns}
+                    widths={widths}
+                    dimmed={isChangeLine && acked}
+                    actions={
+                      isChangeLine && row ? (
+                        <RowActions
+                          row={row}
+                          spreadsheetId={spreadsheetId}
+                          tabId={tabId}
+                          acked={acked}
+                          note={rowNotes[row.rowKey]}
+                        />
+                      ) : undefined
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
