@@ -129,7 +129,7 @@ export default async function SheetPage({
   const trackedCount = allTabs.filter((t) => t.tracked).length;
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh bg-muted/30">
       <AppHeader user={user} />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {/* top bar */}
@@ -138,17 +138,24 @@ export default async function SheetPage({
             <Button variant="ghost" size="sm" className="-ml-2 mb-1 text-muted-foreground" render={<Link href="/" />}>
               <ArrowLeft className="size-4" /> All sheets
             </Button>
-            <h1 className="truncate text-2xl font-semibold tracking-tight">{sheet.title}</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <span className="truncate">{sheet.title}</span>
+              <a
+                href={sheet.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open in Google Sheets"
+                className="shrink-0 rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ExternalLink className="size-4" />
+              </a>
+            </h1>
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
               {sheet.nextRunAt ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" render={<a href={sheet.url} target="_blank" rel="noreferrer" />}>
-              <ExternalLink className="size-4" /> Open in Sheets
-            </Button>
-            <ScheduleDialog sheet={sheet} />
             {toSnap ? (
               <form action={setBaseline}>
                 <input type="hidden" name="spreadsheetId" value={sheet.id} />
@@ -156,11 +163,11 @@ export default async function SheetPage({
                 <Button
                   type="submit"
                   size="sm"
-                  variant={toSnap.isBaseline ? "secondary" : "default"}
+                  variant={toSnap.isBaseline ? "secondary" : "outline"}
                 >
                   {toSnap.isBaseline ? (
                     <>
-                      <CheckCircle2 className="size-4" /> Collected here
+                      <CheckCircle2 className="size-4 text-diff-move-fg" /> Collected here
                     </>
                   ) : (
                     <>
@@ -170,6 +177,7 @@ export default async function SheetPage({
                 </Button>
               </form>
             ) : null}
+            <ScheduleDialog sheet={sheet} />
             <form action={snapshotNow}>
               <input type="hidden" name="spreadsheetId" value={sheet.id} />
               <Button type="submit" size="sm">

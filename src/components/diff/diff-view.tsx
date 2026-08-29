@@ -82,7 +82,8 @@ type LineItem =
   | { kind: "gap"; count: number; id: string }
   | { kind: "ctx"; row: DiffRow; id: string }
   | { kind: "sign"; sign: "+" | "-"; row: DiffRow; changedCols: Set<number>; id: string }
-  | { kind: "move"; row: DiffRow; id: string };
+  | { kind: "move"; row: DiffRow; id: string }
+  | { kind: "note"; cells: DiffRow["cells"]; id: string };
 
 function buildLines(rows: DiffRow[], changesOnly: boolean): LineItem[] {
   const out: LineItem[] = [];
@@ -103,6 +104,8 @@ function buildLines(rows: DiffRow[], changesOnly: boolean): LineItem[] {
     if (r.status === "changed") {
       out.push({ kind: "sign", sign: "-", row: r, changedCols: new Set(r.cells.map((c) => c.col)), id: `del-${r.newIndex}-${out.length}` });
       out.push({ kind: "sign", sign: "+", row: r, changedCols: new Set(r.cells.map((c) => c.col)), id: `add-${r.newIndex}-${out.length}` });
+      // the explicit "this VALUE changed" annotation under the −/+ pair
+      out.push({ kind: "note", cells: r.cells, id: `note-${r.newIndex}-${out.length}` });
     } else if (r.status === "moved") {
       out.push({ kind: "move", row: r, id: `move-${r.newIndex}-${out.length}` });
     } else {
@@ -127,6 +130,29 @@ function CodeLine({
       <div className="flex h-8 items-center gap-2 border-y border-diff-hunk-bg bg-diff-hunk-bg/50 px-3 font-mono text-[11px] text-diff-hunk-fg/80 dark:bg-blue-950/30 dark:text-blue-300/80">
         <span className="tracking-widest">⋯⋯⋯</span>
         <span>{item.count} unchanged {item.count === 1 ? "row" : "rows"}</span>
+      </div>
+    );
+  }
+
+  if (item.kind === "note") {
+    return (
+      <div className="flex h-7 items-center gap-2 border-b border-diff-move-bg/60 bg-diff-move-bg/40 px-3 py-px font-mono text-[11px] dark:bg-amber-950/20">
+        <span className="w-4 shrink-0 text-center font-bold text-diff-move-fg">~</span>
+        <span className="w-[62px] shrink-0" />
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5">
+          {item.cells.map((c) => (
+            <span key={c.col} className="whitespace-nowrap">
+              <span className="text-muted-foreground">{c.header}:</span>{" "}
+              <span className="text-diff-del-fg line-through decoration-diff-del-fg/60 dark:text-red-400">
+                {c.from === "" ? "blank" : c.from}
+              </span>
+              <span className="mx-1.5 text-muted-foreground/70">→</span>
+              <span className="font-semibold text-diff-add-fg dark:text-emerald-500">
+                {c.to === "" ? "blank" : c.to}
+              </span>
+            </span>
+          ))}
+        </span>
       </div>
     );
   }

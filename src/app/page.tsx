@@ -300,7 +300,7 @@ export default async function Home({
   }
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh bg-muted/30">
       <AppHeader user={user} />
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         {error ? (
