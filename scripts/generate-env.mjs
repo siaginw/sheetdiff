@@ -32,6 +32,9 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 # SMTP_PASS=your-app-password
 # DIGEST_FROM=SheetDiff <you@gmail.com>
 
+# Optional: demo login (local exploration only — see README "Try the demo")
+# ENABLE_DEMO=1
+
 # Optional: where the SQLite database lives (default ./data/sheetdiff.db)
 # DATABASE_PATH=./data/sheetdiff.db
 `;

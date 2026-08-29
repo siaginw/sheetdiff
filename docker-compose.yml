@@ -1,0 +1,21 @@
+# Self-host SheetDiff in one command:
+#   1. cp .env.example .env  (fill in APP_SECRET + Google credentials)
+#   2. docker compose up -d --build
+#   3. open http://localhost:3000
+#
+# Snapshots and the database persist in ./data. Scheduled snapshots and the
+# digest email run while the container runs.
+
+services:
+  sheetdiff:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      # inside the container the app is always on localhost:3000 —
+      # override in .env if you put it behind a proxy with a real domain
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/callback}
+    volumes:
+      - ./data:/app/data

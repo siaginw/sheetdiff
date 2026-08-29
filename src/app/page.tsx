@@ -26,6 +26,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Google sign-in isn't configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to your .env file (see README), then restart.",
   "no-refresh-token":
     "Google didn't return a refresh token. Revoke the app in your Google account permissions and try connecting again.",
+  "demo-disabled":
+    "The demo login is off. Set ENABLE_DEMO=1 in .env and run `npm run seed-demo` to explore the demo data (never enable this on a real deployment).",
   "oauth-failed": "Google sign-in failed. Please try again.",
   "oauth-state-mismatch": "Sign-in session expired. Please try again.",
   "oauth-missing-code": "Sign-in was incomplete. Please try again.",

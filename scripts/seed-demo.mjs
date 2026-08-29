@@ -95,4 +95,6 @@ const tabCache = new Map();
 
 
 console.log("SEED_OK");
-console.log("Open http://localhost:3000/auth/demo to sign in as the demo user.");
+console.log(
+  "Demo login is opt-in: set ENABLE_DEMO=1 in .env, restart the app, then open http://localhost:3000/auth/demo",
+);
