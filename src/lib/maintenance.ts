@@ -48,8 +48,10 @@ export async function pruneSnapshots(): Promise<number> {
   return deleted;
 }
 
-/** Online-backup the SQLite file to data/backups/, keeping the newest N. */
-export function backupDatabase(): string | null {
+/** Online-backup the SQLite file to data/backups/, keeping the newest N.
+ *  better-sqlite3's .backup() is ASYNC (paged transfer on the event loop) —
+ *  it must be awaited before the connection closes. */
+export async function backupDatabase(): Promise<string | null> {
   const keep = Number(process.env.SHEETDIFF_BACKUPS ?? 14);
   if (!Number.isFinite(keep) || keep <= 0) return null;
 
@@ -63,7 +65,7 @@ export function backupDatabase(): string | null {
 
   const sqlite = new Database(dbPath, { readonly: true });
   try {
-    sqlite.backup(dest);
+    await sqlite.backup(dest);
   } finally {
     sqlite.close();
   }
@@ -88,7 +90,7 @@ export function backupDatabase(): string | null {
 export async function runMaintenance(): Promise<void> {
   try {
     const pruned = await pruneSnapshots();
-    const backup = backupDatabase();
+    const backup = await backupDatabase();
     if (pruned > 0 || backup) {
       console.log(`[maintenance] pruned ${pruned} snapshot(s)${backup ? `, backup → ${path.basename(backup)}` : ""}`);
     }

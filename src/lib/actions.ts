@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { db } from "./db";
 import { spreadsheets, tabs, snapshots, type ScheduleKind } from "./db/schema";
 import { getSessionUserId, SESSION_COOKIE } from "./session";
@@ -144,10 +144,18 @@ export async function setBaseline(fd: FormData): Promise<void> {
   if (tabIds.length > 0) {
     await db.update(snapshots).set({ isBaseline: false }).where(inArray(snapshots.tabId, tabIds));
     if (runId) {
+      // GIS imports can never be the "collected" baseline — that would blind
+      // the pending-changes resolver (baselines are sheet snapshots only)
       await db
         .update(snapshots)
         .set({ isBaseline: true })
-        .where(and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId)));
+        .where(
+          and(
+            inArray(snapshots.tabId, tabIds),
+            eq(snapshots.runId, runId),
+            ne(snapshots.trigger, "import"),
+          ),
+        );
     }
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
@@ -249,10 +257,16 @@ export async function addNote(fd: FormData): Promise<void> {
   const tabId = str(fd, "tabId") || null;
   const runId = str(fd, "runId") || null;
   const rowKey = str(fd, "rowKey") || null;
+  // never trust a client tabId: it must belong to THIS sheet
+  let safeTabId = tabId;
+  if (tabId) {
+    const t = await db.select().from(tabs).where(eq(tabs.id, tabId));
+    if (!t[0] || t[0].spreadsheetId !== spreadsheetId) safeTabId = null;
+  }
   await db.insert(notesTable).values({
     id: crypto.randomUUID(),
     spreadsheetId,
-    tabId,
+    tabId: safeTabId,
     runId,
     rowKey,
     body: body.slice(0, 2000),

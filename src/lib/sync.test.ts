@@ -61,4 +61,19 @@ describe("computeIntroductions", () => {
     expect(diff.rows.find((r) => r.key === "2")?.status).toBe("removed");
     expect(diff.rows.find((r) => r.key === "3")?.status).toBe("added");
   });
+
+  it("emits NO entry when the row mismatches the newest walked snapshot (falls back to caller default)", () => {
+    // baseline has "1"=40; the only walked snapshot is OLDER content the diff
+    // never saw — walk[0] mismatches immediately, so no introduction is dated
+    const baseline = snap(H, [["1", "40"]]);
+    const latest = snap(H, [["1", "77"]]);
+    const diff = diffSnapshots(baseline, latest, { keyColumn: 0 });
+    const walk = [{ createdAt: 5000, data: snap(H, [["1", "55"]]) }]; // not the latest content
+    const intro = computeIntroductions(walk, diff.rows);
+    expect(intro.has("1")).toBe(false);
+    // callers treat "no entry" as introduced-at-the-to-snapshot: an ack taken
+    // BEFORE that change must stay unresolved
+    const acks = new Map([["1", 4000]]);
+    expect(isResolved(acks, "1", 5001)).toBe(false);
+  });
 });

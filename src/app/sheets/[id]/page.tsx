@@ -82,15 +82,14 @@ export default async function SheetPage({
     .where(eq(snapshots.tabId, activeTab.id))
     .orderBy(desc(snapshots.createdAt));
 
-  // recent blobs for stats + headers (import runs excluded from "latest sheet")
-  const recent = (
-    await db
-      .select()
-      .from(snapshots)
-      .where(eq(snapshots.tabId, activeTab.id))
-      .orderBy(desc(snapshots.createdAt))
-      .limit(TIMELINE_STATS_LIMIT + 1)
-  ).filter((s) => s.trigger !== "import");
+  // recent blobs for stats + headers — filter imports IN the query;
+  // limit-then-filter would shrink the window on import-heavy timelines
+  const recent = await db
+    .select()
+    .from(snapshots)
+    .where(and(eq(snapshots.tabId, activeTab.id), ne(snapshots.trigger, "import")))
+    .orderBy(desc(snapshots.createdAt))
+    .limit(TIMELINE_STATS_LIMIT + 1);
 
   const latest = recent[0] ?? null;
   const latestData = latest ? decodeSnapshot(latest.dataBlob) : null;
@@ -275,7 +274,7 @@ export default async function SheetPage({
               />
             ) : null}
             {isOwner ? <ScheduleDialog sheet={sheet} /> : null}
-            {toSnap ? (
+            {toSnap && toSnap.trigger !== "import" ? (
               <form action={setBaseline}>
                 <input type="hidden" name="spreadsheetId" value={sheet.id} />
                 <input type="hidden" name="runId" value={toSnap.runId} />

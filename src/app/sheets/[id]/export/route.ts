@@ -33,9 +33,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const sheetNotes = await db.select().from(notesTable).where(eq(notesTable.spreadsheetId, id));
-  const noteByRow = new Map(
-    sheetNotes.filter((n) => n.rowKey).map((n) => [n.rowKey!, n.body]),
-  );
 
   const rows: string[][] = [
     ["Tab", "Change", "Key", "Row", "Column", "Old", "New", "Note", "Snapshot"],
@@ -45,6 +42,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const pending = await getPendingChanges(tab);
     if (!pending) continue;
     const when = absoluteTime(pending.latestAt);
+    // rowKeys are only unique within a tab — scope notes accordingly
+    const noteByRow = new Map(
+      sheetNotes
+        .filter((n) => n.rowKey && n.tabId === tab.id)
+        .map((n) => [n.rowKey!, n.body]),
+    );
 
     for (const row of pending.unresolved) {
       const note = noteByRow.get(row.rowKey) ?? "";

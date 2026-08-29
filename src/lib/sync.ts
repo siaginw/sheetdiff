@@ -99,7 +99,12 @@ export function computeIntroductions(
     }
   }
 
-  for (const [rowKey, p] of pending) out.set(rowKey, p.introduced);
+  // only emit rows the walk actually dated — an undated row (mismatch on the
+  // newest walked snapshot) must fall back to the caller's strict default,
+  // never to a sentinel 0 that any ack would satisfy
+  for (const [rowKey, p] of pending) {
+    if (p.introduced > 0) out.set(rowKey, p.introduced);
+  }
   return out;
 }
 

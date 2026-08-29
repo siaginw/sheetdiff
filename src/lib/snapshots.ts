@@ -108,13 +108,16 @@ export async function captureSnapshot(
     };
   });
 
-  // atomic: either the whole run lands with updated schedule state, or nothing
-  await db.transaction((tx) => {
-    tx.insert(snapshots).values(inserts);
+  // atomic: either the whole run lands with updated schedule state, or nothing.
+  // NOTE: .run() matters — drizzle query builders are lazy; without it the
+  // transaction commits having executed nothing.
+  db.transaction((tx) => {
+    tx.insert(snapshots).values(inserts).run();
     tx
       .update(spreadsheets)
       .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
-      .where(eq(spreadsheets.id, sheet.id));
+      .where(eq(spreadsheets.id, sheet.id))
+      .run();
   });
 
   return { runId, createdAt: now, tabCount: trackedTabs.length, rowCount };
