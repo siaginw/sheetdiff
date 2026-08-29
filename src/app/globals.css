@@ -109,6 +109,17 @@
 }
 
 .dark {
+  /* GitHub dark diff palette */
+  --diff-add-bg: rgba(46, 160, 67, 0.15);
+  --diff-add-fg: #3fb950;
+  --diff-add-token: rgba(46, 160, 67, 0.45);
+  --diff-del-bg: rgba(248, 81, 73, 0.15);
+  --diff-del-fg: #f85149;
+  --diff-del-token: rgba(248, 81, 73, 0.4);
+  --diff-hunk-bg: rgba(56, 139, 253, 0.15);
+  --diff-hunk-fg: #4493f8;
+  --diff-move-bg: rgba(187, 128, 9, 0.22);
+  --diff-move-fg: #d29922;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -161,5 +172,10 @@
       linear-gradient(to right, oklch(0.145 0 0 / 3.5%) 1px, transparent 1px),
       linear-gradient(to bottom, oklch(0.145 0 0 / 3.5%) 1px, transparent 1px);
     background-size: 28px 28px;
+  }
+  .dark .bg-graph-paper {
+    background-image:
+      linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px);
   }
 }

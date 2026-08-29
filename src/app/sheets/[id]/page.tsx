@@ -251,7 +251,7 @@ export default async function SheetPage({
                             {s.trigger === "manual" ? "manual" : "auto"}
                           </span>
                           {s.isBaseline ? (
-                            <span className="flex items-center gap-1 rounded-full bg-diff-move-bg px-1.5 py-px font-mono text-[10px] font-medium text-diff-move-fg dark:bg-amber-950/50 dark:text-amber-300">
+                            <span className="flex items-center gap-1 rounded-full bg-diff-move-bg px-1.5 py-px font-mono text-[10px] font-medium text-diff-move-fg">
                               <Star className="size-2.5 fill-current" /> collected
                             </span>
                           ) : null}
@@ -265,9 +265,9 @@ export default async function SheetPage({
                           <span className="text-muted-foreground/70">{s.rowCount} rows</span>
                           {st && st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">
-                              {st.add > 0 && <span className="text-diff-add-fg dark:text-emerald-400">+{st.add}</span>}
-                              {st.rem > 0 && <span className="text-diff-del-fg dark:text-red-400">−{st.rem}</span>}
-                              {st.chg > 0 && <span className="text-diff-move-fg dark:text-amber-500">~{st.chg}</span>}
+                              {st.add > 0 && <span className="text-diff-add-fg">+{st.add}</span>}
+                              {st.rem > 0 && <span className="text-diff-del-fg">−{st.rem}</span>}
+                              {st.chg > 0 && <span className="text-diff-move-fg">~{st.chg}</span>}
                             </span>
                           ) : (
                             <span className="text-muted-foreground/50">no changes</span>
@@ -362,7 +362,7 @@ export default async function SheetPage({
                     to={toId ?? ""}
                   />
                   {fromSnap?.isBaseline ? (
-                    <Badge variant="outline" className="gap-1 border-amber-300 bg-diff-move-bg font-mono text-[11px] text-diff-move-fg dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    <Badge variant="outline" className="gap-1 border-amber-300 bg-diff-move-bg font-mono text-[11px] text-diff-move-fg">
                       <Clock className="size-3" /> since last collection
                     </Badge>
                   ) : (

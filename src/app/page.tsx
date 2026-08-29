@@ -9,6 +9,7 @@ import {
   Star,
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
@@ -199,13 +200,14 @@ function MiniDiff() {
 function Landing({ error }: { error: string | null }) {
   return (
     <div className="min-h-dvh">
-      <div className="mx-auto flex h-14 max-w-6xl items-center px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-2 font-mono font-semibold tracking-tight">
           <span className="flex size-7 items-center justify-center rounded-md bg-foreground text-background">
             <GitCompareArrows className="size-4" />
           </span>
           sheetdiff
         </div>
+        <ThemeToggle />
       </div>
       <main className="mx-auto max-w-4xl px-4 pb-24 pt-8 sm:px-6">
         {error ? (
@@ -363,14 +365,14 @@ export default async function Home({
                             title={`since collection ${relativeTime(st.baselineAt)}`}
                           >
                             <span className="flex gap-1.5 font-semibold">
-                              {d.added > 0 && <span className="text-diff-add-fg dark:text-emerald-400">+{d.added}</span>}
-                              {d.removed > 0 && <span className="text-diff-del-fg dark:text-red-400">−{d.removed}</span>}
-                              {d.changed > 0 && <span className="text-diff-move-fg dark:text-amber-500">~{d.changed}</span>}
+                              {d.added > 0 && <span className="text-diff-add-fg">+{d.added}</span>}
+                              {d.removed > 0 && <span className="text-diff-del-fg">−{d.removed}</span>}
+                              {d.changed > 0 && <span className="text-diff-move-fg">~{d.changed}</span>}
                             </span>
                             <DiffStatBlocks added={d.added} removed={d.removed} changed={d.changed} />
                           </Link>
                         ) : (
-                          <Badge variant="secondary" className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg dark:bg-emerald-950/50 dark:text-emerald-300">
+                          <Badge variant="secondary" className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg">
                             <CheckCircle2 className="size-3" /> up to date since collection
                           </Badge>
                         )

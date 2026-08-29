@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GitCompareArrows, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +24,8 @@ export function AppHeader({ user }: { user: User | null }) {
           SheetDiff
         </Link>
         {user ? (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button variant="ghost" size="sm" render={<Link href="/sheets/new" />}>
               Add sheet
             </Button>

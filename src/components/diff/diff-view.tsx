@@ -42,17 +42,17 @@ function DiffStat({ s }: { s: DiffResult["summary"] }) {
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
       {s.addedRows > 0 && (
-        <span className="font-medium text-diff-add-fg dark:text-emerald-400" title={`${s.addedRows} added ${s.addedRows === 1 ? "row" : "rows"}`}>
+        <span className="font-medium text-diff-add-fg" title={`${s.addedRows} added ${s.addedRows === 1 ? "row" : "rows"}`}>
           +{s.addedRows} {s.addedRows === 1 ? "row" : "rows"}
         </span>
       )}
       {s.removedRows > 0 && (
-        <span className="font-medium text-diff-del-fg dark:text-red-400" title={`${s.removedRows} removed ${s.removedRows === 1 ? "row" : "rows"}`}>
+        <span className="font-medium text-diff-del-fg" title={`${s.removedRows} removed ${s.removedRows === 1 ? "row" : "rows"}`}>
           −{s.removedRows} {s.removedRows === 1 ? "row" : "rows"}
         </span>
       )}
       {s.changedRows > 0 && (
-        <span className="font-medium text-diff-move-fg dark:text-amber-500" title={`${s.changedCells} changed ${s.changedCells === 1 ? "cell" : "cells"} in ${s.changedRows} ${s.changedRows === 1 ? "row" : "rows"}`}>
+        <span className="font-medium text-diff-move-fg" title={`${s.changedCells} changed ${s.changedCells === 1 ? "cell" : "cells"} in ${s.changedRows} ${s.changedRows === 1 ? "row" : "rows"}`}>
           ~{s.changedCells} {s.changedCells === 1 ? "cell" : "cells"}
         </span>
       )}
@@ -62,10 +62,10 @@ function DiffStat({ s }: { s: DiffResult["summary"] }) {
         </span>
       )}
       {s.columnsAdded.map((c) => (
-        <span key={`+${c}`} className="text-diff-add-fg dark:text-emerald-400">+col “{c}”</span>
+        <span key={`+${c}`} className="text-diff-add-fg">+col “{c}”</span>
       ))}
       {s.columnsRemoved.map((c) => (
-        <span key={`-${c}`} className="text-diff-del-fg dark:text-red-400">−col “{c}”</span>
+        <span key={`-${c}`} className="text-diff-del-fg">−col “{c}”</span>
       ))}
       {s.addedRows + s.removedRows + s.changedRows === 0 && s.columnsAdded.length + s.columnsRemoved.length === 0 && (
         <span className="text-muted-foreground">no changes</span>
@@ -127,7 +127,7 @@ function CodeLine({
 }) {
   if (item.kind === "gap") {
     return (
-      <div className="flex h-8 items-center gap-2 border-y border-diff-hunk-bg bg-diff-hunk-bg/50 px-3 font-mono text-[11px] text-diff-hunk-fg/80 dark:bg-blue-950/30 dark:text-blue-300/80">
+      <div className="flex h-8 items-center gap-2 border-y border-diff-hunk-bg bg-diff-hunk-bg/50 px-3 font-mono text-[11px] text-diff-hunk-fg/80">
         <span className="tracking-widest">⋯⋯⋯</span>
         <span>{item.count} unchanged {item.count === 1 ? "row" : "rows"}</span>
       </div>
@@ -136,18 +136,18 @@ function CodeLine({
 
   if (item.kind === "note") {
     return (
-      <div className="flex h-7 items-center gap-2 border-b border-diff-move-bg/60 bg-diff-move-bg/40 px-3 py-px font-mono text-[11px] dark:bg-amber-950/20">
+      <div className="flex h-7 items-center gap-2 border-b border-diff-hunk-bg/60 bg-diff-hunk-bg/30 px-3 py-px font-mono text-[11px]">
         <span className="w-4 shrink-0 text-center font-bold text-diff-move-fg">~</span>
         <span className="w-[62px] shrink-0" />
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5">
           {item.cells.map((c) => (
             <span key={c.col} className="whitespace-nowrap">
-              <span className="text-muted-foreground">{c.header}:</span>{" "}
-              <span className="text-diff-del-fg line-through decoration-diff-del-fg/60 dark:text-red-400">
+              <span className="text-foreground/70">{c.header}:</span>{" "}
+              <span className="font-medium text-diff-del-fg line-through decoration-diff-del-fg/60">
                 {c.from === "" ? "blank" : c.from}
               </span>
-              <span className="mx-1.5 text-muted-foreground/70">→</span>
-              <span className="font-semibold text-diff-add-fg dark:text-emerald-500">
+              <span className="mx-1.5 text-foreground/50">→</span>
+              <span className="font-semibold text-diff-add-fg">
                 {c.to === "" ? "blank" : c.to}
               </span>
             </span>
@@ -159,7 +159,7 @@ function CodeLine({
 
   if (item.kind === "move") {
     return (
-      <div className="flex h-8 items-center gap-2 bg-diff-move-bg px-3 font-mono text-xs dark:bg-amber-950/40" title={`moved from row ${(item.row.oldIndex ?? 0) + 1}`}>
+      <div className="flex h-8 items-center gap-2 bg-diff-move-bg px-3 font-mono text-xs" title={`moved from row ${(item.row.oldIndex ?? 0) + 1}`}>
         <span className="flex w-4 shrink-0 justify-center">
           <ArrowUpDown className="size-3.5 text-diff-move-fg" />
         </span>
@@ -179,18 +179,18 @@ function CodeLine({
     <div
       className={`flex h-8 items-center gap-2 px-3 font-mono text-xs ${
         tone === "add"
-          ? "bg-diff-add-bg dark:bg-emerald-950/30"
+          ? "bg-diff-add-bg"
           : tone === "del"
-            ? "bg-diff-del-bg dark:bg-red-950/30"
+            ? "bg-diff-del-bg"
             : "text-muted-foreground"
       }`}
     >
       <span
         className={`w-4 shrink-0 text-center text-sm font-bold leading-none ${
           tone === "add"
-            ? "text-diff-add-fg dark:text-emerald-400"
+            ? "text-diff-add-fg"
             : tone === "del"
-              ? "text-diff-del-fg dark:text-red-400"
+              ? "text-diff-del-fg"
               : ""
         }`}
       >
@@ -213,7 +213,7 @@ function CodeLine({
 
 function LineNumbers({ old, new: newIdx }: { old: number | null; new: number | null }) {
   return (
-    <span className="flex shrink-0 select-none gap-1.5 font-mono text-[10.5px] leading-none text-muted-foreground">
+    <span className="flex shrink-0 select-none gap-1.5 font-mono text-[10.5px] leading-none text-foreground/55">
       <span className="w-7 text-right">{old !== null ? old + 1 : ""}</span>
       <span className="w-7 text-right">{newIdx !== null ? newIdx + 1 : ""}</span>
     </span>
@@ -247,8 +247,8 @@ function Cells({
               className={`truncate px-1.5 ${
                 isChanged
                   ? tone === "add"
-                    ? "rounded-sm bg-diff-add-token font-semibold text-diff-add-fg dark:bg-emerald-800/70 dark:text-emerald-200"
-                    : "rounded-sm bg-diff-del-token font-semibold text-diff-del-fg dark:bg-red-800/60 dark:text-red-200"
+                    ? "rounded-sm bg-diff-add-token font-semibold text-diff-add-fg"
+                    : "rounded-sm bg-diff-del-token font-semibold text-diff-del-fg"
                   : ""
               }`}
               style={{ width: `${widths[c.col] + 2}ch` }}
@@ -270,10 +270,10 @@ function Cells({
 function ChangedCell({ from, to }: { from: string; to: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 py-1 font-mono text-xs leading-4">
-      <span className="truncate rounded-sm bg-diff-del-token px-1 text-diff-del-fg line-through decoration-diff-del-fg/50 dark:bg-red-900/50 dark:text-red-300" title={from}>
+      <span className="truncate rounded-sm bg-diff-del-token px-1 text-diff-del-fg line-through decoration-diff-del-fg/50" title={from}>
         {from || "\u00A0"}
       </span>
-      <span className="truncate rounded-sm bg-diff-add-token px-1 text-diff-add-fg dark:bg-emerald-900/50 dark:text-emerald-300" title={to}>
+      <span className="truncate rounded-sm bg-diff-add-token px-1 text-diff-add-fg" title={to}>
         {to}
       </span>
     </div>
@@ -281,18 +281,18 @@ function ChangedCell({ from, to }: { from: string; to: string }) {
 }
 
 const ROW_STYLE: Record<DiffRow["status"], string> = {
-  added: "bg-diff-add-bg/70 dark:bg-emerald-950/25",
-  removed: "bg-diff-del-bg/70 dark:bg-red-950/25",
+  added: "bg-diff-add-bg/70",
+  removed: "bg-diff-del-bg/70",
   changed: "",
-  moved: "bg-diff-move-bg/50 dark:bg-amber-950/20",
+  moved: "bg-diff-move-bg/50",
   unchanged: "",
 };
 
 const ROW_ICON: Record<DiffRow["status"], React.ReactNode> = {
-  added: <Plus className="size-3.5 text-diff-add-fg dark:text-emerald-400" />,
-  removed: <Minus className="size-3.5 text-diff-del-fg dark:text-red-400" />,
-  changed: <PenLine className="size-3.5 text-diff-move-fg dark:text-amber-500" />,
-  moved: <ArrowUpDown className="size-3.5 text-diff-move-fg dark:text-amber-500" />,
+  added: <Plus className="size-3.5 text-diff-add-fg" />,
+  removed: <Minus className="size-3.5 text-diff-del-fg" />,
+  changed: <PenLine className="size-3.5 text-diff-move-fg" />,
+  moved: <ArrowUpDown className="size-3.5 text-diff-move-fg" />,
   unchanged: null,
 };
 
@@ -458,7 +458,7 @@ export function DiffView({
               {result.columns.map((c) => (
                 <div
                   key={c.col}
-                  className={`truncate px-2.5 py-2 text-xs font-semibold ${c.status === "added" ? "text-diff-add-fg dark:text-emerald-400" : ""}`}
+                  className={`truncate px-2.5 py-2 text-xs font-semibold ${c.status === "added" ? "text-diff-add-fg" : ""}`}
                   title={c.header}
                 >
                   {c.header}
@@ -498,7 +498,7 @@ export function DiffView({
                             <ChangedCell from={cell.from} to={cell.to} />
                           ) : (
                             <span
-                              className={`block truncate px-1 font-mono text-xs leading-4 ${r.status === "removed" ? "text-diff-del-fg/80 dark:text-red-300/70" : ""}`}
+                              className={`block truncate px-1 font-mono text-xs leading-4 ${r.status === "removed" ? "text-diff-del-fg/80" : ""}`}
                               title={r.values[c.col] ?? ""}
                             >
                               {r.values[c.col] ?? ""}
