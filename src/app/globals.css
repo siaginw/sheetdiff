@@ -46,6 +46,17 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* git diff palette (GitHub-accurate) */
+  --color-diff-add-bg: var(--diff-add-bg);
+  --color-diff-add-fg: var(--diff-add-fg);
+  --color-diff-add-token: var(--diff-add-token);
+  --color-diff-del-bg: var(--diff-del-bg);
+  --color-diff-del-fg: var(--diff-del-fg);
+  --color-diff-del-token: var(--diff-del-token);
+  --color-diff-hunk-bg: var(--diff-hunk-bg);
+  --color-diff-hunk-fg: var(--diff-hunk-fg);
+  --color-diff-move-bg: var(--diff-move-bg);
+  --color-diff-move-fg: var(--diff-move-fg);
 }
 
 :root {
@@ -73,6 +84,20 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+  /* git diff palette */
+  --diff-add-bg: #e6ffec;
+  --diff-add-fg: #1a7f37;
+  --diff-add-token: #8ce0a2;
+  --diff-del-bg: #ffebe9;
+  --diff-del-fg: #cf222e;
+  --diff-del-token: #ffc7c0;
+  --diff-hunk-bg: #ddf4ff;
+  --diff-hunk-fg: #0550ae;
+  --diff-move-bg: #fff8c5;
+  --diff-move-fg: #9a6700;
+  /* GitHub action green for primary buttons */
+  --primary: #1f883d;
+  --primary-foreground: #ffffff;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -126,5 +151,15 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer utilities {
+  /* faint graph-paper backdrop for the marketing hero */
+  .bg-graph-paper {
+    background-image:
+      linear-gradient(to right, oklch(0.145 0 0 / 3.5%) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.145 0 0 / 3.5%) 1px, transparent 1px);
+    background-size: 28px 28px;
   }
 }

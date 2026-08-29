@@ -5,7 +5,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowUpDown,
   CheckCircle2,
-  Dot,
   Minus,
   PenLine,
   Plus,
@@ -16,130 +15,354 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import type { DiffResult, DiffRow } from "@/lib/diff/engine";
 
-const STATUS_STYLES: Record<
-  DiffRow["status"],
-  { row: string; icon: React.ReactNode; label: string }
-> = {
-  added: {
-    row: "bg-emerald-50/70 dark:bg-emerald-950/25",
-    icon: <Plus className="size-3.5 text-emerald-600 dark:text-emerald-400" />,
-    label: "added",
-  },
-  removed: {
-    row: "bg-red-50/70 dark:bg-red-950/25",
-    icon: <Minus className="size-3.5 text-red-600 dark:text-red-400" />,
-    label: "removed",
-  },
-  changed: {
-    row: "",
-    icon: <PenLine className="size-3.5 text-amber-600 dark:text-amber-400" />,
-    label: "changed",
-  },
-  moved: {
-    row: "bg-amber-50/50 dark:bg-amber-950/15",
-    icon: <ArrowUpDown className="size-3.5 text-amber-600 dark:text-amber-400" />,
-    label: "moved",
-  },
-  unchanged: {
-    row: "",
-    icon: <Dot className="size-3.5 text-muted-foreground/40" />,
-    label: "",
-  },
-};
+/* ------------------------------------------------------------------ */
+/* shared helpers                                                      */
+/* ------------------------------------------------------------------ */
 
-function SummaryChips({ summary }: { summary: DiffResult["summary"] }) {
-  const chips: { text: string; className: string }[] = [];
-  if (summary.addedRows)
-    chips.push({ text: `+${summary.addedRows} added ${summary.addedRows === 1 ? "row" : "rows"}`, className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" });
-  if (summary.removedRows)
-    chips.push({ text: `−${summary.removedRows} removed ${summary.removedRows === 1 ? "row" : "rows"}`, className: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300" });
-  if (summary.changedRows)
-    chips.push({ text: `~${summary.changedCells} cell ${summary.changedCells === 1 ? "change" : "changes"} in ${summary.changedRows} ${summary.changedRows === 1 ? "row" : "rows"}`, className: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" });
-  if (summary.movedRows)
-    chips.push({ text: `${summary.movedRows} moved`, className: "bg-muted text-muted-foreground" });
-  for (const c of summary.columnsAdded)
-    chips.push({ text: `+ column “${c}”`, className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300" });
-  for (const c of summary.columnsRemoved)
-    chips.push({ text: `− column “${c}”`, className: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300" });
-  if (chips.length === 0)
-    chips.push({ text: "no changes", className: "bg-muted text-muted-foreground" });
+/** Reconstruct the OLD (A-side) values of a changed row from B's values. */
+function oldValues(row: DiffRow): string[] {
+  const out = row.values.slice();
+  for (const c of row.cells) out[c.col] = c.from;
+  return out;
+}
+
+/** Per-column widths (in ch) so mono cells align across all lines. */
+function columnWidths(result: DiffResult, lines: DiffRow[]): number[] {
+  const widths = result.columns.map((c) => Math.max(3, c.header.length));
+  for (const row of lines) {
+    const vals = row.status === "removed" || row.status === "changed" ? oldValues(row) : row.values;
+    for (let i = 0; i < vals.length; i++) {
+      widths[i] = Math.max(widths[i], Math.min(vals[i].length, 22));
+    }
+  }
+  return widths.map((w) => Math.min(w, 22));
+}
+
+function DiffStat({ s }: { s: DiffResult["summary"] }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {chips.map((c, i) => (
-        <span key={i} className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${c.className}`}>
-          {c.text}
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+      {s.addedRows > 0 && (
+        <span className="font-medium text-diff-add-fg dark:text-emerald-400" title={`${s.addedRows} added ${s.addedRows === 1 ? "row" : "rows"}`}>
+          +{s.addedRows} {s.addedRows === 1 ? "row" : "rows"}
         </span>
+      )}
+      {s.removedRows > 0 && (
+        <span className="font-medium text-diff-del-fg dark:text-red-400" title={`${s.removedRows} removed ${s.removedRows === 1 ? "row" : "rows"}`}>
+          −{s.removedRows} {s.removedRows === 1 ? "row" : "rows"}
+        </span>
+      )}
+      {s.changedRows > 0 && (
+        <span className="font-medium text-diff-move-fg dark:text-amber-500" title={`${s.changedCells} changed ${s.changedCells === 1 ? "cell" : "cells"} in ${s.changedRows} ${s.changedRows === 1 ? "row" : "rows"}`}>
+          ~{s.changedCells} {s.changedCells === 1 ? "cell" : "cells"}
+        </span>
+      )}
+      {s.movedRows > 0 && (
+        <span className="text-muted-foreground" title={`${s.movedRows} ${s.movedRows === 1 ? "row" : "rows"} moved position`}>
+          →{s.movedRows} moved
+        </span>
+      )}
+      {s.columnsAdded.map((c) => (
+        <span key={`+${c}`} className="text-diff-add-fg dark:text-emerald-400">+col “{c}”</span>
       ))}
+      {s.columnsRemoved.map((c) => (
+        <span key={`-${c}`} className="text-diff-del-fg dark:text-red-400">−col “{c}”</span>
+      ))}
+      {s.addedRows + s.removedRows + s.changedRows === 0 && s.columnsAdded.length + s.columnsRemoved.length === 0 && (
+        <span className="text-muted-foreground">no changes</span>
+      )}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* unified code view — the GitHub code-review look                     */
+/* ------------------------------------------------------------------ */
+
+type LineItem =
+  | { kind: "gap"; count: number; id: string }
+  | { kind: "ctx"; row: DiffRow; id: string }
+  | { kind: "sign"; sign: "+" | "-"; row: DiffRow; changedCols: Set<number>; id: string }
+  | { kind: "move"; row: DiffRow; id: string };
+
+function buildLines(rows: DiffRow[], changesOnly: boolean): LineItem[] {
+  const out: LineItem[] = [];
+  let pending = 0;
+  const flushGap = () => {
+    if (pending > 0) {
+      out.push({ kind: "gap", count: pending, id: `gap-${out.length}` });
+      pending = 0;
+    }
+  };
+  for (const r of rows) {
+    if (r.status === "unchanged") {
+      if (changesOnly) pending++;
+      else out.push({ kind: "ctx", row: r, id: `ctx-${r.newIndex}-${out.length}` });
+      continue;
+    }
+    if (changesOnly) flushGap();
+    if (r.status === "changed") {
+      out.push({ kind: "sign", sign: "-", row: r, changedCols: new Set(r.cells.map((c) => c.col)), id: `del-${r.newIndex}-${out.length}` });
+      out.push({ kind: "sign", sign: "+", row: r, changedCols: new Set(r.cells.map((c) => c.col)), id: `add-${r.newIndex}-${out.length}` });
+    } else if (r.status === "moved") {
+      out.push({ kind: "move", row: r, id: `move-${r.newIndex}-${out.length}` });
+    } else {
+      out.push({ kind: "sign", sign: r.status === "added" ? "+" : "-", row: r, changedCols: new Set(), id: `${r.status}-${out.length}` });
+    }
+  }
+  flushGap();
+  return out;
+}
+
+function CodeLine({
+  item,
+  columns,
+  widths,
+}: {
+  item: LineItem;
+  columns: DiffResult["columns"];
+  widths: number[];
+}) {
+  if (item.kind === "gap") {
+    return (
+      <div className="flex h-8 items-center gap-2 border-y border-diff-hunk-bg bg-diff-hunk-bg/50 px-3 font-mono text-[11px] text-diff-hunk-fg/80 dark:bg-blue-950/30 dark:text-blue-300/80">
+        <span className="tracking-widest">⋯⋯⋯</span>
+        <span>{item.count} unchanged {item.count === 1 ? "row" : "rows"}</span>
+      </div>
+    );
+  }
+
+  if (item.kind === "move") {
+    return (
+      <div className="flex h-8 items-center gap-2 bg-diff-move-bg px-3 font-mono text-xs dark:bg-amber-950/40" title={`moved from row ${(item.row.oldIndex ?? 0) + 1}`}>
+        <span className="flex w-4 shrink-0 justify-center">
+          <ArrowUpDown className="size-3.5 text-diff-move-fg" />
+        </span>
+        <LineNumbers old={item.row.oldIndex} new={item.row.newIndex} />
+        <Cells values={item.row.values} columns={columns} widths={widths} tone="move" changed={new Set()} />
+      </div>
+    );
+  }
+
+  const row = item.row;
+  const isCtx = item.kind === "ctx";
+  const sign = item.kind === "sign" ? item.sign : "";
+  const values = item.kind === "sign" && item.sign === "-" ? oldValues(row) : row.values;
+  const tone = isCtx ? "ctx" : sign === "+" ? "add" : "del";
+
+  return (
+    <div
+      className={`flex h-8 items-center gap-2 px-3 font-mono text-xs ${
+        tone === "add"
+          ? "bg-diff-add-bg dark:bg-emerald-950/30"
+          : tone === "del"
+            ? "bg-diff-del-bg dark:bg-red-950/30"
+            : "text-muted-foreground"
+      }`}
+    >
+      <span
+        className={`w-4 shrink-0 text-center text-sm font-bold leading-none ${
+          tone === "add"
+            ? "text-diff-add-fg dark:text-emerald-400"
+            : tone === "del"
+              ? "text-diff-del-fg dark:text-red-400"
+              : ""
+        }`}
+      >
+        {tone === "add" ? "+" : tone === "del" ? "−" : ""}
+      </span>
+      <LineNumbers
+        old={tone === "add" ? null : row.oldIndex}
+        new={tone === "del" ? null : row.newIndex}
+      />
+      <Cells
+        values={values}
+        columns={columns}
+        widths={widths}
+        tone={tone}
+        changed={item.kind === "sign" ? item.changedCols : new Set()}
+      />
     </div>
   );
 }
 
+function LineNumbers({ old, new: newIdx }: { old: number | null; new: number | null }) {
+  return (
+    <span className="flex shrink-0 select-none gap-1.5 font-mono text-[10.5px] leading-none text-muted-foreground">
+      <span className="w-7 text-right">{old !== null ? old + 1 : ""}</span>
+      <span className="w-7 text-right">{newIdx !== null ? newIdx + 1 : ""}</span>
+    </span>
+  );
+}
+
+function Cells({
+  values,
+  columns,
+  widths,
+  tone,
+  changed,
+}: {
+  values: string[];
+  columns: DiffResult["columns"];
+  widths: number[];
+  tone: "add" | "del" | "ctx" | "move";
+  changed: Set<number>;
+}) {
+  // GitHub convention: line text stays near-black on the tinted background —
+  // only the changed token gets a saturated fill + text color.
+  return (
+    <span className="flex min-w-0 flex-1 items-center overflow-hidden">
+      {columns.map((c, i) => {
+        const v = values[c.col] ?? "";
+        const isChanged = changed.has(c.col) && tone !== "ctx";
+        return (
+          <span key={c.col} className="flex min-w-0 shrink-0 items-center">
+            <span
+              title={v}
+              className={`truncate px-1.5 ${
+                isChanged
+                  ? tone === "add"
+                    ? "rounded-sm bg-diff-add-token font-semibold text-diff-add-fg dark:bg-emerald-800/70 dark:text-emerald-200"
+                    : "rounded-sm bg-diff-del-token font-semibold text-diff-del-fg dark:bg-red-800/60 dark:text-red-200"
+                  : ""
+              }`}
+              style={{ width: `${widths[c.col] + 2}ch` }}
+            >
+              {v || "\u00A0"}
+            </span>
+            {i < columns.length - 1 && <span className="text-muted-foreground/40">│</span>}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* table view (aligned grid — good for wide sheets)                    */
+/* ------------------------------------------------------------------ */
+
 function ChangedCell({ from, to }: { from: string; to: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 py-1 font-mono text-xs leading-4">
-      <span className="truncate bg-red-100/70 px-1 text-red-700 line-through decoration-red-400/60 dark:bg-red-950/40 dark:text-red-300" title={from}>
+    <div className="flex min-w-0 flex-col gap-0.5 py-1 font-mono text-xs leading-4">
+      <span className="truncate rounded-sm bg-diff-del-token px-1 text-diff-del-fg line-through decoration-diff-del-fg/50 dark:bg-red-900/50 dark:text-red-300" title={from}>
         {from || "\u00A0"}
       </span>
-      <span className="truncate bg-emerald-100/70 px-1 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" title={to}>
+      <span className="truncate rounded-sm bg-diff-add-token px-1 text-diff-add-fg dark:bg-emerald-900/50 dark:text-emerald-300" title={to}>
         {to}
       </span>
     </div>
   );
 }
 
+const ROW_STYLE: Record<DiffRow["status"], string> = {
+  added: "bg-diff-add-bg/70 dark:bg-emerald-950/25",
+  removed: "bg-diff-del-bg/70 dark:bg-red-950/25",
+  changed: "",
+  moved: "bg-diff-move-bg/50 dark:bg-amber-950/20",
+  unchanged: "",
+};
+
+const ROW_ICON: Record<DiffRow["status"], React.ReactNode> = {
+  added: <Plus className="size-3.5 text-diff-add-fg dark:text-emerald-400" />,
+  removed: <Minus className="size-3.5 text-diff-del-fg dark:text-red-400" />,
+  changed: <PenLine className="size-3.5 text-diff-move-fg dark:text-amber-500" />,
+  moved: <ArrowUpDown className="size-3.5 text-diff-move-fg dark:text-amber-500" />,
+  unchanged: null,
+};
+
+/* ------------------------------------------------------------------ */
+/* the component                                                       */
+/* ------------------------------------------------------------------ */
+
 export function DiffView({
   result,
   fromLabel,
   toLabel,
+  tabTitle,
 }: {
   result: DiffResult;
   fromLabel: string;
   toLabel: string;
+  tabTitle: string;
 }) {
   const [query, setQuery] = useState("");
   const [changesOnly, setChangesOnly] = useState(true);
+  const [mode, setMode] = useState<"code" | "table">("code");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const visible = useMemo(() => {
+  const matching = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return result.rows.filter((r) => {
-      if (q)
-        return (
-          r.values.some((v) => v.toLowerCase().includes(q)) ||
-          (r.key?.toLowerCase().includes(q) ?? false)
-        );
-      return changesOnly ? r.status !== "unchanged" : true;
-    });
-  }, [query, changesOnly, result.rows]);
+    if (!q) return null;
+    return new Set(
+      result.rows
+        .filter(
+          (r) =>
+            r.values.some((v) => v.toLowerCase().includes(q)) ||
+            (r.key?.toLowerCase().includes(q) ?? false),
+        )
+        .map((r) => r),
+    );
+  }, [query, result.rows]);
+
+  const visibleRows = useMemo(
+    () =>
+      matching
+        ? [...matching]
+        : changesOnly
+          ? result.rows.filter((r) => r.status !== "unchanged")
+          : result.rows,
+    [matching, changesOnly, result.rows],
+  );
 
   const hasChanges =
     result.summary.addedRows + result.summary.removedRows + result.summary.changedRows > 0 ||
     result.summary.columnsAdded.length + result.summary.columnsRemoved.length > 0;
 
-  const template = `34px 56px repeat(${result.columns.length}, minmax(150px, 1fr))`;
-  const minWidth = 82 + result.columns.length * 150;
+  const lines = useMemo(
+    () => (matching ? buildLines([...matching], false) : buildLines(result.rows, changesOnly)),
+    [matching, result.rows, changesOnly],
+  );
 
-  const virtualizer = useVirtualizer({
-    count: visible.length,
+  const widths = useMemo(
+    () => columnWidths(result, mode === "code" ? result.rows : visibleRows),
+    [result, mode, visibleRows],
+  );
+
+  const codeVirtualizer = useVirtualizer({
+    count: lines.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 32,
+    overscan: 15,
+    getItemKey: (i) => lines[i].id,
+  });
+
+  const tableVirtualizer = useVirtualizer({
+    count: visibleRows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 37,
     overscan: 10,
-    getItemKey: (i) => `${visible[i].status}-${visible[i].oldIndex}-${visible[i].newIndex}-${i}`,
+    getItemKey: (i) => `${visibleRows[i].status}-${visibleRows[i].oldIndex}-${visibleRows[i].newIndex}-${i}`,
   });
+
+  const tableTemplate = `34px 56px repeat(${result.columns.length}, minmax(150px, 1fr))`;
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
-      {/* toolbar */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b px-4 py-3">
-        <SummaryChips summary={result.summary} />
-        <div className="ml-auto flex items-center gap-4">
+      {/* file header, GitHub style */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b bg-muted/50 px-4 py-2.5">
+        <span className="flex min-w-0 items-center gap-2 font-mono text-xs font-semibold">
+          <span className="size-2 shrink-0 rounded-full bg-diff-hunk-fg/30" />
+          <span className="truncate">{tabTitle}</span>
+        </span>
+        <DiffStat s={result.summary} />
+        <div className="ml-auto flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search rows…"
-              className="h-8 w-48 pl-8 text-sm"
+              className="h-7 w-44 rounded-md pl-8 font-sans text-xs"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -148,12 +371,28 @@ export function DiffView({
               Changes only
             </Label>
           </div>
+          {/* mode toggle */}
+          <div className="flex rounded-md border p-0.5 font-mono text-[11px]" role="tablist" aria-label="Diff layout">
+            {(["code", "table"] as const).map((m) => (
+              <button
+                key={m}
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`rounded-[5px] px-2 py-0.5 transition-colors ${
+                  mode === m ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {m === "code" ? "± code" : "⊞ table"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {!hasChanges ? (
         <div className="flex flex-col items-center gap-3 py-16 text-center">
-          <CheckCircle2 className="size-10 text-emerald-500/70" />
+          <CheckCircle2 className="size-10 text-diff-add-fg/60" />
           <p className="font-medium">No changes between these snapshots</p>
           <p className="text-sm text-muted-foreground">
             {fromLabel} → {toLabel}
@@ -162,23 +401,38 @@ export function DiffView({
               : ""}
           </p>
         </div>
-      ) : visible.length === 0 ? (
+      ) : (mode === "code" ? lines : visibleRows).length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
           No rows match “{query}”.
         </div>
+      ) : mode === "code" ? (
+        <div ref={scrollRef} className="max-h-[calc(100dvh-300px)] min-h-72 overflow-auto">
+          <div style={{ height: codeVirtualizer.getTotalSize(), position: "relative" }}>
+            {codeVirtualizer.getVirtualItems().map((vr) => (
+              <div
+                key={vr.key}
+                data-index={vr.index}
+                ref={codeVirtualizer.measureElement}
+                style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vr.start}px)` }}
+              >
+                <CodeLine item={lines[vr.index]} columns={result.columns} widths={widths} />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
-        <div ref={scrollRef} className="max-h-[calc(100dvh-320px)] min-h-72 overflow-auto">
-          <div style={{ minWidth }}>
-            {/* header */}
+        <div ref={scrollRef} className="max-h-[calc(100dvh-300px)] min-h-72 overflow-auto">
+          <div style={{ minWidth: 90 + result.columns.length * 150 }}>
             <div
               className="sticky top-0 z-10 grid border-b bg-card/95 backdrop-blur"
-              style={{ gridTemplateColumns: template }}
+              style={{ gridTemplateColumns: tableTemplate }}
             >
-              <div className="px-1 py-2" />
-              <div className="py-2 text-center text-[10px] font-medium text-muted-foreground">#</div>              {result.columns.map((c) => (
+              <div className="py-2" />
+              <div className="py-2 text-center font-mono text-[10px] font-medium text-muted-foreground">#</div>
+              {result.columns.map((c) => (
                 <div
                   key={c.col}
-                  className={`truncate px-2.5 py-2 text-xs font-semibold ${c.status === "added" ? "text-emerald-700 dark:text-emerald-400" : ""}`}
+                  className={`truncate px-2.5 py-2 text-xs font-semibold ${c.status === "added" ? "text-diff-add-fg dark:text-emerald-400" : ""}`}
                   title={c.header}
                 >
                   {c.header}
@@ -186,49 +440,47 @@ export function DiffView({
                 </div>
               ))}
             </div>
-            {/* virtualized rows */}
-            <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-              {virtualizer.getVirtualItems().map((vr) => {
-                const r = visible[vr.index];
-                const st = STATUS_STYLES[r.status];
+            <div style={{ height: tableVirtualizer.getTotalSize(), position: "relative" }}>
+              {tableVirtualizer.getVirtualItems().map((vr) => {
+                const r = visibleRows[vr.index];
                 const changedCols = new Set(r.cells.map((c) => c.col));
                 return (
                   <div
                     key={vr.key}
                     data-index={vr.index}
-                    ref={virtualizer.measureElement}
+                    ref={tableVirtualizer.measureElement}
                     style={{
                       position: "absolute",
                       top: 0,
                       left: 0,
                       width: "100%",
                       transform: `translateY(${vr.start}px)`,
-                      gridTemplateColumns: template,
+                      gridTemplateColumns: tableTemplate,
                     }}
-                    className={`grid items-stretch border-b border-border/50 text-sm ${st.row}`}
+                    className={`grid items-stretch border-b border-border/50 text-sm ${ROW_STYLE[r.status]}`}
                   >
-                    <div className="flex items-center justify-center px-1">{st.icon}</div>
-                      <div className="flex flex-col items-end justify-center gap-0.5 px-2 py-1 font-mono text-[10px] leading-3.5 text-muted-foreground/70">
-                        <span>{r.oldIndex !== null ? r.oldIndex + 1 : ""}</span>
-                        <span>{r.newIndex !== null ? r.newIndex + 1 : ""}</span>
-                      </div>
-                      {result.columns.map((c) => {
-                        const cell = changedCols.has(c.col) ? r.cells.find((x) => x.col === c.col) : null;
-                        return (
-                          <div key={c.col} className="min-w-0 px-2.5 py-1.5">
-                            {cell ? (
-                              <ChangedCell from={cell.from} to={cell.to} />
-                            ) : (
-                              <span
-                                className={`block truncate font-mono text-xs leading-4 ${r.status === "removed" ? "text-red-800/80 dark:text-red-300/70" : ""}`}
-                                title={r.values[c.col] ?? ""}
-                              >
-                                {r.values[c.col] ?? ""}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="flex items-center justify-center">{ROW_ICON[r.status]}</div>
+                    <div className="flex flex-col items-end justify-center gap-0.5 px-2 py-1 font-mono text-[10px] leading-3.5 text-muted-foreground/70">
+                      <span>{r.oldIndex !== null ? r.oldIndex + 1 : ""}</span>
+                      <span>{r.newIndex !== null ? r.newIndex + 1 : ""}</span>
+                    </div>
+                    {result.columns.map((c) => {
+                      const cell = changedCols.has(c.col) ? r.cells.find((x) => x.col === c.col) : null;
+                      return (
+                        <div key={c.col} className="min-w-0 px-2.5 py-1.5">
+                          {cell ? (
+                            <ChangedCell from={cell.from} to={cell.to} />
+                          ) : (
+                            <span
+                              className={`block truncate px-1 font-mono text-xs leading-4 ${r.status === "removed" ? "text-diff-del-fg/80 dark:text-red-300/70" : ""}`}
+                              title={r.values[c.col] ?? ""}
+                            >
+                              {r.values[c.col] ?? ""}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -238,15 +490,19 @@ export function DiffView({
       )}
 
       {/* footer */}
-      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-2 font-mono text-[11px] text-muted-foreground">
         <span>
-          {visible.length} of {result.rows.length} {result.rows.length === 1 ? "row" : "rows"} shown
-          {result.summary.keyColumnHeader
-            ? ` · rows matched by “${result.summary.keyColumnHeader}”`
-            : " · rows matched by content"}
+          {mode === "code" ? lines.length : visibleRows.length} {mode === "code" ? "lines" : "rows"} shown ·{" "}
+          {result.rows.length} total {result.rows.length === 1 ? "row" : "rows"}
         </span>
-        <span className="font-mono">
-          {fromLabel} → {toLabel}
+        <span className="flex items-center gap-2">
+          <span>
+            {result.summary.keyColumnHeader
+              ? `matched by “${result.summary.keyColumnHeader}”`
+              : "matched by row content"}
+          </span>
+          <span className="text-muted-foreground/50">|</span>
+          <span>{fromLabel} → {toLabel}</span>
         </span>
       </div>
     </div>

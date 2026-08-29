@@ -6,12 +6,10 @@ import {
   ArrowUpRight,
   Camera,
   CheckCircle2,
-  ChevronRight,
   Clock,
   ExternalLink,
   MoreHorizontal,
   Star,
-  Timer,
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
@@ -141,10 +139,9 @@ export default async function SheetPage({
               <ArrowLeft className="size-4" /> All sheets
             </Button>
             <h1 className="truncate text-2xl font-semibold tracking-tight">{sheet.title}</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {trackedCount}/{allTabs.length} {allTabs.length === 1 ? "tab" : "tabs"} tracked ·{" "}
-              {scheduleLabel(sheet)}
-              {sheet.nextRunAt ? ` (next ${relativeTime(sheet.nextRunAt).replace(" ago", " from now")})` : ""}
+            <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
+              {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
+              {sheet.nextRunAt ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -202,9 +199,9 @@ export default async function SheetPage({
           {/* timeline */}
           <aside className="rounded-xl border bg-card">
             <div className="border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">Snapshots</h2>
-              <p className="text-xs text-muted-foreground">
-                “{activeTab.title}” · {timeline.length} total
+              <h2 className="font-mono text-xs font-semibold uppercase tracking-wide">History</h2>
+              <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                {activeTab.title} · {timeline.length} snapshot{timeline.length === 1 ? "" : "s"}
               </p>
             </div>
             {timeline.length === 0 ? (
@@ -214,54 +211,66 @@ export default async function SheetPage({
                   : "This tab isn't tracked — enable it in tab settings."}
               </div>
             ) : (
-              <ol className="max-h-[70vh] overflow-auto py-2">
+              <ol className="relative max-h-[70vh] overflow-auto py-3">
+                {/* the branch line */}
+                <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-border" />
                 {timeline.map((s) => {
                   const isTo = s.id === toId;
                   const isFrom = s.id === fromId;
                   const st = statsFor.get(s.id);
                   return (
-                    <li key={s.id} className="relative px-2">
-                      <div
-                        className={`flex flex-col gap-1 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                          isTo
-                            ? "bg-primary/10 ring-1 ring-primary/40"
-                            : isFrom
-                          ? "bg-muted/60 outline-1 outline-dashed outline-border"
-                              : "hover:bg-muted/50"
-                        }`}
+                    <li key={s.id} className="relative pl-7 pr-2">
+                      <Link
+                        href={`/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}&from=${fromId ?? ""}&to=${s.id}`}
+                        className="group block rounded-md px-2 py-1.5 transition-colors hover:bg-muted/70"
                       >
-                        <Link
-                          href={`/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}&from=${fromId ?? ""}&to=${s.id}`}
-                          className="flex items-start gap-2"
-                        >
-                          <span className="mt-0.5 text-muted-foreground">
-                            {s.trigger === "manual" ? (
-                              <Camera className="size-3.5" />
-                            ) : (
-                              <Timer className="size-3.5" />
-                            )}
+                        {/* commit dot */}
+                        <span
+                          aria-hidden
+                          className={`absolute left-[7px] top-[11px] size-[13px] rounded-full border-2 ${
+                            isTo
+                              ? "border-primary bg-primary"
+                              : isFrom
+                                ? "border-dashed border-muted-foreground bg-card"
+                                : "border-border bg-card group-hover:border-muted-foreground/50"
+                          }`}
+                        />
+                        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="font-mono text-xs font-semibold" title={absoluteTime(s.createdAt)}>
+                            {relativeTime(s.createdAt)}
                           </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium" title={absoluteTime(s.createdAt)}>
-                              {relativeTime(s.createdAt)}
-                            </span>
-                            <span className="block text-xs text-muted-foreground">
-                              {s.rowCount} rows
-                              {st && st.add + st.rem + st.chg > 0
-                                ? ` · +${st.add} −${st.rem} ~${st.chg}`
-                                : " · no changes"}
-                            </span>
+                          <span className="font-mono text-[10.5px] text-muted-foreground/80">
+                            {s.trigger === "manual" ? "manual" : "auto"}
                           </span>
                           {s.isBaseline ? (
-                            <Star className="mt-0.5 size-3.5 fill-amber-400 text-amber-400" />
+                            <span className="flex items-center gap-1 rounded-full bg-diff-move-bg px-1.5 py-px font-mono text-[10px] font-medium text-diff-move-fg dark:bg-amber-950/50 dark:text-amber-300">
+                              <Star className="size-2.5 fill-current" /> collected
+                            </span>
                           ) : null}
-                        </Link>
+                          {isTo ? (
+                            <span className="rounded-full bg-primary/10 px-1.5 py-px font-mono text-[10px] font-medium text-primary">
+                              HEAD
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-2 font-mono text-[10.5px]">
+                          <span className="text-muted-foreground/70">{s.rowCount} rows</span>
+                          {st && st.add + st.rem + st.chg > 0 ? (
+                            <span className="flex gap-1.5">
+                              {st.add > 0 && <span className="text-diff-add-fg dark:text-emerald-400">+{st.add}</span>}
+                              {st.rem > 0 && <span className="text-diff-del-fg dark:text-red-400">−{st.rem}</span>}
+                              {st.chg > 0 && <span className="text-diff-move-fg dark:text-amber-500">~{st.chg}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/50">no changes</span>
+                          )}
+                        </span>
                         {isFrom && !isTo ? (
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                            comparing from here
+                          <span className="mt-1 block w-fit rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+                            diff base
                           </span>
                         ) : null}
-                      </div>
+                      </Link>
                     </li>
                   );
                 })}
@@ -272,25 +281,25 @@ export default async function SheetPage({
           {/* diff panel */}
           <section className="min-w-0">
             {/* tab strip */}
-            <div className="mb-4 flex flex-wrap items-center gap-1 rounded-lg border bg-card p-1">
+            <div className="mb-4 flex flex-wrap items-end gap-1 border-b pb-0">
               {allTabs.map((t) => {
                 const isActive = t.id === activeTab.id;
                 return (
                   <Link
                     key={t.id}
                     href={`/sheets/${sheet.id}?tab=${encodeURIComponent(t.title)}`}
-                    className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm ${
+                    className={`-mb-px flex items-center gap-1.5 rounded-t-lg border border-b-0 px-3.5 pb-2 pt-2 text-sm transition-colors ${
                       isActive
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "border-border bg-card font-medium text-foreground shadow-[inset_0_2px_0_0_#fd8c73]"
+                        : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                     }`}
                   >
-                    {t.title}
-                    {!t.tracked ? <span className="text-xs">(off)</span> : null}
+                    <span className={`font-mono text-xs ${isActive ? "" : "opacity-60"}`}>{t.title}</span>
+                    {!t.tracked ? <span className="font-mono text-[10px] text-muted-foreground/60">off</span> : null}
                   </Link>
                 );
               })}
-              <div className="ml-auto pr-1">
+              <div className="ml-auto pb-2">
                 <TabSettingsDialog
                   spreadsheetId={sheet.id}
                   tabId={activeTab.id}
@@ -345,7 +354,7 @@ export default async function SheetPage({
                     to={toId ?? ""}
                   />
                   {fromSnap?.isBaseline ? (
-                    <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    <Badge variant="outline" className="gap-1 border-amber-300 bg-diff-move-bg font-mono text-[11px] text-diff-move-fg dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                       <Clock className="size-3" /> since last collection
                     </Badge>
                   ) : (
@@ -356,14 +365,10 @@ export default async function SheetPage({
                       <ArrowUpRight className="size-3" /> diff since last collection
                     </Link>
                   )}
-                  <span className="ml-auto hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
-                    <ChevronRight className="size-3" />
-                    rows matched by{" "}
-                    {diff.summary.keyColumnHeader ? `“${diff.summary.keyColumnHeader}”` : "content"}
-                  </span>
                 </div>
                 <DiffView
                   result={diff}
+                  tabTitle={activeTab.title}
                   fromLabel={fromSnap ? absoluteTime(fromSnap.createdAt) : "?"}
                   toLabel={toSnap ? absoluteTime(toSnap.createdAt) : "?"}
                 />
