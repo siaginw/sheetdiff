@@ -16,7 +16,9 @@ export async function GET(req: Request) {
   if (process.env.ENABLE_DEMO !== "1") {
     return NextResponse.redirect(new URL("/?error=demo-disabled", url.origin));
   }
-  const rows = await db.select().from(users).where(eq(users.googleSub, "smoke-fake-sub")).limit(1);
+  const asViewer = url.searchParams.get("as") === "viewer";
+  const sub = asViewer ? "viewer-fake-sub" : "smoke-fake-sub";
+  const rows = await db.select().from(users).where(eq(users.googleSub, sub)).limit(1);
   const demo = rows[0];
   if (!demo) return NextResponse.redirect(new URL("/?error=oauth-failed", url.origin));
 

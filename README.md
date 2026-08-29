@@ -70,7 +70,9 @@ npm run seed-demo
 This seeds a fake "US2 Daily Production" sheet whose snapshots tell a real audit story — a
 wrong ending station (15741 → 15743, the 2 ft gap), a shot entered twice as plow *and* bore,
 a survey-notation correction (164+80 → 164+82), and a shot stranded in two tabs for the
-cross-tab check to catch. `ENABLE_DEMO` is opt-in and should stay off on any real deployment.
+cross-tab check to catch. It also seeds a demo *viewer* — sign in at `/auth/demo?as=viewer`
+to see exactly what a shared teammate (your data collector) sees. `ENABLE_DEMO` is opt-in and
+should stay off on any real deployment.
 
 ## Self-hosting (always-on)
 
@@ -168,6 +170,10 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 - **Self-maintaining data** — automatic nightly backups (`data/backups/`, keep 14 by default)
   and snapshot retention (keep the newest 200 per tab, baselines always kept). Both tunable via
   `SHEETDIFF_KEEP_SNAPSHOTS` / `SHEETDIFF_BACKUPS` in `.env`.
+- **Sharing** — account menu → *Share access…*: add teammates by email. When they sign in with
+  that Google account they see your sheets, read diffs and audit notes, tick changes off as
+  entered, and mark collections — the exact workflow of the person collecting your data —
+  while all destructive controls (schedules, imports, deletes, settings) stay owner-only.
 
 ## Development
 

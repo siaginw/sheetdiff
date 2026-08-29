@@ -91,8 +91,16 @@ db.prepare(
   now - 20 * HOUR,
 );
 
-const tabCache = new Map();
 
+
+// viewer demo user: member of the owner's workspace (sign in at /auth/demo?as=viewer)
+const viewerId = crypto.randomUUID();
+db.prepare(
+  "INSERT INTO users (id, google_sub, email, name, avatar_url, tokens_enc, created_at) VALUES (?,?,?,?,?,?,?)",
+).run(viewerId, "viewer-fake-sub", "viewer@test.local", "Erin (viewer)", null, "not-real-tokens", now);
+db.prepare(
+  "INSERT INTO members (id, owner_user_id, email, created_at) VALUES (?,?,?,?)",
+).run(crypto.randomUUID(), userId, "viewer@test.local", now);
 
 console.log("SEED_OK");
 console.log(

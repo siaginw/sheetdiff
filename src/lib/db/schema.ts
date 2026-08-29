@@ -122,3 +122,23 @@ export const changeAcks = sqliteTable(
 
 export type Note = typeof notes.$inferSelect;
 export type ChangeAck = typeof changeAcks.$inferSelect;
+
+/**
+ * Sharing: a user (matched by Google account email) gets viewer access to
+ * EVERYTHING an owner shares — dashboards, diffs, audit notes, acks, marking
+ * collections. Owners keep all mutating controls.
+ */
+export const members = sqliteTable(
+  "members",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => [uniqueIndex("members_owner_email_idx").on(t.ownerUserId, t.email)],
+);
+
+export type Member = typeof members.$inferSelect;

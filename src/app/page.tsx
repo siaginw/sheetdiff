@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq, inArray } from "drizzle-orm";
+
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,11 +13,13 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
 import { relativeTime, scheduleLabel } from "@/lib/format";
 import { getPendingChanges } from "@/lib/pending";
+import { listAccessibleSpreadsheets } from "@/lib/access";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "google-not-configured":
@@ -275,11 +277,7 @@ export default async function Home({
 
   if (!user) return <Landing error={error} />;
 
-  const sheets = await db
-    .select()
-    .from(spreadsheets)
-    .where(eq(spreadsheets.userId, user.id))
-    .orderBy(desc(spreadsheets.createdAt));
+  const sheets = await listAccessibleSpreadsheets(user);
 
   const statuses = new Map<string, SheetStatus>();
   for (const sheet of sheets) {

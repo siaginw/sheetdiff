@@ -29,12 +29,13 @@ import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
 import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
 import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots, notes, changeAcks } from "@/lib/db/schema";
+import { tabs, snapshots, notes, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { computeIntroductions, isResolved } from "@/lib/sync";
+import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
@@ -56,9 +57,10 @@ export default async function SheetPage({
   const { id } = await params;
   const sp = await searchParams;
 
-  const sheetRows = await db.select().from(spreadsheets).where(eq(spreadsheets.id, id));
-  const sheet = sheetRows[0];
-  if (!sheet || sheet.userId !== user.id) notFound();
+  const access = await getSheetAccess(id, user);
+  if (!access) notFound();
+  const sheet = access.sheet;
+  const isOwner = access.role === "owner";
 
   const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id)).orderBy(tabs.position);
   if (allTabs.length === 0) notFound();
@@ -266,6 +268,13 @@ export default async function SheetPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {isOwner ? (
+              <ImportDialog
+                spreadsheetId={sheet.id}
+                tabs={allTabs.filter((t) => t.tracked).map((t) => ({ id: t.id, title: t.title }))}
+              />
+            ) : null}
+            {isOwner ? <ScheduleDialog sheet={sheet} /> : null}
             {toSnap ? (
               <form action={setBaseline}>
                 <input type="hidden" name="spreadsheetId" value={sheet.id} />
@@ -287,17 +296,14 @@ export default async function SheetPage({
                 </Button>
               </form>
             ) : null}
-            <ScheduleDialog sheet={sheet} />
-            <ImportDialog
-              spreadsheetId={sheet.id}
-              tabs={allTabs.filter((t) => t.tracked).map((t) => ({ id: t.id, title: t.title }))}
-            />
+            {isOwner ? (
             <form action={snapshotNow}>
               <input type="hidden" name="spreadsheetId" value={sheet.id} />
               <Button type="submit" size="sm">
                 <Camera className="size-4" /> Snapshot now
               </Button>
             </form>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -313,8 +319,12 @@ export default async function SheetPage({
                 <DropdownMenuItem render={<a href={sheet.url} target="_blank" rel="noreferrer" />}>
                   <ExternalLink /> Open in Google Sheets
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DeleteSheetDialog spreadsheetId={sheet.id} title={sheet.title} />
+                {isOwner ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DeleteSheetDialog spreadsheetId={sheet.id} title={sheet.title} />
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -474,7 +484,7 @@ export default async function SheetPage({
                 );
               })}
               <div className="ml-auto pb-2">
-                <TabSettingsDialog
+                {isOwner ? <TabSettingsDialog
                   spreadsheetId={sheet.id}
                   tabId={activeTab.id}
                   tabTitle={activeTab.title}
@@ -482,7 +492,7 @@ export default async function SheetPage({
                   keyColumn={activeTab.keyColumn}
                   tracked={activeTab.tracked}
                   detectedKey={detectedKey}
-                />
+                /> : null}
               </div>
             </div>
 

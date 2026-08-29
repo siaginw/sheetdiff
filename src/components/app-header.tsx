@@ -3,6 +3,8 @@ import { GitCompareArrows, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DigestSettingsDialog } from "@/components/sheet/digest-settings";
+import { ShareDialog } from "@/components/sheet/share-dialog";
+import { listMembers } from "@/lib/access";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +16,8 @@ import {
 import { logout } from "@/lib/actions";
 import type { User } from "@/lib/db/schema";
 
-export function AppHeader({ user }: { user: User | null }) {
+export async function AppHeader({ user }: { user: User | null }) {
+  const memberList = user ? await listMembers(user.id) : [];
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -57,6 +60,7 @@ export function AppHeader({ user }: { user: User | null }) {
                   digestTime={user.digestTime ?? "07:00"}
                   digestDay={user.digestDay ?? null}
                 />
+                <ShareDialog members={memberList.map((m) => ({ id: m.id, email: m.email }))} />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
                   <form action={logout} className="w-full">

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import Papa from "papaparse";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, notes as notesTable } from "@/lib/db/schema";
+import { tabs, notes as notesTable } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
+import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
 import { csvSafe } from "@/lib/csv";
@@ -20,11 +21,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const sheetRows = await db.select().from(spreadsheets).where(eq(spreadsheets.id, id));
-  const sheet = sheetRows[0];
-  if (!sheet || sheet.userId !== user.id) {
+  const access = await getSheetAccess(id, user);
+  if (!access) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  const sheet = access.sheet;
 
   const tracked = (await db.select().from(tabs).where(eq(tabs.spreadsheetId, id))).filter((t) => t.tracked);
   if (tracked.length === 0) {

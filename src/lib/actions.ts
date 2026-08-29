@@ -12,12 +12,15 @@ import { parseSpreadsheetId, fetchSpreadsheetMeta } from "./google";
 import { captureSnapshot, computeNextRun, toSnapshotData, encodeSnapshot } from "./snapshots";
 import { setAck } from "./sync";
 import { parseImportFile } from "./import";
-import { notes as notesTable, users } from "./db/schema";
+import { getSheetAccess } from "./access";
+import { notes as notesTable, users, members } from "./db/schema";
 
-async function requireUserId(): Promise<string> {
+async function requireUser(): Promise<typeof users.$inferSelect> {
   const id = await getSessionUserId();
   if (!id) redirect("/");
-  return id;
+  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  if (!rows[0]) redirect("/");
+  return rows[0];
 }
 
 function str(fd: FormData, key: string): string {
@@ -48,9 +51,30 @@ async function requireOwnedTab(tabId: string, userId: string) {
   return row;
 }
 
+/** Access for shared actions: owner OR viewer (member by email). */
+async function requireSharedSpreadsheet(spreadsheetId: string, user: { id: string; email: string | null }) {
+  const access = await getSheetAccess(spreadsheetId, user);
+  if (!access) throw new Error("No access to this sheet");
+  return access;
+}
+
+async function requireSharedTab(tabId: string, user: { id: string; email: string | null }) {
+  const rows = await db
+    .select({ tab: tabs, sheet: spreadsheets })
+    .from(tabs)
+    .innerJoin(spreadsheets, eq(tabs.spreadsheetId, spreadsheets.id))
+    .where(eq(tabs.id, tabId));
+  const row = rows[0];
+  if (!row) throw new Error("No such tab");
+  const access = await getSheetAccess(row.sheet.id, user);
+  if (!access) throw new Error("No access to this tab");
+  return { ...row, ...access };
+}
+
 /** Add a spreadsheet and take the first snapshot immediately. */
 export async function startTracking(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
+  const userId = user.id;
 
   const googleId = parseSpreadsheetId(str(fd, "url"));
   if (!googleId) redirect("/sheets/new?error=bad-url");
@@ -99,20 +123,21 @@ export async function startTracking(fd: FormData): Promise<void> {
 }
 
 export async function snapshotNow(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const id = str(fd, "spreadsheetId");
-  await requireOwnedSpreadsheet(id, userId);
+  await requireOwnedSpreadsheet(id, user.id);
   await captureSnapshot(id, "manual");
   revalidatePath(`/sheets/${id}`);
   revalidatePath("/");
 }
 
-/** Mark a whole snapshot run as the "collected" baseline (per-sheet unique). */
+/** Mark a whole snapshot run as the "collected" baseline (per-sheet unique).
+ *  Owners AND viewers (the person doing the collecting) may set it. */
 export async function setBaseline(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const runId = str(fd, "runId");
-  await requireOwnedSpreadsheet(spreadsheetId, userId);
+  await requireSharedSpreadsheet(spreadsheetId, user);
 
   const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, spreadsheetId));
   const tabIds = sheetTabs.map((t) => t.id);
@@ -130,11 +155,11 @@ export async function setBaseline(fd: FormData): Promise<void> {
 }
 
 export async function updateSchedule(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const id = str(fd, "spreadsheetId");
   const kind = (str(fd, "kind") || "off") as ScheduleKind;
 
-  const sheet = await requireOwnedSpreadsheet(id, userId);
+  const sheet = await requireOwnedSpreadsheet(id, user.id);
 
   const updated = {
     scheduleKind: kind,
@@ -152,11 +177,11 @@ export async function updateSchedule(fd: FormData): Promise<void> {
 }
 
 export async function updateTabSettings(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const tabId = str(fd, "tabId");
   const key = str(fd, "keyColumn"); // "auto" | "0" | "1" ...
-  await requireOwnedTab(tabId, userId);
+  await requireOwnedTab(tabId, user.id);
   await db
     .update(tabs)
     .set({
@@ -169,12 +194,40 @@ export async function updateTabSettings(fd: FormData): Promise<void> {
 }
 
 export async function removeSheet(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const id = str(fd, "spreadsheetId");
-  await requireOwnedSpreadsheet(id, userId);
+  await requireOwnedSpreadsheet(id, user.id);
   await db.delete(spreadsheets).where(eq(spreadsheets.id, id));
   revalidatePath("/");
   redirect("/");
+}
+
+/* ------------------------------------------------------------------ */
+/* sharing                                                             */
+/* ------------------------------------------------------------------ */
+
+/** Grant viewer access (matched at Google sign-in by email) to ALL of the
+ *  signed-in owner's sheets. */
+export async function addMembers(fd: FormData): Promise<void> {
+  const user = await requireUser();
+  const emails = str(fd, "emails")
+    .split(/[\s,;]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e !== (user.email ?? "").toLowerCase());
+  for (const email of [...new Set(emails)]) {
+    await db
+      .insert(members)
+      .values({ id: crypto.randomUUID(), ownerUserId: user.id, email, createdAt: Date.now() })
+      .onConflictDoNothing();
+  }
+  revalidatePath("/");
+}
+
+export async function removeMember(fd: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = str(fd, "id");
+  await db.delete(members).where(and(eq(members.id, id), eq(members.ownerUserId, user.id)));
+  revalidatePath("/");
 }
 
 export async function logout(): Promise<void> {
@@ -188,11 +241,11 @@ export async function logout(): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 export async function addNote(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const body = str(fd, "body").trim();
   if (!body) return;
-  await requireOwnedSpreadsheet(spreadsheetId, userId);
+  await requireSharedSpreadsheet(spreadsheetId, user);
   const tabId = str(fd, "tabId") || null;
   const runId = str(fd, "runId") || null;
   const rowKey = str(fd, "rowKey") || null;
@@ -210,11 +263,14 @@ export async function addNote(fd: FormData): Promise<void> {
 }
 
 export async function deleteNote(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const id = str(fd, "id");
   const spreadsheetId = str(fd, "spreadsheetId");
-  await requireOwnedSpreadsheet(spreadsheetId, userId);
-  await db.delete(notesTable).where(eq(notesTable.id, id));
+  await requireSharedSpreadsheet(spreadsheetId, user);
+  // scope by spreadsheetId too: access to one sheet must never delete another's note
+  await db
+    .delete(notesTable)
+    .where(and(eq(notesTable.id, id), eq(notesTable.spreadsheetId, spreadsheetId)));
   revalidatePath(`/sheets/${spreadsheetId}`);
 }
 
@@ -223,12 +279,12 @@ export async function deleteNote(fd: FormData): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 export async function toggleAck(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const tabId = str(fd, "tabId");
   const rowKey = str(fd, "rowKey");
   const on = str(fd, "on") === "1";
-  await requireOwnedTab(tabId, userId);
+  await requireSharedTab(tabId, user);
   await setAck(tabId, rowKey, on);
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
@@ -239,7 +295,7 @@ export async function toggleAck(fd: FormData): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 export async function saveDigestSettings(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const userId = (await requireUser()).id;
   const email = str(fd, "digestEmail").trim();
   const time = /^\d{1,2}:\d{2}$/.test(str(fd, "digestTime")) ? str(fd, "digestTime") : "07:00";
   const dayRaw = str(fd, "digestDay"); // "daily" | "0".."6"
@@ -261,7 +317,7 @@ export async function saveDigestSettings(fd: FormData): Promise<void> {
  * tab (or the only tracked tab).
  */
 export async function importGis(fd: FormData): Promise<void> {
-  const userId = await requireUserId();
+  const userId = (await requireUser()).id;
   const spreadsheetId = str(fd, "spreadsheetId");
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) {

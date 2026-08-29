@@ -2,10 +2,11 @@ import { render } from "@react-email/render";
 import nodemailer from "nodemailer";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "./db";
-import { spreadsheets, tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
+import { tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
 import { decodeSnapshot } from "./snapshots";
 import { runChecks, computeFootage } from "./checks";
 import { getPendingChanges } from "./pending";
+import { listAccessibleSpreadsheets } from "./access";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
 import { relativeTime } from "./format";
 
@@ -15,11 +16,9 @@ export function smtpConfigured(): boolean {
 
 /** Assemble the digest content for one user's sheets. */
 export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> {
-  const sheets = await db
-    .select()
-    .from(spreadsheets)
-    .where(eq(spreadsheets.userId, userId))
-    .orderBy(desc(spreadsheets.createdAt));
+  const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!userRows[0]) return [];
+  const sheets = await listAccessibleSpreadsheets(userRows[0]);
 
   const out: DigestSheet[] = [];
   for (const sheet of sheets) {
