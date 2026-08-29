@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStation, detectStationColumns, runChecks } from "./checks";
+import { parseStation, detectStationColumns, runChecks, computeFootage } from "./checks";
 import type { SnapshotData } from "./diff/engine";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
@@ -44,6 +44,38 @@ describe("detectStationColumns", () => {
   });
 });
 
+describe("computeFootage", () => {
+  it("sums footage across mixed station formats", () => {
+    const s = snap(["Shot", "Start Station", "End Station", "Type"], [
+      ["S1", "4+47", "16+82", "plow"],   // 1682 - 447 = 1235
+      ["S2", "16+82", "15743", "bore"],  // 15743 - 1682 = 14061
+    ]);
+    const f = computeFootage(s);
+    expect(f.ft).toBe(1235 + 14061);
+    expect(f.shots).toBe(2);
+    expect(f.invalid).toBe(0);
+    expect(f.stations).toEqual({ start: 1, end: 2 });
+  });
+
+  it("skips backwards and unreadable rows, counting them invalid", () => {
+    const s = snap(["Shot", "Start Station", "End Station"], [
+      ["S1", "0", "500"],
+      ["S2", "600", "100"],   // backwards
+      ["S3", "n/a", "900"],   // unreadable
+    ]);
+    const f = computeFootage(s);
+    expect(f.ft).toBe(500);
+    expect(f.shots).toBe(1);
+    expect(f.invalid).toBe(2);
+  });
+
+  it("returns zeros when no station columns exist", () => {
+    const f = computeFootage(snap(["Crew", "Task"], [["Jake", "Framing"]]));
+    expect(f.ft).toBe(0);
+    expect(f.stations).toBeNull();
+  });
+});
+
 describe("runChecks", () => {
   const chain = snap(["Shot", "Start Station", "End Station", "Type"], [
     ["S1", "0", "500", "plow"],
@@ -83,6 +115,15 @@ describe("runChecks", () => {
       ["S2", "16+80", "16+82"], // exactly continuous in survey notation
     ]);
     expect(runChecks([{ tabTitle: "PE1", data: mixed, keyColumn: 0 }])).toEqual([]);
+  });
+
+  it("flags rows that run backwards", () => {
+    const backwards = snap(["Shot", "Start Station", "End Station"], [
+      ["S1", "0", "500"],
+      ["S2", "600", "100"], // start > end
+    ]);
+    const findings = runChecks([{ tabTitle: "PE1", data: backwards, keyColumn: 0 }]);
+    expect(findings.some((f) => f.message.includes("runs backwards"))).toBe(true);
   });
 
   it("flags duplicate keys in one tab (bore + plow double entry)", () => {

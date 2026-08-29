@@ -81,6 +81,33 @@ export function detectStationColumns(data: SnapshotData): { start: number; end: 
   return null;
 }
 
+export interface FootageTotal {
+  /** summed footage (end − start) over parseable, forward-running rows */
+  ft: number;
+  /** rows included in the total */
+  shots: number;
+  /** rows whose stations didn't parse or ran backwards */
+  invalid: number;
+}
+
+/** Sum a tab's footage using the detected station columns. */
+export function computeFootage(data: SnapshotData): FootageTotal & { stations: { start: number; end: number } | null } {
+  const stations = detectStationColumns(data);
+  const out: FootageTotal & { stations: { start: number; end: number } | null } = { ft: 0, shots: 0, invalid: 0, stations };
+  if (!stations) return out;
+  for (const r of data.rows) {
+    const s = parseStation(r[stations.start]);
+    const e = parseStation(r[stations.end]);
+    if (s === null || e === null || e < s) {
+      out.invalid++;
+      continue;
+    }
+    out.ft += e - s;
+    out.shots++;
+  }
+  return out;
+}
+
 /** Run all checks across the given tabs (latest snapshots). */
 export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
   const findings: CheckFinding[] = [];
@@ -97,6 +124,18 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
         startRaw: norm(r[start]),
         endRaw: norm(r[end]),
       }));
+      // a row running backwards is its own finding
+      for (const p of parsed) {
+        if (p.start !== null && p.end !== null && p.end < p.start) {
+          findings.push({
+            kind: "gap",
+            severity: "error",
+            tabTitle,
+            message: `row ${p.i + 1} runs backwards: start ${p.startRaw} > end ${p.endRaw}`,
+            rows: [p.i + 1],
+          });
+        }
+      }
       for (let k = 0; k + 1 < parsed.length; k++) {
         const cur = parsed[k];
         const next = parsed[k + 1];

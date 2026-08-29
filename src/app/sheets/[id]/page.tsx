@@ -8,6 +8,7 @@ import {
   Camera,
   CheckCircle2,
   Clock,
+  Download,
   ExternalLink,
   MoreHorizontal,
   Star,
@@ -32,7 +33,7 @@ import { spreadsheets, tabs, snapshots, notes, changeAcks } from "@/lib/db/schem
 import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
-import { runChecks, type CheckFinding, type TabChecksInput } from "@/lib/checks";
+import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
@@ -166,6 +167,9 @@ export default async function SheetPage({
 
   // ---- checks on latest snapshots of every tracked tab ----
   const checkFindings: CheckFinding[] = [];
+  let footageNow: number | null = null;
+  let footageDelta: number | null = null;
+  let footageBaseLabel = "since previous snapshot";
   if (latestData) {
     const inputs: TabChecksInput[] = [];
     for (const t of allTabs.filter((t) => t.tracked)) {
@@ -181,6 +185,19 @@ export default async function SheetPage({
       }
     }
     checkFindings.push(...runChecks(inputs));
+
+    // footage ledger for the ACTIVE tab: total + delta since collection
+    const activeFootage = computeFootage(latestData);
+    if (activeFootage.stations) {
+      footageNow = activeFootage.ft;
+      const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
+      const base = baselineSnap ?? recent[1] ?? null;
+      if (base) {
+        const baseFootage = computeFootage(decodeSnapshot(base.dataBlob));
+        footageDelta = activeFootage.ft - baseFootage.ft;
+        footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
+      }
+    }
   }
 
   const trackedCount = allTabs.filter((t) => t.tracked).length;
@@ -269,6 +286,9 @@ export default async function SheetPage({
                 }
               />
               <DropdownMenuContent align="end">
+                <DropdownMenuItem render={<a href={`${sheet.id}/export`} />}>
+                  <Download /> Download changes to enter (CSV)
+                </DropdownMenuItem>
                 <DropdownMenuItem render={<a href={sheet.url} target="_blank" rel="noreferrer" />}>
                   <ExternalLink /> Open in Google Sheets
                 </DropdownMenuItem>
@@ -387,6 +407,29 @@ export default async function SheetPage({
 
           {/* diff panel */}
           <section className="min-w-0">
+            {/* footage ledger */}
+            {footageNow !== null ? (
+              <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-2.5 font-mono text-xs">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">footage</span>
+                <span className="text-sm font-semibold">
+                  {footageNow.toLocaleString()} <span className="font-normal text-muted-foreground">ft</span>
+                </span>
+                <span className="text-muted-foreground">· {activeTab.title}</span>
+                {footageDelta !== null && footageDelta !== 0 ? (
+                  <span
+                    className={`font-semibold ${
+                      footageDelta > 0 ? "text-diff-add-fg" : "text-diff-del-fg"
+                    }`}
+                  >
+                    {footageDelta > 0 ? "+" : "−"}
+                    {Math.abs(footageDelta).toLocaleString()} ft {footageBaseLabel}
+                  </span>
+                ) : footageDelta === 0 ? (
+                  <span className="text-muted-foreground">unchanged {footageBaseLabel}</span>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* gap linter */}
             {timeline.length > 0 ? <ChecksPanel findings={checkFindings} /> : null}
 

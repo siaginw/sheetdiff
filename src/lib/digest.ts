@@ -5,7 +5,7 @@ import { db } from "./db";
 import { spreadsheets, tabs, snapshots, changeAcks, notes as notesTable, users, type User } from "./db/schema";
 import { decodeSnapshot } from "./snapshots";
 import { diffSnapshots } from "./diff/engine";
-import { runChecks } from "./checks";
+import { runChecks, computeFootage } from "./checks";
 import { isResolved } from "./sync";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
 import { relativeTime } from "./format";
@@ -44,6 +44,7 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
       checkCount: 0,
       topChecks: [],
       notes: [],
+      footageDelta: 0,
     };
 
     for (const tab of tracked) {
@@ -65,6 +66,11 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
         fromWhen: baseline.createdAt,
         toWhen: latest.createdAt,
       });
+
+      // footage delta since collection for this tab
+      const nowF = computeFootage(decodeSnapshot(latest.dataBlob));
+      const baseF = computeFootage(decodeSnapshot(baseline.dataBlob));
+      if (nowF.stations) digest.footageDelta += nowF.ft - baseF.ft;
       digest.detail.added += diff.summary.addedRows;
       digest.detail.removed += diff.summary.removedRows;
       digest.detail.changed += diff.summary.changedRows;

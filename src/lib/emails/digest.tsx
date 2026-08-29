@@ -26,6 +26,8 @@ export interface DigestSheet {
   checkCount: number;
   topChecks: string[];
   notes: { body: string; when: string }[];
+  /** total footage change since collection, when station columns exist */
+  footageDelta: number;
 }
 
 export function DigestEmail({
@@ -81,6 +83,15 @@ export function DigestEmail({
                 ) : (
                   <span style={{ color: "#1a7f37" }}>✓ up to date since collection</span>
                 )}
+                {s.footageDelta !== 0 ? (
+                  <>
+                    {" · "}
+                    <span style={{ color: s.footageDelta > 0 ? "#1a7f37" : "#cf222e" }}>
+                      {s.footageDelta > 0 ? "+" : "−"}
+                      {Math.abs(s.footageDelta).toLocaleString()} ft footage
+                    </span>
+                  </>
+                ) : null}
               </Text>
 
               {s.sampleChanges.length > 0 ? (

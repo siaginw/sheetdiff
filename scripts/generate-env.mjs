@@ -42,3 +42,12 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 fs.writeFileSync(envPath, env, "utf8");
 console.log("Created .env with a random APP_SECRET.");
 console.log("Next: add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see README.md).");
+
+// create the database too, so `npm run dev` works right after
+const { spawnSync } = await import("node:child_process");
+const push = spawnSync("npx", ["drizzle-kit", "push"], { stdio: "inherit", shell: true });
+if (push.status !== 0) {
+  console.log("Database creation skipped — run `npm run db:push` manually.");
+} else {
+  console.log("Database ready (data/sheetdiff.db).");
+}

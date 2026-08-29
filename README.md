@@ -35,8 +35,11 @@ on the dashboard.
   row 4 starts at 15743`), duplicate shots, and the same key stranded in two tabs — caught on
   every snapshot. Understands plain feet and survey notation (`4+47`).
 - **Audit workflow.** Attach notes explaining *why* things changed; tick changes off as
-  *entered downstream*; diff a GIS export (CSV/XLSX) against the sheet; get a daily digest
-  email with everything still waiting to be collected.
+  *entered downstream*; download the unresolved changes as a CSV worklist; diff a GIS export
+  (CSV/XLSX) against the sheet; get a daily digest email with everything still waiting to be
+  collected.
+- **Footage ledger.** Per-tab footage totals from your station columns, with the change since
+  last collection — when a correction quietly moves your totals, you see the number move.
 - **Scheduled or manual snapshots.** Hourly / daily at a time / weekly, or "Snapshot now".
 - **GitHub-style UI.** Red/green `−/+` lines, changed-value annotations, diffstat blocks, a
   git-log timeline, code/table layouts, dark mode.
@@ -159,9 +162,9 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   mismatches, type disagreements. Excel tabs are matched to tracked tabs by name; CSV maps
   to a tab you pick. Imports appear in the timeline as `⭳ GIS import` entries.
 - **Daily digest email** — account menu → *Daily digest…*: each morning, an email with what
-  changed since the last collection, unresolved changes, check findings, and audit notes.
-  Needs SMTP settings in `.env` (Gmail App Password works — see the commented block in `.env`).
-  Sent while the app is running.
+  changed since the last collection, unresolved changes, check findings, footage movement, and
+  audit notes. Needs SMTP settings in `.env` (Gmail App Password works — see the commented
+  block in `.env`). Sent while the app is running.
 
 ## Development
 
