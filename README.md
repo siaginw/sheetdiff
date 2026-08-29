@@ -161,10 +161,13 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   diffs it against the latest sheet snapshot: shots missing on either side, station
   mismatches, type disagreements. Excel tabs are matched to tracked tabs by name; CSV maps
   to a tab you pick. Imports appear in the timeline as `⭳ GIS import` entries.
-- **Daily digest email** — account menu → *Daily digest…*: each morning, an email with what
-  changed since the last collection, unresolved changes, check findings, footage movement, and
-  audit notes. Needs SMTP settings in `.env` (Gmail App Password works — see the commented
-  block in `.env`). Sent while the app is running.
+- **Daily/weekly digest email** — account menu → *Digest email…*: pick daily or a weekday, and
+  each send includes what changed since the last collection, unresolved changes, check findings,
+  footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works —
+  see the commented block). Sent while the app is running.
+- **Self-maintaining data** — automatic nightly backups (`data/backups/`, keep 14 by default)
+  and snapshot retention (keep the newest 200 per tab, baselines always kept). Both tunable via
+  `SHEETDIFF_KEEP_SNAPSHOTS` / `SHEETDIFF_BACKUPS` in `.env`.
 
 ## Development
 

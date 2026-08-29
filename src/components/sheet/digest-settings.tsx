@@ -15,36 +15,57 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { saveDigestSettings } from "@/lib/actions";
 
-/** Daily digest email settings (address + send time). */
+const DAY_ITEMS = [
+  { value: "daily", label: "Every day" },
+  { value: "1", label: "Every Monday" },
+  { value: "2", label: "Every Tuesday" },
+  { value: "3", label: "Every Wednesday" },
+  { value: "4", label: "Every Thursday" },
+  { value: "5", label: "Every Friday" },
+  { value: "6", label: "Every Saturday" },
+  { value: "0", label: "Every Sunday" },
+];
+
+/** Daily/weekly digest email settings (address + cadence + send time). */
 export function DigestSettingsDialog({
   digestEmail,
   digestTime,
+  digestDay,
 }: {
   digestEmail: string | null;
   digestTime: string;
+  digestDay: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(digestEmail ?? "");
+  const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
           <DropdownMenuItem onSelect={undefined} onClick={() => setOpen(true)}>
-            <Mail /> Daily digest…
+            <Mail /> Digest email…
           </DropdownMenuItem>
         }
       />
       <DialogContent className="sm:max-w-md">
         <form action={saveDigestSettings} onSubmit={() => setOpen(false)}>
           <DialogHeader>
-            <DialogTitle>Daily digest email</DialogTitle>
+            <DialogTitle>Digest email</DialogTitle>
             <DialogDescription>
-              Each morning: what changed since the last collection, unresolved changes, check
-              findings, and audit notes — the email version of the dashboard. Requires SMTP
-              settings in .env (see README). Clear the address to turn it off.
+              A scheduled email with what changed since the last collection, unresolved changes,
+              check findings, footage movement, and audit notes. Requires SMTP settings in .env
+              (see README). Clear the address to turn it off.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -59,6 +80,28 @@ export function DigestSettingsDialog({
                 placeholder="erin@company.com"
                 className="col-span-4"
               />
+            </div>
+            <div className="grid grid-cols-5 items-center gap-2">
+              <Label className="col-span-1 text-right text-sm">How often</Label>
+              <input type="hidden" name="digestDay" value={day} />
+              <Select
+                items={DAY_ITEMS}
+                value={day}
+                onValueChange={(v) => {
+                  if (typeof v === "string") setDay(v);
+                }}
+              >
+                <SelectTrigger className="col-span-4">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DAY_ITEMS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-5 items-center gap-2">
               <Label htmlFor="digest-time" className="col-span-1 text-right text-sm">At</Label>

@@ -35,6 +35,18 @@ async function loadDue(now: number): Promise<Spreadsheet[]> {
 }
 
 async function tick() {
+  if (ticking) return; // a slow Google fetch must not double-capture
+  ticking = true;
+  try {
+    await tickInner();
+  } finally {
+    ticking = false;
+  }
+}
+
+let ticking = false;
+
+async function tickInner() {
   const now = Date.now();
   let due: Spreadsheet[] = [];
   try {
@@ -62,7 +74,7 @@ async function tick() {
     }
   }
 
-  // daily digest emails
+  // daily digest emails + maintenance (retention/backup)
   try {
     const { usersDueForDigest, sendDigestTo } = await import("./digest");
     const { db: ddb } = await import("./db");
@@ -71,19 +83,24 @@ async function tick() {
     for (const u of dueUsers) {
       try {
         const result = await sendDigestTo(u);
-        if (result.sent) {
+        // bump the cooldown for any completed evaluation — otherwise users with
+        // nothing to send get re-evaluated every single minute
+        if (result.sent || result.reason === "smtp-not-configured" || result.reason === "no-email" || result.reason === "no-sheets") {
           await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
+        }
+        if (result.sent) {
           console.log(`[scheduler] digest sent to ${u.digestEmail}`);
         } else if (result.reason === "smtp-not-configured") {
-          // avoid re-checking every minute
-          await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
           console.warn("[scheduler] digest skipped: SMTP_HOST/SMTP_USER/SMTP_PASS not configured");
         }
       } catch (err) {
         console.error(`[scheduler] digest for ${u.digestEmail} failed:`, err instanceof Error ? err.message : err);
       }
     }
+
+    const { maintenanceDue, runMaintenance } = await import("./maintenance");
+    if (maintenanceDue(new Date(now))) await runMaintenance();
   } catch (err) {
-    console.error("[scheduler] digest pass failed:", err);
+    console.error("[scheduler] digest/maintenance pass failed:", err);
   }
 }

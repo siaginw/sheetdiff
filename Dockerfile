@@ -15,8 +15,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
-# snapshots live here — mount a volume
+RUN npm run build \
+  # snapshots live in /app/data — mount a volume; run as the non-root node user
+  && mkdir -p /app/data && chown -R node:node /app
+USER node
 ENV DATABASE_PATH=/app/data/sheetdiff.db
 VOLUME /app/data
 EXPOSE 3000

@@ -1,12 +1,11 @@
 import { render } from "@react-email/render";
 import nodemailer from "nodemailer";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "./db";
-import { spreadsheets, tabs, snapshots, changeAcks, notes as notesTable, users, type User } from "./db/schema";
+import { spreadsheets, tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
 import { decodeSnapshot } from "./snapshots";
-import { diffSnapshots } from "./diff/engine";
 import { runChecks, computeFootage } from "./checks";
-import { isResolved } from "./sync";
+import { getPendingChanges } from "./pending";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
 import { relativeTime } from "./format";
 
@@ -28,12 +27,6 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
     const tracked = sheetTabs.filter((t) => t.tracked);
     if (tracked.length === 0) continue;
 
-    const all = await db
-      .select()
-      .from(snapshots)
-      .where(inArray(snapshots.tabId, tracked.map((t) => t.id)))
-      .orderBy(desc(snapshots.createdAt));
-
     const digest: DigestSheet = {
       title: sheet.title,
       url: sheet.url,
@@ -48,52 +41,62 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
     };
 
     for (const tab of tracked) {
-      const tabSnaps = all.filter((s) => s.tabId === tab.id && s.trigger !== "import");
-      if (tabSnaps.length === 0) continue;
-      const latest = tabSnaps[0];
-      const baseline = tabSnaps.find((s) => s.isBaseline && s.createdAt <= latest.createdAt) ?? null;
+      // latest SHEET snapshot (GIS imports excluded) for checks + footage
+      const latestRows = await db
+        .select({ dataBlob: snapshots.dataBlob })
+        .from(snapshots)
+        .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
+        .orderBy(desc(snapshots.createdAt))
+        .limit(1);
+      const latestData = latestRows[0] ? decodeSnapshot(latestRows[0].dataBlob) : null;
+      if (latestData) {
+        const checkFindings = runChecks([
+          { tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null },
+        ]);
+        digest.checkCount += checkFindings.length;
+        for (const f of checkFindings.slice(0, 3)) digest.topChecks.push(`${tab.title}: ${f.message}`);
+      }
 
-      // checks on the latest snapshot
-      const checkFindings = runChecks([
-        { tabTitle: tab.title, data: decodeSnapshot(latest.dataBlob), keyColumn: tab.keyColumn ?? null },
-      ]);
-      digest.checkCount += checkFindings.length;
-      for (const f of checkFindings.slice(0, 3)) digest.topChecks.push(`${tab.title}: ${f.message}`);
-
-      if (!baseline || baseline.id === latest.id) continue;
-      const diff = diffSnapshots(decodeSnapshot(baseline.dataBlob), decodeSnapshot(latest.dataBlob), {
-        keyColumn: tab.keyColumn ?? null,
-        fromWhen: baseline.createdAt,
-        toWhen: latest.createdAt,
-      });
+      const pending = await getPendingChanges(tab);
+      if (!pending || !latestData) continue;
+      digest.detail.added += pending.counts.added;
+      digest.detail.removed += pending.counts.removed;
+      digest.detail.changed += pending.counts.changed;
+      digest.unresolved += pending.counts.unresolved;
 
       // footage delta since collection for this tab
-      const nowF = computeFootage(decodeSnapshot(latest.dataBlob));
-      const baseF = computeFootage(decodeSnapshot(baseline.dataBlob));
-      if (nowF.stations) digest.footageDelta += nowF.ft - baseF.ft;
-      digest.detail.added += diff.summary.addedRows;
-      digest.detail.removed += diff.summary.removedRows;
-      digest.detail.changed += diff.summary.changedRows;
+      const nowF = computeFootage(latestData);
+      const baselineRows = await db
+        .select({ dataBlob: snapshots.dataBlob })
+        .from(snapshots)
+        .where(
+          and(
+            eq(snapshots.tabId, tab.id),
+            eq(snapshots.isBaseline, true),
+            ne(snapshots.trigger, "import"),
+          ),
+        )
+        .orderBy(desc(snapshots.createdAt))
+        .limit(1);
+      if (baselineRows[0]) {
+        const baseF = computeFootage(decodeSnapshot(baselineRows[0].dataBlob));
+        if (nowF.stations && baseF.stations) digest.footageDelta += nowF.ft - baseF.ft;
+      }
 
-      const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, tab.id));
-      const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
-      for (const row of diff.rows) {
-        if (row.status === "unchanged" || row.status === "moved") continue;
-        if (!isResolved(ackMap, row.rowKey, latest.createdAt)) digest.unresolved++;
-        if (digest.sampleChanges.length < 12) {
-          if (row.status === "added") {
-            digest.sampleChanges.push({ tab: tab.title, description: `added: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
-          } else if (row.status === "removed") {
-            digest.sampleChanges.push({ tab: tab.title, description: `removed: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
-          } else if (row.cells.length > 0) {
-            digest.sampleChanges.push({
-              tab: tab.title,
-              description: row.cells
-                .slice(0, 3)
-                .map((c) => `${c.header}: ${c.from || "blank"} → ${c.to || "blank"}`)
-                .join(" · "),
-            });
-          }
+      for (const row of pending.unresolved) {
+        if (digest.sampleChanges.length >= 12) break;
+        if (row.status === "added") {
+          digest.sampleChanges.push({ tab: tab.title, description: `added: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
+        } else if (row.status === "removed") {
+          digest.sampleChanges.push({ tab: tab.title, description: `removed: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
+        } else if (row.cells.length > 0) {
+          digest.sampleChanges.push({
+            tab: tab.title,
+            description: row.cells
+              .slice(0, 3)
+              .map((c) => `${c.header}: ${c.from || "blank"} → ${c.to || "blank"}`)
+              .join(" · "),
+          });
         }
       }
     }
@@ -147,17 +150,23 @@ export async function sendDigestTo(user: User): Promise<{ sent: boolean; reason?
 /** All users due for their digest right now (checked every scheduler tick). */
 export async function usersDueForDigest(now = Date.now()): Promise<User[]> {
   const rows = await db.select().from(users);
+  const d = new Date(now);
   return rows.filter((u) => {
     if (!u.digestEmail) return false;
+    // weekly cadence: only due on the chosen weekday (null = daily)
+    if (u.digestDay !== null && u.digestDay !== undefined && d.getDay() !== u.digestDay) return false;
     const m = /^(\d{1,2}):(\d{2})$/.exec(u.digestTime ?? "07:00");
     if (!m) return false;
     const due = new Date(now);
     due.setHours(Number(m[1]), Number(m[2]), 0, 0);
     if (now < due.getTime()) return false;
     const last = u.lastDigestAt ?? 0;
-    // already sent today?
+    // already sent today (or, for weekly, within the last 6 days)?
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
+    if (u.digestDay !== null && u.digestDay !== undefined) {
+      return now - last > 6 * 24 * 3_600_000;
+    }
     return last < todayStart.getTime();
   });
 }

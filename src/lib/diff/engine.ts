@@ -232,11 +232,20 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
         unmatchedB.push(k);
       }
     }
-    // Leftover A rows in order, paired with leftover B rows in order.
+    // Leftover rows pair positionally, but never blank ones — a stray blank
+    // row must show as added/removed, not as a "change" from nothing.
+    const blankA = (vals: string[]) => sharedACols.every((c) => norm(vals[c]) === "");
+    const blankB = (vals: string[]) =>
+      sharedACols.every((ac) => norm(vals[cols.aToB[ac]!]) === "");
+    const leftoverA: number[] = [];
+    for (let i = 0; i < a.rows.length; i++) {
+      if (matchedA[i] === -1 && !blankA(a.rows[i])) leftoverA.push(i);
+    }
+    const leftoverB = unmatchedB.filter((k) => !blankB(b.rows[k]));
     let bi = 0;
-    for (let i = 0; i < a.rows.length && bi < unmatchedB.length; i++) {
-      if (matchedA[i] !== -1) continue;
-      const k = unmatchedB[bi++];
+    for (const i of leftoverA) {
+      if (bi >= leftoverB.length) break;
+      const k = leftoverB[bi++];
       matchB[k] = i;
       matchedA[i] = k;
     }

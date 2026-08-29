@@ -1,9 +1,12 @@
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // decompressed xlsx expands far beyond this
+
 /**
  * Parse a GIS export (CSV or .xlsx) into tab-name -> raw grid, matching the
  * shape Google Sheets returns so snapshots and diffs work unchanged.
+ * Validates size and magic bytes before handing anything to the parsers.
  */
 export async function parseImportFile(
   file: File,
@@ -11,13 +14,22 @@ export async function parseImportFile(
   const name = file.name.toLowerCase();
   const buf = Buffer.from(await file.arrayBuffer());
 
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error("File too large — exports are capped at 5 MB.");
+  }
+
   if (name.endsWith(".csv") || file.type === "text/csv") {
     const text = buf.toString("utf8");
     const parsed = Papa.parse<string[]>(text, { skipEmptyLines: "greedy" });
     return { kind: "csv", tables: { csv: parsed.data as string[][] } };
   }
 
-  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+  if (name.endsWith(".xlsx")) {
+    // real .xlsx is a zip: verify the magic before parsing (rejects renamed junk,
+    // legacy .xls masquerading as .xlsx, and polyglot files)
+    if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) {
+      throw new Error("That doesn't look like a valid .xlsx file.");
+    }
     const wb = new ExcelJS.Workbook();
     // exceljs's bundled Buffer type is stale; runtime accepts any Buffer view
     await wb.xlsx.load(buf as unknown as never);
@@ -45,5 +57,5 @@ export async function parseImportFile(
     return { kind: "xlsx", tables };
   }
 
-  throw new Error("Unsupported file type — use .csv or .xlsx");
+  throw new Error("Unsupported file type — use .csv or .xlsx (legacy .xls isn't supported).");
 }

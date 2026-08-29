@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { exchangeCode, type StoredTokens } from "@/lib/google";
-import { encryptJson, decryptJson, signValue } from "@/lib/crypto";
-import { SESSION_COOKIE } from "@/lib/session";
+import { encryptJson, decryptJson } from "@/lib/crypto";
+import { SESSION_COOKIE, signSession, SESSION_TTL_MS } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -67,17 +67,19 @@ export async function GET(req: Request) {
     }
 
     const res = NextResponse.redirect(new URL("/", url.origin));
-    res.cookies.set(SESSION_COOKIE, signValue(userId), {
+    res.cookies.set(SESSION_COOKIE, signSession(userId), {
       httpOnly: true,
       path: "/",
       sameSite: "lax",
-      // long-lived: local tool, the Google refresh token does the real work
-      maxAge: 60 * 60 * 24 * 365,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: SESSION_TTL_MS / 1000,
     });
     res.cookies.delete("sd_oauth_state");
     return res;
   } catch (err) {
-    console.error("OAuth callback failed:", err);
+    // never log the raw error object — gaxios errors embed the token-exchange
+    // body (auth code + client secret) in enumerable properties
+    console.error("OAuth callback failed:", err instanceof Error ? err.message : String(err));
     return fail("oauth-failed");
   }
 }

@@ -292,6 +292,24 @@ describe("diffSnapshots", () => {
     expect(r.rows.find((x) => x.status === "changed")!.rowKey).toBe("2");
   });
 
+  it("reports a stray blank row as added/removed, never as a change from blank", () => {
+    const a = snap(["Name", "Qty"], [
+      ["Nails", "40"],
+      ["", ""], // stray blank row in A
+      ["Screws", "10"],
+    ]);
+    const b = snap(["Name", "Qty"], [
+      ["Nails", "40"],
+      ["Screws", "10"],
+      ["Bolts", "5"], // genuinely new row, no key column
+    ]);
+    const r = diffSnapshots(a, b);
+    expect(r.summary.changedRows).toBe(0);
+    expect(r.summary.addedRows).toBe(1);
+    expect(r.summary.removedRows).toBe(1);
+    expect(r.rows.find((x) => x.status === "added")!.values[0]).toBe("Bolts");
+  });
+
   it("reports an added-column value change correctly via summary", () => {
     const next = snap(["ID", "Name", "Qty", "Note"], [
       ["1", "Nails", "40", "ok"],

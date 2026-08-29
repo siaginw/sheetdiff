@@ -55,6 +55,7 @@ export function AppHeader({ user }: { user: User | null }) {
                 <DigestSettingsDialog
                   digestEmail={user.digestEmail}
                   digestTime={user.digestTime ?? "07:00"}
+                  digestDay={user.digestDay ?? null}
                 />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>

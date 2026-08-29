@@ -1,0 +1,98 @@
+import fs from "node:fs";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { desc, eq } from "drizzle-orm";
+import { db } from "./db";
+import { snapshots, tabs } from "./db/schema";
+
+/**
+ * Daily maintenance: snapshot retention + database backup.
+ * Runs from the scheduler on the first tick after 3am local time.
+ *
+ * Retention rule: per tracked tab, always keep baselines and the newest
+ * SHEETDIFF_KEEP_SNAPSHOTS non-baseline snapshots (default 200, <=0 = keep
+ * everything), but never prune a tab down below 2 non-baseline snapshots.
+ * GIS imports count toward the limit like any snapshot.
+ */
+
+const globalForMaint = globalThis as unknown as { __sheetdiffMaintDay?: string };
+
+export function maintenanceDue(now = new Date()): boolean {
+  if (now.getHours() < 3) return false;
+  const day = now.toDateString();
+  if (globalForMaint.__sheetdiffMaintDay === day) return false;
+  globalForMaint.__sheetdiffMaintDay = day;
+  return true;
+}
+
+export async function pruneSnapshots(): Promise<number> {
+  const keep = Number(process.env.SHEETDIFF_KEEP_SNAPSHOTS ?? 200);
+  if (!Number.isFinite(keep) || keep <= 0) return 0;
+
+  const allTabs = await db.select().from(tabs);
+  let deleted = 0;
+  for (const tab of allTabs) {
+    const rows = await db
+      .select({ id: snapshots.id, isBaseline: snapshots.isBaseline })
+      .from(snapshots)
+      .where(eq(snapshots.tabId, tab.id))
+      .orderBy(desc(snapshots.createdAt));
+    const nonBaseline = rows.filter((r) => !r.isBaseline);
+    if (nonBaseline.length <= Math.max(keep, 2)) continue;
+    const doomed = nonBaseline.slice(Math.max(keep, 2)).map((r) => r.id);
+    for (const id of doomed) {
+      await db.delete(snapshots).where(eq(snapshots.id, id));
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+/** Online-backup the SQLite file to data/backups/, keeping the newest N. */
+export function backupDatabase(): string | null {
+  const keep = Number(process.env.SHEETDIFF_BACKUPS ?? 14);
+  if (!Number.isFinite(keep) || keep <= 0) return null;
+
+  const dbPath = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "sheetdiff.db");
+  const dir = path.join(path.dirname(dbPath), "backups");
+  fs.mkdirSync(dir, { recursive: true });
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const dest = path.join(dir, `sheetdiff-${stamp}.db`);
+  if (fs.existsSync(dest)) return dest; // already backed up today
+
+  const sqlite = new Database(dbPath, { readonly: true });
+  try {
+    sqlite.backup(dest);
+  } finally {
+    sqlite.close();
+  }
+
+  const old = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith("sheetdiff-") && f.endsWith(".db"))
+    .sort()
+    .reverse()
+    .slice(keep);
+  for (const f of old) {
+    try {
+      fs.rmSync(path.join(dir, f));
+    } catch {
+      // best effort
+    }
+  }
+  return dest;
+}
+
+/** One maintenance pass; safe to call from the scheduler tick. */
+export async function runMaintenance(): Promise<void> {
+  try {
+    const pruned = await pruneSnapshots();
+    const backup = backupDatabase();
+    if (pruned > 0 || backup) {
+      console.log(`[maintenance] pruned ${pruned} snapshot(s)${backup ? `, backup → ${path.basename(backup)}` : ""}`);
+    }
+  } catch (err) {
+    console.error("[maintenance] failed:", err instanceof Error ? err.message : err);
+  }
+}

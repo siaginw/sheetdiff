@@ -13,13 +13,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots, changeAcks } from "@/lib/db/schema";
+import { spreadsheets, tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
 import { relativeTime, scheduleLabel } from "@/lib/format";
-import { decodeSnapshot } from "@/lib/snapshots";
-import { diffSnapshots } from "@/lib/diff/engine";
-import { isResolved } from "@/lib/sync";
+import { getPendingChanges } from "@/lib/pending";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "google-not-configured":
@@ -41,43 +39,19 @@ interface SheetStatus {
   latestAt: number | null;
 }
 
-/** Changes on every tracked tab between the latest baseline run and now,
- *  minus anything already acknowledged as entered downstream. */
-async function getSheetStatus(sheetId: string, tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
+/** Pending changes across every tracked tab (shared resolver keeps the
+ *  dashboard, CSV export, and digest in exact agreement). */
+async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
   const status: SheetStatus = { changes: 0, unresolved: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
-  const tracked = tabRows.filter((t) => t.tracked);
-  if (tracked.length === 0) return status;
-
-  const all = await db
-    .select()
-    .from(snapshots)
-    .where(inArray(snapshots.tabId, tracked.map((t) => t.id)))
-    .orderBy(desc(snapshots.createdAt));
-
-  for (const tab of tracked) {
-    const tabSnaps = all.filter((s) => s.tabId === tab.id && s.trigger !== "import");
-    if (tabSnaps.length === 0) continue;
-    const latest = tabSnaps[0];
-    status.latestAt = Math.max(status.latestAt ?? 0, latest.createdAt);
-    const baseline = tabSnaps.find((s) => s.isBaseline && s.createdAt <= latest.createdAt) ?? null;
-    if (baseline) status.baselineAt = Math.max(status.baselineAt ?? 0, baseline.createdAt);
-    if (!baseline || baseline.id === latest.id) continue;
-
-    const diff = diffSnapshots(decodeSnapshot(baseline.dataBlob), decodeSnapshot(latest.dataBlob), {
-      keyColumn: tab.keyColumn ?? null,
-      fromWhen: baseline.createdAt,
-      toWhen: latest.createdAt,
-    });
-    status.detail.added += diff.summary.addedRows;
-    status.detail.removed += diff.summary.removedRows;
-    status.detail.changed += diff.summary.changedRows;
-
-    const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, tab.id));
-    const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
-    for (const row of diff.rows) {
-      if (row.status === "unchanged" || row.status === "moved") continue;
-      if (!isResolved(ackMap, row.rowKey, latest.createdAt)) status.unresolved++;
-    }
+  for (const tab of tabRows.filter((t) => t.tracked)) {
+    const pending = await getPendingChanges(tab);
+    if (!pending) continue;
+    status.latestAt = Math.max(status.latestAt ?? 0, pending.latestAt);
+    status.baselineAt = Math.max(status.baselineAt ?? 0, pending.baselineAt);
+    status.detail.added += pending.counts.added;
+    status.detail.removed += pending.counts.removed;
+    status.detail.changed += pending.counts.changed;
+    status.unresolved += pending.counts.unresolved;
   }
   status.changes = status.detail.added + status.detail.removed + status.detail.changed;
   return status;
@@ -310,7 +284,7 @@ export default async function Home({
   const statuses = new Map<string, SheetStatus>();
   for (const sheet of sheets) {
     const tabRows = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
-    statuses.set(sheet.id, await getSheetStatus(sheet.id, tabRows));
+    statuses.set(sheet.id, await getSheetStatus(tabRows));
   }
 
   return (

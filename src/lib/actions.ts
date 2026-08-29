@@ -24,6 +24,30 @@ function str(fd: FormData, key: string): string {
   return String(fd.get(key) ?? "");
 }
 
+/**
+ * Ownership gate for every mutation: loads the spreadsheet and throws unless
+ * it belongs to the signed-in user. Tab-keyed helpers join through tabs.
+ * (Single-user today, but every action verifies anyway — defense in depth,
+ * and the precondition for ever adding viewer accounts.)
+ */
+async function requireOwnedSpreadsheet(spreadsheetId: string, userId: string) {
+  const rows = await db.select().from(spreadsheets).where(eq(spreadsheets.id, spreadsheetId));
+  const sheet = rows[0];
+  if (!sheet || sheet.userId !== userId) throw new Error("Not your sheet");
+  return sheet;
+}
+
+async function requireOwnedTab(tabId: string, userId: string) {
+  const rows = await db
+    .select({ tab: tabs, sheet: spreadsheets })
+    .from(tabs)
+    .innerJoin(spreadsheets, eq(tabs.spreadsheetId, spreadsheets.id))
+    .where(eq(tabs.id, tabId));
+  const row = rows[0];
+  if (!row || row.sheet.userId !== userId) throw new Error("Not your tab");
+  return row;
+}
+
 /** Add a spreadsheet and take the first snapshot immediately. */
 export async function startTracking(fd: FormData): Promise<void> {
   const userId = await requireUserId();
@@ -75,8 +99,9 @@ export async function startTracking(fd: FormData): Promise<void> {
 }
 
 export async function snapshotNow(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const id = str(fd, "spreadsheetId");
+  await requireOwnedSpreadsheet(id, userId);
   await captureSnapshot(id, "manual");
   revalidatePath(`/sheets/${id}`);
   revalidatePath("/");
@@ -84,9 +109,10 @@ export async function snapshotNow(fd: FormData): Promise<void> {
 
 /** Mark a whole snapshot run as the "collected" baseline (per-sheet unique). */
 export async function setBaseline(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const spreadsheetId = str(fd, "spreadsheetId");
   const runId = str(fd, "runId");
+  await requireOwnedSpreadsheet(spreadsheetId, userId);
 
   const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, spreadsheetId));
   const tabIds = sheetTabs.map((t) => t.id);
@@ -104,13 +130,11 @@ export async function setBaseline(fd: FormData): Promise<void> {
 }
 
 export async function updateSchedule(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const id = str(fd, "spreadsheetId");
   const kind = (str(fd, "kind") || "off") as ScheduleKind;
 
-  const rows = await db.select().from(spreadsheets).where(eq(spreadsheets.id, id));
-  const sheet = rows[0];
-  if (!sheet) return;
+  const sheet = await requireOwnedSpreadsheet(id, userId);
 
   const updated = {
     scheduleKind: kind,
@@ -128,10 +152,11 @@ export async function updateSchedule(fd: FormData): Promise<void> {
 }
 
 export async function updateTabSettings(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const spreadsheetId = str(fd, "spreadsheetId");
   const tabId = str(fd, "tabId");
   const key = str(fd, "keyColumn"); // "auto" | "0" | "1" ...
+  await requireOwnedTab(tabId, userId);
   await db
     .update(tabs)
     .set({
@@ -140,11 +165,13 @@ export async function updateTabSettings(fd: FormData): Promise<void> {
     })
     .where(eq(tabs.id, tabId));
   revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/"); // tracked toggles change dashboard counts
 }
 
 export async function removeSheet(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const id = str(fd, "spreadsheetId");
+  await requireOwnedSpreadsheet(id, userId);
   await db.delete(spreadsheets).where(eq(spreadsheets.id, id));
   revalidatePath("/");
   redirect("/");
@@ -165,6 +192,7 @@ export async function addNote(fd: FormData): Promise<void> {
   const spreadsheetId = str(fd, "spreadsheetId");
   const body = str(fd, "body").trim();
   if (!body) return;
+  await requireOwnedSpreadsheet(spreadsheetId, userId);
   const tabId = str(fd, "tabId") || null;
   const runId = str(fd, "runId") || null;
   const rowKey = str(fd, "rowKey") || null;
@@ -177,15 +205,15 @@ export async function addNote(fd: FormData): Promise<void> {
     body: body.slice(0, 2000),
     createdAt: Date.now(),
   });
-  void userId;
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
 }
 
 export async function deleteNote(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const id = str(fd, "id");
   const spreadsheetId = str(fd, "spreadsheetId");
+  await requireOwnedSpreadsheet(spreadsheetId, userId);
   await db.delete(notesTable).where(eq(notesTable.id, id));
   revalidatePath(`/sheets/${spreadsheetId}`);
 }
@@ -195,11 +223,12 @@ export async function deleteNote(fd: FormData): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 export async function toggleAck(fd: FormData): Promise<void> {
-  await requireUserId();
+  const userId = await requireUserId();
   const spreadsheetId = str(fd, "spreadsheetId");
   const tabId = str(fd, "tabId");
   const rowKey = str(fd, "rowKey");
   const on = str(fd, "on") === "1";
+  await requireOwnedTab(tabId, userId);
   await setAck(tabId, rowKey, on);
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
@@ -213,9 +242,11 @@ export async function saveDigestSettings(fd: FormData): Promise<void> {
   const userId = await requireUserId();
   const email = str(fd, "digestEmail").trim();
   const time = /^\d{1,2}:\d{2}$/.test(str(fd, "digestTime")) ? str(fd, "digestTime") : "07:00";
+  const dayRaw = str(fd, "digestDay"); // "daily" | "0".."6"
+  const day = dayRaw === "daily" || dayRaw === "" ? null : Math.max(0, Math.min(6, Number(dayRaw)));
   await db
     .update(users)
-    .set({ digestEmail: email || null, digestTime: time })
+    .set({ digestEmail: email || null, digestTime: time, digestDay: day })
     .where(eq(users.id, userId));
   revalidatePath("/");
 }

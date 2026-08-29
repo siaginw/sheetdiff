@@ -11,6 +11,7 @@ export const users = sqliteTable("users", {
   // Daily digest email (null = digest off)
   digestEmail: text("digest_email"),
   digestTime: text("digest_time").notNull().default("07:00"), // "HH:MM" local
+  digestDay: integer("digest_day"), // null = daily, 0=Sun..6=Sat
   lastDigestAt: integer("last_digest_at", { mode: "number" }),
   createdAt: integer("created_at", { mode: "number" }).notNull(),
 });

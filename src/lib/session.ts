@@ -5,6 +5,10 @@ import { users } from "./db/schema";
 import { eq } from "drizzle-orm";
 
 export const SESSION_COOKIE = "sd_session";
+export const SESSION_TTL_MS = 30 * 24 * 3_600_000; // 30 days; Google refresh token does the real work
+
+/** Signed session cookie payload for a user id. */
+export const signSession = (userId: string): string => signValue(userId, SESSION_TTL_MS);
 
 export async function getSessionUserId(): Promise<string | null> {
   const jar = await cookies();
@@ -17,6 +21,3 @@ export async function getSessionUser() {
   const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return rows[0] ?? null;
 }
-
-/** For server components: current user or null. */
-export { signValue as signSession };

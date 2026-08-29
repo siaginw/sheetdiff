@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { signValue } from "@/lib/crypto";
-import { SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE, signSession, SESSION_TTL_MS } from "@/lib/session";
 
 export const runtime = "nodejs";
 
@@ -22,11 +21,12 @@ export async function GET(req: Request) {
   if (!demo) return NextResponse.redirect(new URL("/?error=oauth-failed", url.origin));
 
   const res = NextResponse.redirect(new URL("/", url.origin));
-  res.cookies.set(SESSION_COOKIE, signValue(demo.id), {
+  res.cookies.set(SESSION_COOKIE, signSession(demo.id), {
     httpOnly: true,
     path: "/",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_TTL_MS / 1000,
   });
   return res;
 }

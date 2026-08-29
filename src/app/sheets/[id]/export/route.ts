@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import Papa from "papaparse";
-import { desc, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots, changeAcks, notes as notesTable } from "@/lib/db/schema";
+import { spreadsheets, tabs, notes as notesTable } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
-import { decodeSnapshot } from "@/lib/snapshots";
-import { diffSnapshots } from "@/lib/diff/engine";
-import { isResolved } from "@/lib/sync";
+import { getPendingChanges } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
+import { csvSafe } from "@/lib/csv";
 
 export const runtime = "nodejs";
 
@@ -32,12 +31,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "no tracked tabs" }, { status: 400 });
   }
 
-  const all = await db
-    .select()
-    .from(snapshots)
-    .where(inArray(snapshots.tabId, tracked.map((t) => t.id)))
-    .orderBy(desc(snapshots.createdAt));
-
   const sheetNotes = await db.select().from(notesTable).where(eq(notesTable.spreadsheetId, id));
   const noteByRow = new Map(
     sheetNotes.filter((n) => n.rowKey).map((n) => [n.rowKey!, n.body]),
@@ -48,42 +41,29 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   ];
 
   for (const tab of tracked) {
-    const tabSnaps = all.filter((s) => s.tabId === tab.id && s.trigger !== "import");
-    if (tabSnaps.length < 2) continue;
-    const latest = tabSnaps[0];
-    const baseline = tabSnaps.find((s) => s.isBaseline && s.createdAt <= latest.createdAt);
-    if (!baseline) continue;
+    const pending = await getPendingChanges(tab);
+    if (!pending) continue;
+    const when = absoluteTime(pending.latestAt);
 
-    const diff = diffSnapshots(decodeSnapshot(baseline.dataBlob), decodeSnapshot(latest.dataBlob), {
-      keyColumn: tab.keyColumn ?? null,
-      fromWhen: baseline.createdAt,
-      toWhen: latest.createdAt,
-    });
-    const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, tab.id));
-    const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
-
-    for (const row of diff.rows) {
-      if (row.status === "unchanged" || row.status === "moved") continue;
-      if (isResolved(ackMap, row.rowKey, latest.createdAt)) continue;
+    for (const row of pending.unresolved) {
       const note = noteByRow.get(row.rowKey) ?? "";
-      const when = absoluteTime(latest.createdAt);
 
       if (row.status === "changed") {
         for (const c of row.cells) {
           rows.push([
-            tab.title, "changed", row.key ?? "", String((row.newIndex ?? 0) + 1),
-            c.header, c.from, c.to, note, when,
+            csvSafe(tab.title), "changed", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
+            csvSafe(c.header), csvSafe(c.from), csvSafe(c.to), csvSafe(note), when,
           ]);
         }
       } else if (row.status === "added") {
         rows.push([
-          tab.title, "added", row.key ?? "", String((row.newIndex ?? 0) + 1),
-          "(new row)", "", row.values.filter(Boolean).join(" | "), note, when,
+          csvSafe(tab.title), "added", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
+          "(new row)", "", csvSafe(row.values.filter(Boolean).join(" | ")), csvSafe(note), when,
         ]);
       } else {
         rows.push([
-          tab.title, "removed", row.key ?? "", String((row.oldIndex ?? 0) + 1),
-          "(deleted row)", row.values.filter(Boolean).join(" | "), "", note, when,
+          csvSafe(tab.title), "removed", csvSafe(row.key ?? ""), String((row.oldIndex ?? 0) + 1),
+          "(deleted row)", csvSafe(row.values.filter(Boolean).join(" | ")), "", csvSafe(note), when,
         ]);
       }
     }

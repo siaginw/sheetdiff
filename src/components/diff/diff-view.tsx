@@ -387,9 +387,8 @@ export function DiffView({
   tabTitle,
   spreadsheetId,
   tabId,
-  rowAcks = {},
+  resolvedRows = {},
   rowNotes = {},
-  toCreatedAt = 0,
 }: {
   result: DiffResult;
   fromLabel: string;
@@ -397,12 +396,10 @@ export function DiffView({
   tabTitle: string;
   spreadsheetId: string;
   tabId: string;
-  /** rowKey -> ackedAt */
-  rowAcks?: Record<string, number>;
+  /** rowKey -> already acknowledged as entered downstream */
+  resolvedRows?: Record<string, boolean>;
   /** rowKey -> note body */
   rowNotes?: Record<string, string>;
-  /** createdAt of the "to" snapshot — resolves acks */
-  toCreatedAt?: number;
 }) {
   const [query, setQuery] = useState("");
   const [changesOnly, setChangesOnly] = useState(true);
@@ -533,10 +530,7 @@ export function DiffView({
               const isChangeLine =
                 item.kind === "sign" && (item.sign === "+" || item.row.status === "removed");
               const row = "row" in item ? item.row : null;
-              const acked =
-                row !== null && toCreatedAt > 0
-                  ? (rowAcks[row.rowKey] ?? 0) >= toCreatedAt
-                  : false;
+              const acked = row !== null && resolvedRows[row.rowKey] === true;
               return (
                 <div
                   key={vr.key}

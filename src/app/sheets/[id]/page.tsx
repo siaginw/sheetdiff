@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -34,6 +34,7 @@ import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
+import { computeIntroductions, isResolved } from "@/lib/sync";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
@@ -162,8 +163,26 @@ export default async function SheetPage({
     notesByRun.set(n.runId, list);
   }
   const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, activeTab.id));
-  const rowAcks: Record<string, number> = {};
-  for (const a of ackRows) rowAcks[a.rowKey] = a.ackedAt;
+  const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
+
+  // resolve acks against per-row introduction times (walk between baseline and "to")
+  const resolvedRows: Record<string, boolean> = {};
+  if (diff && fromSnap && toSnap && ackMap.size > 0) {
+    const between = recent.filter(
+      (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
+    );
+    const introduced =
+      between.length > 1
+        ? computeIntroductions(
+            between.map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) })),
+            diff.rows,
+          )
+        : new Map<string, number>();
+    for (const r of diff.rows) {
+      if (r.status === "unchanged" || r.status === "moved") continue;
+      resolvedRows[r.rowKey] = isResolved(ackMap, r.rowKey, introduced.get(r.rowKey) ?? toSnap.createdAt);
+    }
+  }
 
   // ---- checks on latest snapshots of every tracked tab ----
   const checkFindings: CheckFinding[] = [];
@@ -173,13 +192,15 @@ export default async function SheetPage({
   if (latestData) {
     const inputs: TabChecksInput[] = [];
     for (const t of allTabs.filter((t) => t.tracked)) {
+      // exclude imports IN the query — limit(1) before filtering would drop
+      // the tab entirely when its newest snapshot is a GIS import
       const tSnaps = await db
         .select()
         .from(snapshots)
-        .where(eq(snapshots.tabId, t.id))
+        .where(and(eq(snapshots.tabId, t.id), ne(snapshots.trigger, "import")))
         .orderBy(desc(snapshots.createdAt))
         .limit(1);
-      const tSnap = tSnaps.find((s) => s.trigger !== "import");
+      const tSnap = tSnaps[0];
       if (tSnap) {
         inputs.push({ tabTitle: t.title, data: decodeSnapshot(tSnap.dataBlob), keyColumn: t.keyColumn ?? null });
       }
@@ -524,9 +545,8 @@ export default async function SheetPage({
                   tabTitle={activeTab.title}
                   spreadsheetId={sheet.id}
                   tabId={activeTab.id}
-                  rowAcks={rowAcks}
+                  resolvedRows={resolvedRows}
                   rowNotes={Object.fromEntries(rowNotes)}
-                  toCreatedAt={toSnap?.createdAt ?? 0}
                   fromLabel={fromSnap ? absoluteTime(fromSnap.createdAt) : "?"}
                   toLabel={
                     toSnap

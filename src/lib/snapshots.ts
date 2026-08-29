@@ -92,26 +92,30 @@ export async function captureSnapshot(
   const runId = crypto.randomUUID();
   const now = Date.now();
   let rowCount = 0;
-  for (const tab of trackedTabs) {
+  const inserts = trackedTabs.map((tab) => {
     const data = toSnapshotData(values[tab.title] ?? []);
     rowCount += data.rows.length;
-    await db.insert(snapshots).values({
+    return {
       id: crypto.randomUUID(),
       tabId: tab.id,
       runId,
       trigger,
-      isBaseline: false,
+      isBaseline: false as const,
       rowCount: data.rows.length,
       colCount: data.headers.length,
       dataBlob: encodeSnapshot(data),
       createdAt: now,
-    });
-  }
+    };
+  });
 
-  await db
-    .update(spreadsheets)
-    .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
-    .where(eq(spreadsheets.id, sheet.id));
+  // atomic: either the whole run lands with updated schedule state, or nothing
+  await db.transaction((tx) => {
+    tx.insert(snapshots).values(inserts);
+    tx
+      .update(spreadsheets)
+      .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
+      .where(eq(spreadsheets.id, sheet.id));
+  });
 
   return { runId, createdAt: now, tabCount: trackedTabs.length, rowCount };
 }

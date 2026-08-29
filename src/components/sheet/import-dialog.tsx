@@ -66,7 +66,7 @@ export function ImportDialog({
                 id="gis-file"
                 name="file"
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 required
                 onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
                 className="file:border-input file:bg-background file:text-foreground file:hover:bg-muted file:mr-3 file:rounded-md file:border file:px-3 file:py-1.5 file:text-sm text-sm text-muted-foreground"
