@@ -1,8 +1,7 @@
-import type { SnapshotData, DiffRow } from "./diff/engine";
-import { rowContentKey } from "./diff/engine";
 import { norm } from "./diff/normalize";
 import { detectActivityColumn } from "./detect";
 import type { LateEntry, AgingGap } from "./production";
+import type { DiffRow } from "./diff/engine";
 
 /**
  * The Billing-Day Packet: everything the office needs on invoice day, from
@@ -101,73 +100,6 @@ export function billingPacketCsv(p: BillingPacket): string {
  * Entry-latency leaderboard: median days from completion to first appearance,
  * per crew — team health, not outlier blame.
  */
-export interface CrewLatency {
-  crew: string;
-  medianDays: number;
-  entries: number;
-  worstDays: number;
-}
-
-export function entryLatency(
-  late: { activity: string; daysLate: number }[],
-  data: SnapshotData,
-  crewOf: (row: string[]) => string,
-): CrewLatency[] {
-  // aggregate detectLateEntries output by crew using the crew column
-  const byCrew = new Map<string, number[]>();
-  for (const e of late) {
-    // find the row matching this late entry's activity to get its crew
-    const row = data.rows.find((r) => norm(r[detectActivityColumn(data) ?? 0]) === e.activity);
-    const crew = row ? crewOf(row) : "(unknown)";
-    const list = byCrew.get(crew) ?? [];
-    list.push(e.daysLate);
-    byCrew.set(crew, list);
-  }
-  const out: CrewLatency[] = [];
-  for (const [crew, days] of byCrew) {
-    const sorted = [...days].sort((a, b) => a - b);
-    out.push({
-      crew,
-      medianDays: sorted[Math.floor(sorted.length / 2)] ?? 0,
-      entries: days.length,
-      worstDays: sorted[sorted.length - 1] ?? 0,
-    });
-  }
-  return out.sort((a, b) => b.medianDays - a.medianDays);
-}
-
-export interface VerifiedStaleRow {
-  row: number;
-  initials: string;
-  verifiedOn: string;
-  lastChangedAt: number;
-}
-
-/**
- * Verified-stale: rows whose "Verified by" initials predate the row's last
- * change — the initials are no longer a promise about the current values.
- */
-export function verifiedStale(
-  data: SnapshotData,
-  rowChangedAt: Map<string, number>,
-  now = Date.now(),
-): VerifiedStaleRow[] {
-  const verifiedCol = data.headers.findIndex((h) => /verified\s*by|checked\s*by|^qa$/i.test(norm(h)));
-  if (verifiedCol < 0) return [];
-  const out: VerifiedStaleRow[] = [];
-  data.rows.forEach((row, i) => {
-    const initials = norm(row[verifiedCol]);
-    if (initials === "") return;
-    const changedAt = rowChangedAt.get(rowContentKey(row));
-    if (changedAt !== undefined && changedAt < now) {
-      // a trace exists: if the row changed AFTER initials were applied it's stale.
-      // Approximation: any recorded change event means verify-before-change risk
-      out.push({ row: i + 1, initials, verifiedOn: "", lastChangedAt: changedAt });
-    }
-  });
-  return out;
-}
-
 /** Quiet-tab: days since a tab last saw a new row (staleness alarm). */
 export function quietTabs(
   tabs: { title: string; lastNewRowAt: number | null }[],

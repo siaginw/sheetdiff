@@ -35,7 +35,6 @@ import { getTabDiff, decodeSnapshot, latestNonImportSnapshots } from "@/lib/snap
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { computeIntroductions, isResolved } from "@/lib/sync";
-import { buildBillingPacket } from "@/lib/billing";
 import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
@@ -290,9 +289,6 @@ export default async function SheetPage({
     }
   }
 
-  // billing packet summary (dashboard chip data; export via dedicated route)
-  let billingChip: { sinceFt: number; openHoleFt: number; toEnter: number } | null = null;
-
   // ---- production analytics (active tab): hygiene, late entries, aging, crew ----
   let hygiene: ReturnType<typeof dateHygiene> = [];
   let lateEntries: ReturnType<typeof detectLateEntries> = [];
@@ -302,16 +298,6 @@ export default async function SheetPage({
   if (latestData) {
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
-    if (diff && fromSnap) {
-      const packet = buildBillingPacket({
-        sinceFt: Math.max(0, (gapReport?.placedFt ?? 0)),
-        holes: agedGaps,
-        unresolved: diff.rows.filter((r) => r.status !== "unchanged" && r.status !== "moved" && !resolvedRows[r.rowKey]),
-        lateEntries: lateEntries,
-        snapshotLabel: absoluteTime(toSnap?.createdAt ?? 0),
-      });
-      billingChip = { sinceFt: packet.placedSinceFt, openHoleFt: packet.openHoleFt, toEnter: packet.toEnterCount };
-    }
     if (recent.length > 1) {
       const walk = [...recent].filter((sn) => sn.dataBlob).reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob!) }));
       lateEntries = detectLateEntries(walk);
@@ -428,6 +414,9 @@ export default async function SheetPage({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem render={<a href={`${sheet.id}/export`} />}>
                   <Download /> Download changes to enter (CSV)
+                </DropdownMenuItem>
+                <DropdownMenuItem render={<a href={`${sheet.id}/export/billing`} />}>
+                  <Download /> Billing-day packet (CSV)
                 </DropdownMenuItem>
                 <DropdownMenuItem render={<a href={sheet.url} target="_blank" rel="noreferrer" />}>
                   <ExternalLink /> Open in Google Sheets

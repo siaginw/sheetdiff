@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { promisify } from "node:util";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { db } from "./db";
 import { spreadsheets, tabs, snapshots, snapshotStats, type Spreadsheet, type Snapshot } from "./db/schema";
 import { getUserClient, fetchTabValues } from "./google";
@@ -135,18 +135,18 @@ async function captureSnapshotInner(
     const data = toSnapshotData(values[tab.title] ?? []);
     rowCount += data.rows.length;
     const id = crypto.randomUUID();
+    const prev = prevByTab.get(tab.id);
     inserts.push({
       id,
       tabId: tab.id,
       runId,
       trigger,
-      isBaseline: false,
+      isBaseline: !prev, // first-ever snapshot auto-baselines
       rowCount: data.rows.length,
       colCount: data.headers.length,
       dataBlob: await encodeSnapshotAsync(data),
       createdAt: now,
     });
-    const prev = prevByTab.get(tab.id);
     if (prev) {
       const d = diffSnapshots(prev, data, { keyColumn: tab.keyColumn ?? null });
       statsInserts.push({
@@ -193,16 +193,15 @@ export async function latestNonImportSnapshots(
   tabIds: string[],
 ): Promise<Map<string, Snapshot>> {
   if (tabIds.length === 0) return new Map();
-  const rows = await db
+  // SQLite bare-column-with-max: the row returned per group IS the max-createdAt
+  // row — one query, one blob per tab, instead of reading the whole history
+  const rows: Snapshot[] = await db
     .select()
     .from(snapshots)
     .where(and(inArray(snapshots.tabId, tabIds), ne(snapshots.trigger, "import")))
-    .orderBy(desc(snapshots.createdAt));
-  const out = new Map<string, Snapshot>();
-  for (const r of rows) {
-    if (!out.has(r.tabId)) out.set(r.tabId, r); // first per tab = newest
-  }
-  return out;
+    .groupBy(snapshots.tabId)
+    .having(max(snapshots.createdAt));
+  return new Map(rows.map((r) => [r.tabId, r]));
 }
 
 /** Load + diff two snapshots of the same tab. */
