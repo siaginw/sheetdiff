@@ -167,8 +167,8 @@ describe("blank-key fallthrough: blank rows DELETED between snapshots", () => {
     expect(r.summary.changedRows).toBe(0);
     expect(r.summary.addedRows).toBe(0);
     expect(r.summary.removedRows).toBe(3); // NOTE-1, NOTE-3 and the blank row
-    expect(r.summary.movedRows).toBe(1); // NOTE-2 shifted 4 -> 3
-    expect(r.summary.unchangedRows).toBe(3);
+    expect(r.summary.movedRows).toBe(0); // NOTE-2 shifted 4 -> 3 but blank-keyed moves are noise, not activity
+    expect(r.summary.unchangedRows).toBe(4); // NOTE-2 matched by content = unchanged
     const removedNotes = r.rows.filter((x) => x.status === "removed").map((x) => x.values[4]);
     expect(removedNotes).toEqual(["NOTE-1", "NOTE-3", ""]);
     expect(r.rows.filter((x) => x.status === "removed").every((x) => x.key === null)).toBe(true);
@@ -223,10 +223,10 @@ describe("blank-key fallthrough: full reversal of a mixed sheet", () => {
     expect(r.summary.changedRows).toBe(0); // positional pairing alone would flag PAD rows
     expect(r.summary.addedRows).toBe(0);
     expect(r.summary.removedRows).toBe(0);
-    expect(r.summary.movedRows).toBe(4);
-    expect(count(r, "moved")).toBe(4);
+    expect(r.summary.movedRows).toBe(2); // only keyed rows count as moved (blank-keyed moves are noise)
+    expect(count(r, "moved")).toBe(2); // only keyed rows; blank-keyed matches are unchanged
     // B order: blank rows first, keyed rows after — each kept its own identity
-    expect(r.rows.map((x) => x.status)).toEqual(["moved", "moved", "moved", "moved"]);
+    expect(r.rows.map((x) => x.status).sort()).toEqual(["moved", "moved", "unchanged", "unchanged"]);
     expect(r.rows[0]!.key).toBeNull(); // blank row matched by content
     expect(r.rows[0]!.values[4]).toBe("PAD-2");
     expect(r.rows[1]!.values[4]).toBe("PAD-1");

@@ -378,6 +378,11 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     const i = matchB[k];
     const rawKey = keyOfB(b.rows[k]);
     const key = rawKey === "" ? null : rawKey;
+    // blank-keyed rows paired by content can share a content hash with their
+    // A twin (identical identity columns, different non-identity cells); two
+    // CHANGED siblings in the same family would collide on rowKey and one ack
+    // would resolve both. Disambiguate with the A-side position.
+    const needsDisambiguation = key === null && i !== -1 && blankKeyedB.has(k);
     // stable identity for acks: key column when present, else hash of the OLD
     // row (stable across value edits, so a re-change after an ack re-flags it)
     const rowKey = key ?? rowContentKey(i === -1 ? b.rows[k] : a.rows[i]);
@@ -396,7 +401,9 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
       return;
     }
     const { cells } = changedCellCount(k, i);
-    const movedFrom = i !== k ? i : null;
+    // only key-matched rows get movedFrom — content-matched "moves" on padded
+    // trackers would flood the moved counter (200 padded rows shuffled = 202 moved)
+    const movedFrom = i !== k && !blankKeyedB.has(k) ? i : null;
     if (cells.length > 0) {
       summary.changedRows++;
       summary.changedCells += cells.length;
