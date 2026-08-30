@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { spreadsheets, tabs, snapshots } from "@/lib/db/schema";
+import { tabs, snapshots } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
@@ -15,8 +15,8 @@ export const runtime = "nodejs";
 
 /**
  * The Billing-Day Packet: one CSV with placed-since-collection footage, open
- * unaccounted holes (do-not-invoice), the to-enter worklist, and late entries
- * — everything the office needs on invoice day, from data already held.
+ * unaccounted holes (do-not-invoice), the to-enter worklist, and late entries.
+ * Aggregates EVERY tracked tab — a whole-sheet artifact, never tab 0's numbers.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
@@ -32,70 +32,80 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "no tracked tabs" }, { status: 400 });
   }
 
-  // latest sheet snapshot per tab (ONE query — the perf lesson from fleet 3)
+  // ONE query for latest non-import snapshots of ALL tracked tabs
   const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
 
-  // walk window for aging + late entries (bounded, per active tab only — we use
-  // the sheet's FIRST tracked tab's window as representative; the packet is a
-  // whole-sheet artifact but the analytics are per-tab)
-  const firstTracked = trackedTabs[0]!;
-  const window = await db
-    .select()
-    .from(snapshots)
-    .where(and(eq(snapshots.tabId, firstTracked.id), ne(snapshots.trigger, "import")))
-    .orderBy(desc(snapshots.createdAt))
-    .limit(31);
-  const walk = [...window].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) }));
-
-  const lateEntries: LateEntry[] = walk.length > 1 ? detectLateEntries(walk) : [];
-  const agedGaps: AgingGap[] =
-    walk.length > 0
-      ? agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))
-      : [];
-
-  // per-tab pending + footage delta since each tab's baseline
+  // aggregate across EVERY tracked tab
+  const unresolvedRows: { tab: string; status: string; key: string | null; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
+  const allAgedGaps: AgingGap[] = [];
+  const allLateEntries: LateEntry[] = [];
   let totalSinceFt = 0;
-  const allUnresolved: ReturnType<typeof getPendingChanges> extends Promise<infer R> ? (R extends { unresolved: infer U }[] ? U : never) : never[] = [] as never;
-  const unresolvedRows: { tab: string; status: string; key: string | null; cells: { header: string; from: string; to: string }[]; values: string[] }[] = [];
+  let anyBaselineFound = false;
+  let latestLabel = "unknown";
+
   for (const tab of trackedTabs) {
-    const pending = await getPendingChanges(tab);
-    if (!pending) continue;
-    // footage delta for THIS tab: compute both endpoints
     const latestSnap = latestByTab.get(tab.id);
-    if (latestSnap) {
-      const nowF = computeGapReport(decodeSnapshot(latestSnap.dataBlob));
-      // the gap report gives total placed; the delta needs the baseline —
-      // pending already tells us whether anything changed; for the packet we
-      // use the sheet-level footage from the gap report below
-      totalSinceFt += 0; // per-tab delta computed below via diff
+    if (!latestSnap) continue;
+    const latestReport = computeGapReport(decodeSnapshot(latestSnap.dataBlob));
+    latestLabel = absoluteTime(latestSnap.createdAt);
+
+    // this tab's baseline (query per tab — bounded, billing-export only)
+    const baselineRows = await db
+      .select()
+      .from(snapshots)
+      .where(and(eq(snapshots.tabId, tab.id), eq(snapshots.isBaseline, true), ne(snapshots.trigger, "import")))
+      .orderBy(desc(snapshots.createdAt))
+      .limit(1);
+
+    if (baselineRows[0]) {
+      anyBaselineFound = true;
+      const baselineReport = computeGapReport(decodeSnapshot(baselineRows[0].dataBlob));
+      // negative deltas are REAL (footage corrected/removed) — report, don't clamp
+      totalSinceFt += latestReport.placedFt - baselineReport.placedFt;
     }
-    for (const r of pending.unresolved) {
-      unresolvedRows.push({
-        tab: tab.title,
-        status: r.status,
-        key: r.key,
-        cells: r.cells.map((c) => ({ header: c.header, from: c.from, to: c.to })),
-        values: r.values,
-      });
+
+    // holes + late entries from a bounded window (cheap enough for billing day)
+    const window = await db
+      .select()
+      .from(snapshots)
+      .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
+      .orderBy(desc(snapshots.createdAt))
+      .limit(15);
+    if (window.length > 0) {
+      const walk = [...window].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) }));
+      for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
+        allAgedGaps.push(g);
+      }
+      if (walk.length > 1) {
+        for (const e of detectLateEntries(walk)) allLateEntries.push(e);
+      }
+    }
+
+    const pending = await getPendingChanges(tab);
+    if (pending) {
+      for (const r of pending.unresolved) {
+        unresolvedRows.push({
+          tab: tab.title,
+          status: r.status,
+          key: r.key,
+          values: r.values,
+          cells: r.cells,
+        });
+      }
     }
   }
 
-  // sheet-level footage: latest placed minus baseline placed (if we have both)
-  const firstLatest = latestByTab.get(firstTracked.id);
-  const latestFt = firstLatest ? computeGapReport(decodeSnapshot(firstLatest.dataBlob)).placedFt : 0;
-  const baselineRow = window.find((s) => s.isBaseline);
-  const baselineFt = baselineRow ? computeGapReport(decodeSnapshot(baselineRow.dataBlob)).placedFt : latestFt;
-  const sinceFt = Math.max(0, latestFt - baselineFt);
-
   const packet = buildBillingPacket({
-    sinceFt,
-    holes: agedGaps,
-    unresolved: unresolvedRows as never,
-    lateEntries,
-    snapshotLabel: firstLatest ? absoluteTime(firstLatest.createdAt) : "unknown",
+    sinceFt: anyBaselineFound ? totalSinceFt : 0,
+    holes: allAgedGaps,
+    unresolved: unresolvedRows,
+    lateEntries: allLateEntries,
+    snapshotLabel: latestLabel,
   });
 
-  const csv = billingPacketCsv(packet);
+  // when the number is unknowable (no tab had a baseline), say so — never a confident 0
+  const csv = billingPacketCsv(packet, { sinceFtKnown: anyBaselineFound });
+
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {

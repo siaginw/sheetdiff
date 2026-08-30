@@ -247,8 +247,6 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   const matchedA = new Array(a.rows.length).fill(-1);
   const matchB = new Array(b.rows.length).fill(-1);
 
-  const sharedACols: number[] = [];
-  for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
 
   // Track which rows have blank keys so they can fall through to content-hash
   // matching — real trackers pad tabs with hundreds of label-only rows whose
@@ -292,9 +290,10 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   // blank-keyed ones (padded tail rows match their identical twins across
   // snapshots), then the general leftover pairing. This is exactly the old
   // no-key path, applied selectively.
+  // Content-hash matching for rows the key pass couldn't identify
+  const sharedACols: number[] = [];
+  for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
   {
-    const sharedACols: number[] = [];
-    for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
     const queues = new Map<string, number[]>();
     for (let i = 0; i < a.rows.length; i++) {
       if (matchedA[i] !== -1 || !blankKeyedA.has(i)) continue;
@@ -331,51 +330,6 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     for (const i of leftoverA) {
       if (bi >= unmatchedB.length) break;
       const k = unmatchedB[bi++];
-      matchB[k] = i;
-      matchedA[i] = k;
-    }
-  }
-
-  if (false) {
-    // Content hashing over shared columns, then positional pairing of leftovers.
-    const queues = new Map<string, number[]>();
-    for (let i = 0; i < a.rows.length; i++) {
-      const h = rowHash(a.rows[i], sharedACols);
-      if (h === "\u0000".repeat(sharedACols.length)) continue; // fully empty row
-      const q = queues.get(h) ?? [];
-      q.push(i);
-      queues.set(h, q);
-    }
-    const unmatchedB: number[] = [];
-    for (let k = 0; k < b.rows.length; k++) {
-      const h = rowHash(b.rows[k], sharedACols.map((ac) => cols.aToB[ac]!));
-      if (h === "\u0000".repeat(sharedACols.length)) {
-        unmatchedB.push(k);
-        continue;
-      }
-      const q = queues.get(h) ?? [];
-      if (q.length > 0) {
-        const i = q.shift()!;
-        matchB[k] = i;
-        matchedA[i] = k;
-      } else {
-        unmatchedB.push(k);
-      }
-    }
-    // Leftover rows pair positionally, but never blank ones — a stray blank
-    // row must show as added/removed, not as a "change" from nothing.
-    const blankA = (vals: string[]) => sharedACols.every((c) => norm(vals[c]) === "");
-    const blankB = (vals: string[]) =>
-      sharedACols.every((ac) => norm(vals[cols.aToB[ac]!]) === "");
-    const leftoverA: number[] = [];
-    for (let i = 0; i < a.rows.length; i++) {
-      if (matchedA[i] === -1 && !blankA(a.rows[i])) leftoverA.push(i);
-    }
-    const leftoverB = unmatchedB.filter((k) => !blankB(b.rows[k]));
-    let bi = 0;
-    for (const i of leftoverA) {
-      if (bi >= leftoverB.length) break;
-      const k = leftoverB[bi++];
       matchB[k] = i;
       matchedA[i] = k;
     }

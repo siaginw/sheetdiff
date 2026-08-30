@@ -23,10 +23,16 @@ export function ensureMigrated(): void {
   const sqlite = new Database(dbPath);
   try {
     sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma("busy_timeout = 30000");
+    // pre-migration backup: a bad migration never costs more than the last snapshot
+    const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+    if (hasUsers) {
+      const backupDir = path.join(path.dirname(dbPath), "backups");
+      fs.mkdirSync(backupDir, { recursive: true });
+      sqlite.pragma("wal_checkpoint(TRUNCATE)");
+      fs.copyFileSync(dbPath, path.join(backupDir, `pre-migrate-${Date.now()}.db`));
+    }
 
-    const hasUsers = sqlite
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-      .get();
     const hasMigrations = sqlite
       .prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
       .get() as { c: number } | undefined;

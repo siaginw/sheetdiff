@@ -1,7 +1,13 @@
 import { norm } from "./diff/normalize";
 import { detectActivityColumn } from "./detect";
 import type { LateEntry, AgingGap } from "./production";
-import type { DiffRow } from "./diff/engine";
+/** What buildBillingPacket actually reads — any richer type (like DiffRow[])
+ *  satisfies this structurally, so callers pass pending.unresolved directly. */
+export interface BillingUnresolvedRow {
+  status: string;
+  values: string[];
+  cells: { header: string; from: string; to: string }[];
+}
 
 /**
  * The Billing-Day Packet: everything the office needs on invoice day, from
@@ -30,7 +36,7 @@ export interface BillingPacket {
 export function buildBillingPacket(input: {
   sinceFt: number;
   holes: AgingGap[];
-  unresolved: DiffRow[];
+  unresolved: BillingUnresolvedRow[];
   lateEntries: LateEntry[];
   snapshotLabel: string;
   now?: number;
@@ -57,7 +63,7 @@ export function buildBillingPacket(input: {
         : r.status === "removed"
           ? `DELETED row: ${r.values.slice(0, 4).filter(Boolean).join(" | ")}`
           : r.cells.map((c) => `${c.header}: ${c.from} -> ${c.to}`).join("; ");
-    rows.push({ kind: "to-enter", detail: what, meta: "enter in office system" });
+    rows.push({ kind: "to-enter", detail: what, meta: `enter in office system${(r as { tab?: string }).tab ? ` (${(r as { tab?: string }).tab})` : ""}` });
   }
   for (const e of input.lateEntries.slice(0, 20)) {
     rows.push({
@@ -78,11 +84,11 @@ export function buildBillingPacket(input: {
 }
 
 /** CSV export of the billing packet, stamped with its snapshot provenance. */
-export function billingPacketCsv(p: BillingPacket): string {
+export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boolean }): string {
   const lines: string[] = [
     `# SheetDiff billing packet — generated ${new Date(p.generatedAt).toISOString()}`,
     `# Snapshot: ${p.snapshotLabel}`,
-    `# Placed since collection: ${p.placedSinceFt.toLocaleString()} ft | Open holes: ${p.openHoleFt.toLocaleString()} ft | To enter: ${p.toEnterCount} | Late entries: ${p.lateCount}`,
+    `# Placed since collection: ${opts?.sinceFtKnown === false ? "COULD NOT DETERMINE — verify collection marker" : p.placedSinceFt.toLocaleString() + " ft"} | Open holes: ${p.openHoleFt.toLocaleString()} ft | To enter: ${p.toEnterCount} | Late entries: ${p.lateCount}`,
     `Kind,Detail,Ft,Note`,
   ];
   for (const r of p.rows) {

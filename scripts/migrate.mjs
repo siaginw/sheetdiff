@@ -16,6 +16,8 @@ if (!fs.existsSync(path.join(folder, "meta", "_journal.json"))) {
 
 const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("busy_timeout = 30000"); // two containers on one volume: wait, don't crash-loop
+sqlite.exec('CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
 const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
 const hasMigrations = sqlite.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'").get();
 

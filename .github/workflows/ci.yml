@@ -41,4 +41,5 @@ jobs:
             curl -sf http://localhost:3000/api/health && break || sleep 2
           done
           curl -sf http://localhost:3000/api/health | grep -q '"ok":true'
+            curl -sf http://localhost:3000/ -o /dev/null # page render (catches SSR errors health won't)
           docker rm -f sd-ci
