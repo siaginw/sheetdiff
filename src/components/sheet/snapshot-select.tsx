@@ -46,13 +46,14 @@ export function SnapshotSelect({
 
   const trigger = (
     value: string,
+    triggerOptions: { value: string; label: string }[],
     onChange: (v: string) => void,
     aria: string,
     keyPrefix: string,
   ) => (
     <Select
       key={keyPrefix}
-      items={items}
+      items={triggerOptions}
       value={value}
       onValueChange={(v) => {
         if (typeof v === "string") onChange(v);
@@ -62,8 +63,8 @@ export function SnapshotSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="max-h-72">
-        {options.map((o) => (
-          <SelectItem key={o.id} value={o.id} className="text-xs">
+        {triggerOptions.map((o) => (
+          <SelectItem key={o.value} value={o.value} className="text-xs">
             {o.label}
           </SelectItem>
         ))}
@@ -71,11 +72,17 @@ export function SnapshotSelect({
     </Select>
   );
 
+  // a snapshot can't be compared with itself — hide it from the opposite list
+  const fromItems = options.filter((o) => o.id !== to).map((o) => ({ value: o.id, label: o.label }));
+  const toItems = options.filter((o) => o.id !== from).map((o) => ({ value: o.id, label: o.label }));
+
   return (
     <div className="flex items-center gap-1.5">
-      {trigger(from, (v) => navigate(v, to), "Compare from snapshot", "from")}
+      <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">before</span>
+      {trigger(from, fromItems, (v) => navigate(v, to), "Compare from snapshot", "from")}
       <ArrowRight className="size-3.5 text-muted-foreground" />
-      {trigger(to, (v) => navigate(from, v), "Compare to snapshot", "to")}
+      {trigger(to, toItems, (v) => navigate(from, v), "Compare to snapshot", "to")}
+      <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">after</span>
     </div>
   );
 }

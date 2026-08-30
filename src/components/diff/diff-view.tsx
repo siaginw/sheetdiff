@@ -105,7 +105,7 @@ function RowActions({
         <input type="hidden" name="on" value={acked ? "0" : "1"} />
         <button
           type="submit"
-          aria-label={acked ? "Mark as not yet entered" : "Mark as entered downstream"}
+          aria-label={acked ? "Mark as not yet entered" : "Mark as entered in the office system"}
           title={acked ? "Entered downstream — click to un-resolve" : "Mark as entered in the downstream system"}
           className={`rounded-md p-1 transition-colors ${
             acked
@@ -480,22 +480,45 @@ export function DiffView({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search rows…"
-              className="h-7 w-44 rounded-md pl-8 font-sans text-xs"
+              className="h-7 w-44 rounded-md pl-8 pr-12 font-sans text-xs"
             />
+            {query ? (
+              <span className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {(matching ? matching.size : 0) || "0"}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setQuery("")}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Plus className="size-3 rotate-45" />
+                </button>
+              </span>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            <Switch id="changes-only" checked={changesOnly} onCheckedChange={setChangesOnly} />
-            <Label htmlFor="changes-only" className="cursor-pointer text-xs text-muted-foreground">
-              Changes only
+          <div className="flex items-center gap-2" title={query ? "Searching all rows — clear the search to filter to changes" : undefined}>
+            <Switch
+              id="changes-only"
+              checked={query ? false : changesOnly}
+              onCheckedChange={setChangesOnly}
+              disabled={Boolean(query)}
+            />
+            <Label
+              htmlFor="changes-only"
+              className={`cursor-pointer text-xs ${query ? "text-muted-foreground/50" : "text-muted-foreground"}`}
+            >
+              {query ? "Searching all rows" : "Changes only"}
             </Label>
           </div>
           {/* mode toggle */}
-          <div className="flex rounded-md border p-0.5 font-mono text-[11px]" role="tablist" aria-label="Diff layout">
+          <div className="flex rounded-md border p-0.5 font-mono text-[11px]" aria-label="Diff layout">
             {(["code", "table"] as const).map((m) => (
               <button
                 key={m}
-                role="tab"
-                aria-selected={mode === m}
+                type="button"
+                aria-pressed={mode === m}
                 onClick={() => setMode(m)}
                 className={`rounded-[5px] px-2 py-0.5 transition-colors ${
                   mode === m ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:text-foreground"

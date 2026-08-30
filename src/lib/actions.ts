@@ -91,13 +91,22 @@ export async function startTracking(fd: FormData): Promise<void> {
   if (selectedTitles.length === 0) redirect("/sheets/new?url=" + encodeURIComponent(str(fd, "url")) + "&error=no-tabs");
 
   const id = crypto.randomUUID();
+  const cadence = str(fd, "cadence");
+  const schedule =
+    cadence === "daily-9"
+      ? { scheduleKind: "daily" as const, scheduleTime: "09:00" }
+      : cadence === "daily-16"
+        ? { scheduleKind: "daily" as const, scheduleTime: "16:00" }
+        : cadence === "hourly"
+          ? { scheduleKind: "hourly" as const, scheduleHours: 1 }
+          : { scheduleKind: "off" as const };
   await db.insert(spreadsheets).values({
     id,
     userId,
     googleId,
     title: meta.title,
     url: `https://docs.google.com/spreadsheets/d/${googleId}/edit`,
-    scheduleKind: "off",
+    ...schedule,
     createdAt: Date.now(),
   });
 

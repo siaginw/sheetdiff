@@ -241,6 +241,7 @@ export default async function SheetPage({
 
   // ---- shot history (trace): station number, free text, or row key ----
   const traceParam = typeof sp.trace === "string" ? sp.trace.trim() : "";
+  const timelineOpen = sp.older === "1";
   const traceEvents =
     traceParam && recent.length > 1
       ? traceKeyFn(
@@ -474,7 +475,7 @@ export default async function SheetPage({
               <ol className="relative max-h-[70vh] overflow-auto py-3">
                 {/* the branch line */}
                 <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-border" />
-                {timeline.map((s) => {
+                {timeline.slice(0, timelineOpen ? timeline.length : 60).map((s) => {
                   const isTo = s.id === toId;
                   const isFrom = s.id === fromId;
                   const st = statsFor.get(s.id);
@@ -513,7 +514,7 @@ export default async function SheetPage({
                           ) : null}
                           {isTo ? (
                             <span className="rounded-full bg-primary/10 px-1.5 py-px font-mono text-[10px] font-medium text-primary">
-                              HEAD
+                              showing
                             </span>
                           ) : null}
                         </span>
@@ -557,6 +558,16 @@ export default async function SheetPage({
                     </li>
                   );
                 })}
+                {timeline.length > 60 ? (
+                  <li className="px-4 py-1.5">
+                    <a
+                      href={`${traceHrefBase}${timelineOpen ? "" : "&older=1"}${timelineOpen ? "" : ""}`}
+                      className="font-mono text-[10.5px] text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      {timelineOpen ? "show recent only" : `show ${timeline.length - 60} older snapshot${timeline.length - 60 === 1 ? "" : "s"}…`}
+                    </a>
+                  </li>
+                ) : null}
               </ol>
             )}
           </aside>

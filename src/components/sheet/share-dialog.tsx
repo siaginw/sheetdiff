@@ -23,6 +23,7 @@ import { addMembers, removeMember } from "@/lib/actions";
 export function ShareDialog({ members }: { members: { id: string; email: string }[] }) {
   const [open, setOpen] = useState(false);
   const [emails, setEmails] = useState("");
+  const [rejected, setRejected] = useState<string[]>([]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -67,7 +68,22 @@ export function ShareDialog({ members }: { members: { id: string; email: string 
           </p>
         )}
 
-        <form action={addMembers} onSubmit={() => setEmails("")} className="grid gap-2">
+        {rejected.length > 0 ? (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            Couldn&rsquo;t add: {rejected.join(", ")} — check the spelling (and you can&rsquo;t share with yourself).
+          </p>
+        ) : null}
+        <form
+          action={addMembers}
+          onSubmit={() => {
+            const invalid = emails
+              .split(/[\s,;]+/)
+              .filter((e) => e.trim() !== "" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e.trim()));
+            setRejected(invalid);
+            if (invalid.length === 0) setEmails("");
+          }}
+          className="grid gap-2"
+        >
           <Label htmlFor="share-emails">Add people</Label>
           <Input
             id="share-emails"

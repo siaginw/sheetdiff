@@ -20,6 +20,13 @@ interface TabPreview {
   detectedKey: number | null;
 }
 
+const CADENCE_ITEMS = [
+  { value: "daily-9", label: "Every day at 9:00 AM (recommended)" },
+  { value: "daily-16", label: "Every day at 4:00 PM" },
+  { value: "hourly", label: "Every hour" },
+  { value: "off", label: "Manual only — I'll snapshot myself" },
+];
+
 export default async function NewSheetPage({
   searchParams,
 }: {
@@ -91,7 +98,7 @@ export default async function NewSheetPage({
             />
           </div>
           <Button type="submit">
-            <ClipboardPaste className="size-4" /> Preview
+            <ClipboardPaste className="size-4" /> Check this link
           </Button>
         </form>
 
