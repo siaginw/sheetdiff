@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(), // uuid
@@ -98,6 +99,8 @@ export const notes = sqliteTable(
     runId: text("run_id"),
     rowKey: text("row_key"),
     body: text("body").notNull(),
+    // who wrote it — only the author or the owner may delete
+    authorUserId: text("author_user_id"),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
   (t) => [index("notes_sheet_created_idx").on(t.spreadsheetId, t.createdAt)],
@@ -135,10 +138,14 @@ export const members = sqliteTable(
     ownerUserId: text("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // stored lowercase by every writer (addMembers normalizes); the unique
+    // index is expression-based so no casing can ever sneak a duplicate past
     email: text("email").notNull(),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
-  (t) => [uniqueIndex("members_owner_email_idx").on(t.ownerUserId, t.email)],
+  (t) => [
+    uniqueIndex("members_owner_email_idx").on(t.ownerUserId, sql`lower(${t.email})`),
+  ],
 );
 
 export type Member = typeof members.$inferSelect;

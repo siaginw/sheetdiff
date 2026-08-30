@@ -228,14 +228,14 @@ export async function addMembers(fd: FormData): Promise<void> {
       .values({ id: crypto.randomUUID(), ownerUserId: user.id, email, createdAt: Date.now() })
       .onConflictDoNothing();
   }
-  revalidatePath("/");
+  revalidatePath("/", "layout"); // member list renders in the header on every page
 }
 
 export async function removeMember(fd: FormData): Promise<void> {
   const user = await requireUser();
   const id = str(fd, "id");
   await db.delete(members).where(and(eq(members.id, id), eq(members.ownerUserId, user.id)));
-  revalidatePath("/");
+  revalidatePath("/", "layout");
 }
 
 export async function logout(): Promise<void> {
@@ -263,15 +263,33 @@ export async function addNote(fd: FormData): Promise<void> {
     const t = await db.select().from(tabs).where(eq(tabs.id, tabId));
     if (!t[0] || t[0].spreadsheetId !== spreadsheetId) safeTabId = null;
   }
-  await db.insert(notesTable).values({
-    id: crypto.randomUUID(),
-    spreadsheetId,
-    tabId: safeTabId,
-    runId,
-    rowKey,
-    body: body.slice(0, 2000),
-    createdAt: Date.now(),
-  });
+  // editing a note = updating your own note at the same scope (no stacking)
+  const scopeEquals = (n: typeof notesTable.$inferSelect) =>
+    n.spreadsheetId === spreadsheetId &&
+    (n.tabId ?? null) === safeTabId &&
+    (n.runId ?? null) === runId &&
+    (n.rowKey ?? null) === rowKey;
+  const existing = (await db.select().from(notesTable).where(eq(notesTable.spreadsheetId, spreadsheetId)))
+    .filter(scopeEquals)
+    .filter((n) => n.authorUserId === user.id)
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (existing) {
+    await db
+      .update(notesTable)
+      .set({ body: body.slice(0, 2000), createdAt: Date.now() })
+      .where(eq(notesTable.id, existing.id));
+  } else {
+    await db.insert(notesTable).values({
+      id: crypto.randomUUID(),
+      spreadsheetId,
+      tabId: safeTabId,
+      runId,
+      rowKey,
+      body: body.slice(0, 2000),
+      authorUserId: user.id,
+      createdAt: Date.now(),
+    });
+  }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
 }
@@ -280,11 +298,16 @@ export async function deleteNote(fd: FormData): Promise<void> {
   const user = await requireUser();
   const id = str(fd, "id");
   const spreadsheetId = str(fd, "spreadsheetId");
-  await requireSharedSpreadsheet(spreadsheetId, user);
-  // scope by spreadsheetId too: access to one sheet must never delete another's note
-  await db
-    .delete(notesTable)
+  const access = await requireSharedSpreadsheet(spreadsheetId, user);
+  // only the author or the owner may delete; scope by spreadsheetId too
+  const noteRows = await db
+    .select()
+    .from(notesTable)
     .where(and(eq(notesTable.id, id), eq(notesTable.spreadsheetId, spreadsheetId)));
+  const note = noteRows[0];
+  const mayDelete = note && (access.role === "owner" || note.authorUserId === user.id);
+  if (!mayDelete) return;
+  await db.delete(notesTable).where(eq(notesTable.id, id));
   revalidatePath(`/sheets/${spreadsheetId}`);
 }
 

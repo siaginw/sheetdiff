@@ -555,7 +555,7 @@ export default async function SheetPage({
                     </p>
                   </>
                 )}
-                {activeTab.tracked ? (
+                {isOwner && activeTab.tracked ? (
                   <form action={snapshotNow}>
                     <input type="hidden" name="spreadsheetId" value={sheet.id} />
                     <Button type="submit">
