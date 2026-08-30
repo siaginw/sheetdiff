@@ -1,4 +1,5 @@
 import Papa from "papaparse";
+import zlib from "node:zlib";
 import ExcelJS from "exceljs";
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // compressed cap
@@ -36,6 +37,27 @@ function zipUncompressedSize(buf: Buffer): number | null {
  * formulas ({formula, result}), rich text ({richText}), hyperlinks, and Dates.
  * Always resolve to the DISPLAYED text — the computed result for formulas.
  */
+/** Trial-inflate every DEFLATE entry with a hard cap — the only guard that
+ *  can't be bypassed by lying in the central directory. */
+function verifyActualZipSize(buf: Buffer, limit: number): void {
+  let ptr = 0;
+  while (ptr + 4 <= buf.length) {
+    if (buf.readUInt32LE(ptr) !== 0x04034b50) break; // local file header
+    const method = buf.readUInt16LE(ptr + 8);
+    const compSize = buf.readUInt32LE(ptr + 18);
+    const nameLen = buf.readUInt16LE(ptr + 26);
+    const extraLen = buf.readUInt16LE(ptr + 28);
+    const dataStart = ptr + 30 + nameLen + extraLen;
+    if (dataStart + compSize > buf.length) break;
+    if (method === 8) {
+      zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
+        maxOutputLength: limit,
+      });
+    }
+    ptr = dataStart + compSize;
+  }
+}
+
 function cellText(v: unknown): string {
   if (v == null) return "";
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -81,6 +103,16 @@ export async function parseImportFile(
     const declared = zipUncompressedSize(buf);
     if (declared !== null && declared > MAX_UNCOMPRESSED_BYTES) {
       throw new Error(`That workbook declares ${Math.round(declared / 1_048_576)} MB uncompressed — over the 64 MB limit.`);
+    }
+    // declared sizes are attacker-controlled: verify ACTUAL inflated bytes by
+    // trial-inflating every stored entry with a hard output limit
+    try {
+      verifyActualZipSize(buf, MAX_UNCOMPRESSED_BYTES);
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("[zip]")) {
+        throw new Error("That workbook expands too large when decompressed — over the 64 MB limit.");
+      }
+      throw err;
     }
     const wb = new ExcelJS.Workbook();
     // exceljs's bundled Buffer type is stale; runtime accepts any Buffer view

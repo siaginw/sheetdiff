@@ -52,7 +52,7 @@ Requires Node.js 20+. Runs entirely on your machine — the data never leaves yo
 and Google account.
 
 ```bash
-git clone <this repo> && cd sheetdiff
+git clone https://github.com/siaginw/sheetdiff.git && cd sheetdiff
 npm install
 cp .env.example .env       # then fill in APP_SECRET + Google credentials (below)
 npm run db:push            # creates the SQLite database (data/sheetdiff.db)
@@ -176,6 +176,21 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   that Google account they see your sheets, read diffs and audit notes, tick changes off as
   entered, and mark collections — the exact workflow of the person collecting your data —
   while all destructive controls (schedules, imports, deletes, settings) stay owner-only.
+
+## Updating your deployment
+
+New version shipped? That's all you do:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The container applies any database migrations automatically on startup. Your data lives in `./data` and is never touched beyond additive schema changes — the app also keeps nightly copies in `./data/backups/`.
+
+Running without Docker? Same two steps minus Docker: `git pull && npm ci && npm run build && npm restart`.
+
+First start on Linux: Docker creates `./data` as root if the folder is missing, which the in-container app user can't write to. Create it once: `mkdir -p data && sudo chown 1000:1000 data`.
 
 ## Development
 
