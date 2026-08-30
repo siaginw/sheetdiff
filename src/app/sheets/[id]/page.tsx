@@ -43,7 +43,15 @@ import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
 import { TracePanel } from "@/components/sheet/trace-panel";
 import { GapReportPanel } from "@/components/sheet/gap-report-panel";
+import { ProductionPanel } from "@/components/sheet/production-panel";
 import { computeGapReport } from "@/lib/gaps";
+import {
+  dateHygiene,
+  detectLateEntries,
+  reconcileTotals,
+  computeCrewBoard,
+  agingGaps,
+} from "@/lib/production";
 import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
@@ -237,6 +245,48 @@ export default async function SheetPage({
         const baseFootage = computeFootage(decodeSnapshot(base.dataBlob));
         footageDelta = f.ft - baseFootage.ft;
         footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
+      }
+    }
+  }
+
+  // ---- production analytics (active tab): hygiene, late entries, aging, crew ----
+  let hygiene: ReturnType<typeof dateHygiene> = [];
+  let lateEntries: ReturnType<typeof detectLateEntries> = [];
+  let agedGaps: ReturnType<typeof agingGaps> = [];
+  let crewBoard: ReturnType<typeof computeCrewBoard> | null = null;
+  let totalsMismatches: ReturnType<typeof reconcileTotals> = [];
+  if (latestData) {
+    hygiene = dateHygiene(latestData);
+    crewBoard = computeCrewBoard(latestData);
+    if (recent.length > 1) {
+      const walk = [...recent].reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob) }));
+      lateEntries = detectLateEntries(walk);
+      agedGaps = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })));
+    }
+    // TOTALS reconciliation when a TOTALS-like tab exists
+    const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title));
+    if (totalsTab) {
+      const totalsSnaps = await db
+        .select()
+        .from(snapshots)
+        .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
+        .orderBy(desc(snapshots.createdAt))
+        .limit(1);
+      if (totalsSnaps[0]) {
+        const perTab = new Map<string, number>();
+        for (const t of allTabs.filter((x) => x.tracked)) {
+          const tSnaps = await db
+            .select()
+            .from(snapshots)
+            .where(and(eq(snapshots.tabId, t.id), ne(snapshots.trigger, "import")))
+            .orderBy(desc(snapshots.createdAt))
+            .limit(1);
+          if (tSnaps[0]) {
+            const f = computeFootage(decodeSnapshot(tSnaps[0].dataBlob));
+            perTab.set(t.title.toLowerCase(), f.ft);
+          }
+        }
+        totalsMismatches = reconcileTotals(decodeSnapshot(totalsSnaps[0].dataBlob), perTab);
       }
     }
   }
@@ -514,6 +564,18 @@ export default async function SheetPage({
             {/* auto gap report */}
             {timeline.length > 0 && gapReport ? (
               <GapReportPanel report={gapReport} tabTitle={activeTab.title} />
+            ) : null}
+
+            {/* production analytics */}
+            {timeline.length > 0 && latestData ? (
+              <ProductionPanel
+                tabTitle={activeTab.title}
+                hygiene={hygiene}
+                lateEntries={lateEntries}
+                totalsMismatches={totalsMismatches}
+                crewBoard={crewBoard}
+                agedGaps={agedGaps}
+              />
             ) : null}
 
             {/* gap linter */}
