@@ -73,7 +73,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
-  const csv = Papa.unparse(rows);
+  // provenance stamps: every export names the snapshot it came from
+  const stamp = [
+    `# SheetDiff changes-to-enter — generated ${new Date().toISOString()}`,
+    `# Sheet: ${sheet.title}`,
+  ];
+  const csv = stamp.join(String.fromCharCode(10)) + String.fromCharCode(10) + Papa.unparse(rows);
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {

@@ -27,3 +27,18 @@ jobs:
         env:
           # build-time placeholder; runtime config comes from the deployer's .env
           APP_SECRET: ci-placeholder-secret-not-used-at-build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t sheetdiff-ci .
+      - name: Boot + health probe
+        run: |
+          docker run -d --name sd-ci -p 3000:3000             -e APP_SECRET=ci-placeholder-secret-not-used-at-runtime             -e GOOGLE_CLIENT_ID=x -e GOOGLE_CLIENT_SECRET=y sheetdiff-ci
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/api/health && break || sleep 2
+          done
+          curl -sf http://localhost:3000/api/health | grep -q '"ok":true'
+          docker rm -f sd-ci
