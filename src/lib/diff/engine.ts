@@ -384,8 +384,11 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     // would resolve both. Disambiguate with the A-side position.
     const needsDisambiguation = key === null && i !== -1 && blankKeyedB.has(k);
     // stable identity for acks: key column when present, else hash of the OLD
-    // row (stable across value edits, so a re-change after an ack re-flags it)
-    const rowKey = key ?? rowContentKey(i === -1 ? b.rows[k] : a.rows[i]);
+    // row (stable across value edits, so a re-change after an ack re-flags it).
+    // Same-family blank-keyed siblings get their A-side position appended so
+    // they don't collide (one ack must never resolve two different rows).
+    const baseRowKey = key ?? rowContentKey(i === -1 ? b.rows[k] : a.rows[i]);
+    const rowKey = needsDisambiguation ? baseRowKey + "#" + i : baseRowKey;
     if (i === -1) {
       summary.addedRows++;
       diffRows.push({
