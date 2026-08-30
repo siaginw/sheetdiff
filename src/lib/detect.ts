@@ -6,8 +6,8 @@ import { norm } from "./diff/normalize";
  * real production-tracker vocabulary ("Activity", "Start STA", "End STA").
  */
 
-const START_HEADER_RE = /(start|begin|from|beg).*?(sta|station|ft|foot|footage)/i;
-const END_HEADER_RE = /(end|stop|to|finish).*?(sta|station|ft|foot|footage)/i;
+const START_HEADER_RE = /(start|begin|from|beg)\b.{0,40}?(sta|station|ft|footage)/i;
+const END_HEADER_RE = /(end|stop|to|finish)\b.{0,40}?(sta|station|ft|footage)/i;
 const STATION_HEADER_RE = /(sta|station)/i;
 export const ACTIVITY_HEADER_RE = /^(activity|type|method|work type|description)$/i;
 const ADDER_ACTIVITY_RE = /adder/i;
