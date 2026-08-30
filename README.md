@@ -178,7 +178,7 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 ## Development
 
 ```bash
-npm test           # diff engine test suite (24 tests)
+npm test           # domain test suite (engine, checks, gaps, trace, acks, imports)
 npm run db:push    # apply schema changes to the SQLite db
 npm run build      # production build
 ```

@@ -35,6 +35,14 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
 # Optional: demo login (local exploration only — see README "Try the demo")
 # ENABLE_DEMO=1
 
+# Optional: dead-man switch — the scheduler pings this URL each minute;
+# set up a free monitor at healthchecks.io to alert when snapshots stop.
+# HEALTHCHECK_PING_URL=https://hc-ping.com/your-uuid
+
+# Optional: data maintenance
+# SHEETDIFF_KEEP_SNAPSHOTS=200   # newest non-baseline snapshots per tab (0 = keep all)
+# SHEETDIFF_BACKUPS=14           # nightly DB backups to keep (0 = off)
+
 # Optional: where the SQLite database lives (default ./data/sheetdiff.db)
 # DATABASE_PATH=./data/sheetdiff.db
 `;

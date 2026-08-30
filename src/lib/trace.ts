@@ -1,6 +1,6 @@
 import type { SnapshotData } from "./diff/engine";
 import { norm, normalizeKey, sameValue } from "./diff/normalize";
-import { parseStation } from "./detect";
+import { parseStation, detectStationColumns } from "./detect";
 
 /**
  * Shot history: trace one row through a sequence of snapshots and report
@@ -33,12 +33,23 @@ type RowMatcher = (data: SnapshotData) => string[] | null;
 function makeMatcher(needleRaw: string): RowMatcher {
   const station = parseStation(needleRaw);
   if (station !== null && /^[\d.,+]+\s*(?:ft|feet)?$/i.test(needleRaw.trim())) {
-    // station mode: the row whose station span covers the number
-    return (data) =>
-      data.rows.find((row) => {
-        const nums = row.map((v) => parseStation(v)).filter((n) => n !== null) as number[];
-        return nums.length >= 2 && nums[0]! <= station && station <= nums[nums.length - 1]!;
-      }) ?? null;
+    // station mode: the row whose START/END station cells cover the number —
+    // never row-order numerics (a "#" index or Total Footage column would
+    // otherwise decide the span)
+    return (data) => {
+      const st = detectStationColumns(data);
+      return (
+        data.rows.find((row) => {
+          if (st) {
+            const s0 = parseStation(row[st.start]);
+            const e0 = parseStation(row[st.end]);
+            return s0 !== null && e0 !== null && s0 <= station && station <= e0;
+          }
+          const nums = row.map((v) => parseStation(v)).filter((n) => n !== null) as number[];
+          return nums.length >= 2 && Math.min(...nums) <= station && station <= Math.max(...nums);
+        }) ?? null
+      );
+    };
   }
   const needle = needleRaw.trim().toLowerCase();
   const asKey = needle.split(/\s+/).map((p) => normalizeKey(p)).join("·");

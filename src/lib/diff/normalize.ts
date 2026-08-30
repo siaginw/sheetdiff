@@ -69,6 +69,17 @@ export function colLetter(i: number): string {
   return s;
 }
 
+/**
+ * Composite row identity: normalized values of `cols` joined by "·",
+ * POSITIONALLY — blank parts stay as empty slots so ["Plow","","15743"] and
+ * ["Plow","15743",""] are DIFFERENT rows. All-blank -> "" (no identity).
+ * The one definition used by engine matching, dupe checks, and trace.
+ */
+export function compositeKey(row: readonly string[], cols: readonly number[]): string {
+  const parts = cols.map((c) => normalizeKey(row[c]));
+  return parts.every((v) => v === "") ? "" : parts.join("·");
+}
+
 /** FNV-1a — tiny stable hash for row identities when no key column exists. */
 export function hashString(s: string): string {
   let h = 0x811c9dc5;

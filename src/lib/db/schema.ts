@@ -53,7 +53,10 @@ export const tabs = sqliteTable(
     // null = auto-detect at diff time.
     keyColumn: integer("key_column"),
   },
-  (t) => [uniqueIndex("tabs_spreadsheet_title_idx").on(t.spreadsheetId, t.title)],
+  (t) => [
+    index("tabs_spreadsheet_idx").on(t.spreadsheetId),
+    uniqueIndex("tabs_spreadsheet_title_idx").on(t.spreadsheetId, t.title),
+  ],
 );
 
 export const snapshots = sqliteTable(

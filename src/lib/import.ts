@@ -1,7 +1,35 @@
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 
-const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // decompressed xlsx expands far beyond this
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // compressed cap
+const MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024; // decompression-bomb guard
+
+/**
+ * Sum the declared uncompressed sizes from a zip's central directory WITHOUT
+ * decompressing anything — a crafted 5 MB xlsx can declare gigabytes, and
+ * exceljs would happily materialize them into heap.
+ */
+function zipUncompressedSize(buf: Buffer): number | null {
+  // find End Of Central Directory (scan back over the 22-byte record + comment)
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65_536); i--) {
+    if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return null;
+  const count = buf.readUInt16LE(eocd + 10);
+  let ptr = buf.readUInt32LE(eocd + 16);
+  let total = 0;
+  for (let n = 0; n < count; n++) {
+    if (ptr + 46 > buf.length) return null;
+    if (buf.readUInt32LE(ptr) !== 0x02014b50) return null; // central dir signature
+    total += buf.readUInt32LE(ptr + 24); // uncompressed size
+    ptr += 46 + buf.readUInt16LE(ptr + 28) + buf.readUInt16LE(ptr + 30) + buf.readUInt16LE(ptr + 32);
+  }
+  return total;
+}
 
 /**
  * ExcelJS cell values come in many shapes; production trackers are full of
@@ -49,6 +77,10 @@ export async function parseImportFile(
     // legacy .xls masquerading as .xlsx, and polyglot files)
     if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b || buf[2] !== 0x03 || buf[3] !== 0x04) {
       throw new Error("That doesn't look like a valid .xlsx file.");
+    }
+    const declared = zipUncompressedSize(buf);
+    if (declared !== null && declared > MAX_UNCOMPRESSED_BYTES) {
+      throw new Error(`That workbook declares ${Math.round(declared / 1_048_576)} MB uncompressed — over the 64 MB limit.`);
     }
     const wb = new ExcelJS.Workbook();
     // exceljs's bundled Buffer type is stale; runtime accepts any Buffer view

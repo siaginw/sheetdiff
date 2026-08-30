@@ -95,7 +95,7 @@ function RowActions({
   return (
     <span
       className={`ml-auto flex shrink-0 items-center gap-0.5 pr-1 transition-opacity ${
-        acked ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+        acked ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100"
       }`}
     >
       <form action={toggleAck}>
@@ -242,7 +242,7 @@ function CodeLine({
           <ArrowUpDown className="size-3.5 text-diff-move-fg" />
         </span>
         <LineNumbers old={item.row.oldIndex} new={item.row.newIndex} />
-        <Cells values={item.row.values} columns={columns} widths={widths} tone="move" changed={new Set()} />
+        <Cells values={item.row.values} columns={columns} widths={widths} tone="move" changed={EMPTY_SET} />
         {actions}
       </div>
     );
@@ -284,7 +284,7 @@ function CodeLine({
         columns={columns}
         widths={widths}
         tone={tone}
-        changed={item.kind === "sign" ? item.changedCols : new Set()}
+        changed={item.kind === "sign" ? item.changedCols : EMPTY_SET}
       />
       {actions}
     </div>
@@ -299,6 +299,8 @@ function LineNumbers({ old, new: newIdx }: { old: number | null; new: number | n
     </span>
   );
 }
+
+const EMPTY_SET = new Set<number>();
 
 function Cells({
   values,
@@ -441,7 +443,7 @@ export function DiffView({
 
   const widths = useMemo(
     () => columnWidths(result, mode === "code" ? result.rows : visibleRows),
-    [result, mode, visibleRows],
+    [result, mode, mode === "table" ? visibleRows : null],
   );
 
   const codeVirtualizer = useVirtualizer({

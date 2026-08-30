@@ -80,6 +80,41 @@ describe("traceKey without ID columns (station + text matching)", () => {
     expect(events[0].changes).toEqual([{ header: "Crew #", from: "CREW B", to: "CREW C" }]);
   });
 
+  it("station mode uses the station columns — a row-index or footage column can't hijack the span", () => {
+    const events = traceKey(
+      [
+        { createdAt: 1000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
+          ["1", "Plow", "600", "900", "300"],
+          ["2", "Bore", "0", "500", "500"],
+        ]) },
+        { createdAt: 2000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
+          ["1", "Plow", "600", "900", "300"],
+          ["2", "Bore", "0", "500", "500"],
+        ]) },
+      ],
+      null,
+      "450", // inside the Bore 0–500 span; row-1's "1" index would have matched first under old logic
+    );
+    // the Bore row exists in both snapshots unchanged → no events, but the
+    // matcher must have FOUND it (previously it found the Plow row instead,
+    // which also produced no events — assert via a visible mutation)
+    const mutated = traceKey(
+      [
+        { createdAt: 1000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
+          ["1", "Plow", "600", "900", "300"],
+          ["2", "Bore", "0", "500", "500"],
+        ]) },
+        { createdAt: 2000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
+          ["1", "Plow", "600", "900", "999"], // plow's footage changed — must NOT appear in a 450-trace
+          ["2", "Bore", "0", "500", "500"],
+        ]) },
+      ],
+      null,
+      "450",
+    );
+    expect(mutated).toHaveLength(0); // the changed row (Plow @600–900) is not the one covering 450
+  });
+
   it("traces by free text in any cell", () => {
     const events = traceKey(
       tchain([

@@ -39,6 +39,9 @@ async function tick() {
   ticking = true;
   try {
     await tickInner();
+    // dead-man switch: this only fires while the process AND scheduler live
+    const ping = process.env.HEALTHCHECK_PING_URL;
+    if (ping) await fetch(ping, { method: "POST" }).catch(() => {});
   } finally {
     ticking = false;
   }
@@ -67,10 +70,10 @@ async function tickInner() {
         err instanceof Error ? err.message : err,
       );
       // Push the next attempt forward so a broken sheet can't loop every minute.
-      const bumped = computeNextRun(sheet, now);
-      if (bumped !== null) {
-        await db.update(spreadsheets).set({ nextRunAt: bumped }).where(eq(spreadsheets.id, sheet.id));
-      }
+      // A null bump (unparsable schedule) must ALSO move nextRunAt — otherwise
+      // the stale due time retries every minute forever.
+      const bumped = computeNextRun(sheet, now) ?? now + 6 * 3_600_000;
+      await db.update(spreadsheets).set({ nextRunAt: bumped }).where(eq(spreadsheets.id, sheet.id));
     }
   }
 
@@ -89,12 +92,12 @@ async function tickInner() {
           await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
         }
         if (result.sent) {
-          console.log(`[scheduler] digest sent to ${u.digestEmail}`);
+          console.log(`[scheduler] digest sent (user ${u.id})`);
         } else if (result.reason === "smtp-not-configured") {
           console.warn("[scheduler] digest skipped: SMTP_HOST/SMTP_USER/SMTP_PASS not configured");
         }
       } catch (err) {
-        console.error(`[scheduler] digest for ${u.digestEmail} failed:`, err instanceof Error ? err.message : err);
+        console.error(`[scheduler] digest for user ${u.id} failed:`, err instanceof Error ? err.message : err);
       }
     }
 

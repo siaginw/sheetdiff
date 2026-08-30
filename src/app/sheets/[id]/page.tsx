@@ -228,6 +228,7 @@ export default async function SheetPage({
 
     // footage ledger for the ACTIVE tab: total + delta since collection
     const f = computeFootage(latestData);
+    gapReport = computeGapReport(latestData);
     if (f.stations) {
       activeFootage = f;
       const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
@@ -243,6 +244,7 @@ export default async function SheetPage({
   const trackedCount = allTabs.filter((t) => t.tracked).length;
 
   const IMPORT_ERRORS: Record<string, string> = {
+    "snapshot-failed": "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
     "import-no-file": "Pick a file to import first.",
     "import-bad-file": "Couldn't read that file — use .csv or .xlsx.",
     "import-no-match":
@@ -452,7 +454,7 @@ export default async function SheetPage({
                         </div>
                       ) : null}
                       {!isImport ? (
-                        <div className="absolute right-1 top-1.5 opacity-50 transition-opacity hover:opacity-100 focus-within:opacity-100">
+                        <div className="absolute right-1 top-1.5 opacity-50 transition-opacity hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
                           <NoteDialog
                             spreadsheetId={sheet.id}
                             runId={s.runId}

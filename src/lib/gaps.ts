@@ -7,18 +7,28 @@ import { detectStationColumns, detectActivityColumn, parseStation, isFootageChai
  * bore/plow/trench/gap rows (handholes sit on stations; adders are billing),
  * sorted by station, and reconciles the math:
  *
- *   placed + known gaps + unaccounted gaps − overlaps ≈ designed span
+ *   placed + known gaps + unaccounted gaps − overlaps = designed span
  *
- * Unaccounted gaps — holes in the chain nobody booked — are the actionable
- * output: exact ranges the crew needs to work or gap explicitly.
+ * GAP rows participate in the unaccounted/overlap checks like any chain row —
+ * a booked gap can itself sit on a hole (nobody booked the footage BEFORE it)
+ * or overlap placed work — but never counts toward placed footage.
  */
 
 export interface GapSegment {
   from: number;
   to: number;
   ft: number;
-  /** 1-based data row this gap follows (the row ending at `from`) */
+  /** 1-based data row this segment FOLLOWS (the member ending at `from`) */
   afterRow: number;
+  /** true when unreadable chain rows sit between the two members — the
+   *  finding may actually be a station typo in one of those rows */
+  spansInvalid: boolean;
+}
+
+export interface InvalidChainRow {
+  row: number;
+  startRaw: string;
+  endRaw: string;
 }
 
 export interface GapReport {
@@ -29,8 +39,9 @@ export interface GapReport {
   knownGaps: GapSegment[];
   unaccounted: GapSegment[];
   overlaps: GapSegment[];
-  /** rows skipped because their stations didn't parse */
+  /** chain rows whose stations didn't parse (count kept for the panel) */
   invalid: number;
+  invalidRows: InvalidChainRow[];
 }
 
 export function computeGapReport(data: SnapshotData): GapReport {
@@ -44,11 +55,13 @@ export function computeGapReport(data: SnapshotData): GapReport {
     unaccounted: [],
     overlaps: [],
     invalid: 0,
+    invalidRows: [],
   };
   if (!stations) return report;
   const activityCol = detectActivityColumn(data);
 
   // chain members: footage activities only, with parseable forward stations
+  const invalidIdx: number[] = [];
   const members = data.rows
     .map((row, i) => ({
       i,
@@ -58,41 +71,61 @@ export function computeGapReport(data: SnapshotData): GapReport {
       end: parseStation(row[stations.end]),
     }))
     .filter((m) => isFootageChainRow(m.row, activityCol))
-    .map((m) => {
-      if (m.start === null || m.end === null || m.end < m.start) report.invalid++;
-      return m;
+    .filter((m) => {
+      if (m.start === null || m.end === null || m.end < m.start) {
+        report.invalid++;
+        if (report.invalidRows.length < 10) {
+          report.invalidRows.push({
+            row: m.i + 1,
+            startRaw: norm(m.row[stations.start]),
+            endRaw: norm(m.row[stations.end]),
+          });
+        }
+        invalidIdx.push(m.i);
+        return false;
+      }
+      return true;
     })
-    .filter((m): m is typeof m & { start: number; end: number } =>
-      m.start !== null && m.end !== null && m.end >= m.start,
-    )
-    .sort((a, b) => a.start - b.start || a.end - b.end || a.i - b.i);
+    .sort((a, b) => a.start! - b.start! || a.end! - b.end! || a.i - b.i);
 
   if (members.length === 0) return report;
-  report.chainStart = members[0]!.start;
-  report.chainEnd = Math.max(...members.map((m) => m.end));
-  report.designedSpan = report.chainEnd - report.chainStart;
+  const chainStart = members[0]!.start!;
+  const chainEnd = Math.max(...members.map((m) => m.end!));
+  report.chainStart = chainStart;
+  report.chainEnd = chainEnd;
+  report.designedSpan = chainEnd - chainStart;
 
-  let coveredTo = members[0]!.start;
+  const spansInvalidBetween = (prevIdx: number, curIdx: number) =>
+    invalidIdx.some((k) => k > prevIdx && k < curIdx);
+
+  let coveredTo = 0;
+  let prev: (typeof members)[number] | null = null;
   for (const m of members) {
+    const anchor = prev === null ? m.start! : coveredTo; // first member anchors the chain
+    if (m.start! > anchor) {
+      report.unaccounted.push({
+        from: anchor,
+        to: m.start!,
+        ft: m.start! - anchor,
+        afterRow: (prev?.i ?? m.i) + 1,
+        spansInvalid: prev !== null && spansInvalidBetween(prev.i, m.i),
+      });
+    } else if (m.start! < anchor) {
+      report.overlaps.push({
+        from: m.start!,
+        to: Math.min(anchor, m.end!),
+        ft: Math.min(anchor, m.end!) - m.start!,
+        afterRow: m.i + 1,
+        spansInvalid: false,
+      });
+    }
     if (m.gap) {
-      // a booked gap occupies its span: recorded, counts as known (not placed)
-      report.knownGaps.push({ from: m.start, to: m.end, ft: m.end - m.start, afterRow: m.i + 1 });
-      coveredTo = Math.max(coveredTo, m.end);
-      continue;
+      report.knownGaps.push({ from: m.start!, to: m.end!, ft: m.end! - m.start!, afterRow: m.i + 1, spansInvalid: false });
+    } else {
+      report.placedFt += m.end! - m.start!;
     }
-    if (m.start > coveredTo) {
-      report.unaccounted.push({ from: coveredTo, to: m.start, ft: m.start - coveredTo, afterRow: m.i + 1 });
-    } else if (m.start < coveredTo) {
-      report.overlaps.push({ from: m.start, to: Math.min(coveredTo, m.end), ft: coveredTo - m.start, afterRow: m.i + 1 });
-    }
-    report.placedFt += m.end - m.start;
-    coveredTo = Math.max(coveredTo, m.end);
+    coveredTo = Math.max(coveredTo, m.end!);
+    prev = m;
   }
-  // tail after the last row is the crew's business, not ours: no trailing gap
   return report;
-}
-
-/** Human label for a station number in report lines ("14800" or "148+00"). */
-export function stationLabel(n: number): string {
-  return norm(String(Math.round(n)));
 }

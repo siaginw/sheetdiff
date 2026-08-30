@@ -19,6 +19,8 @@ export async function sendTestDigest(): Promise<{ ok: boolean; error?: string }>
     };
     return { ok: false, error: reasons[result.reason ?? ""] ?? result.reason ?? "Send failed" };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    // SMTP errors embed hostnames/credentials — never surface them to clients
+    console.error("[digest] test send failed:", err instanceof Error ? err.message : String(err));
+    return { ok: false, error: "Sending failed — check the server logs (SMTP host, port, and app password)." };
   }
 }

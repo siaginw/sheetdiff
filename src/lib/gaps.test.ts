@@ -79,6 +79,47 @@ describe("computeGapReport", () => {
     expect(accounted).toBe(r.designedSpan);
   });
 
+  it("a booked GAP sitting on a hole is detected — gaps are checked like chain rows", () => {
+    const r = computeGapReport(
+      snap(H, [
+        ["Plow", "0", "400"],
+        ["GAP", "500", "620"],  // the 400–500 hole BEFORE it was never booked
+        ["Plow", "620", "900"],
+      ]),
+    );
+    expect(r.unaccounted).toHaveLength(1);
+    expect(r.unaccounted[0]).toMatchObject({ from: 400, to: 500, ft: 100 });
+    expect(r.knownGaps).toHaveLength(1);
+    expect(r.knownGaps[0]).toMatchObject({ from: 500, to: 620 });
+  });
+
+  it("nested-overlap ft equals the true double-counted span", () => {
+    const r = computeGapReport(
+      snap(H, [
+        ["Plow", "0", "10000"],
+        ["Bore", "200", "300"], // fully contained
+      ]),
+    );
+    expect(r.overlaps).toHaveLength(1);
+    expect(r.overlaps[0]).toMatchObject({ from: 200, to: 300, ft: 100 }); // not 9800
+    const accounted =
+      r.placedFt + r.knownGaps.reduce((n, g) => n + g.ft, 0) + r.unaccounted.reduce((n, g) => n + g.ft, 0) -
+      r.overlaps.reduce((n, g) => n + g.ft, 0);
+    expect(accounted).toBe(r.designedSpan);
+  });
+
+  it("treats 'Gap (rock)'-style variants as booked gaps, never placed footage", () => {
+    const r = computeGapReport(
+      snap(H, [
+        ["Plow", "0", "500"],
+        ["Gap (rock)", "500", "620"],
+        ["Plow", "620", "900"],
+      ]),
+    );
+    expect(r.placedFt).toBe(780); // not 900 — variants don't count as constructed
+    expect(r.knownGaps).toHaveLength(1);
+  });
+
   it("returns an empty report without station columns", () => {
     const r = computeGapReport(snap(["Crew", "Task"], [["A", "B"]]));
     expect(r.chainStart).toBeNull();

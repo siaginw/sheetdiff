@@ -13,7 +13,7 @@
  *    remove+add.
  */
 
-import { norm, sameValue, normalizeKey, rowHash, colLetter, hashString } from "./normalize";
+import { norm, sameValue, normalizeKey, rowHash, colLetter, hashString, compositeKey } from "./normalize";
 import { detectStationColumns, detectActivityColumn } from "../detect";
 
 export interface SnapshotData {
@@ -90,11 +90,17 @@ const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticke
 export function detectKeyColumn(s: SnapshotData): number | null {
   const { headers, rows } = s;
   if (rows.length < 2) return null;
-  const width = Math.max(headers.length, ...rows.map((r) => r.length));
+  // station columns are positions, never identities — without this, a small
+  // tracker's unique End STA column silently keys the diff and the mechanism
+  // flips to content-hash as soon as two shots share an end station
+  const stations = detectStationColumns(s);
+  const banned = new Set(stations ? [stations.start, stations.end] : []);
+  const width = headers.length;
   let best: { col: number; score: number } | null = null;
 
   const scanCols = Math.min(width, 12);
   for (let c = 0; c < scanCols; c++) {
+    if (banned.has(c)) continue;
     const values = rows.map((r) => normalizeKey(r[c]));
     const nonEmpty = values.filter((v) => v !== "");
     if (nonEmpty.length === 0) continue;
@@ -126,7 +132,7 @@ export function detectCompositeKey(s: SnapshotData): number[] | null {
   const seen = new Set<string>();
   let nonEmpty = 0;
   for (const row of s.rows) {
-    const k = cols.map((c) => normalizeKey(row[c])).filter((v) => v !== "").join("·");
+    const k = compositeKey(row, cols);
     if (k === "") continue;
     nonEmpty++;
     seen.add(k);
@@ -211,16 +217,13 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
 
   const keyOfB = (row: string[]): string => {
     if (keyCol !== null) return normalizeKey(row[keyCol]);
-    if (compositeUsable && compositeCols) {
-      const k = compositeCols.map((c) => normalizeKey(row[c])).filter((v) => v !== "").join("·");
-      return k;
-    }
+    if (compositeUsable && compositeCols) return compositeKey(row, compositeCols);
     return "";
   };
   const keyOfA = (row: string[]): string => {
     if (keyCol !== null && keyColA !== null) return normalizeKey(row[keyColA]);
     if (compositeUsable && compositeCols && compositeColsA) {
-      return compositeCols.map((_, i) => normalizeKey(row[compositeColsA[i]!])).filter((v) => v !== "").join("·");
+      return compositeKey(row, compositeColsA as number[]);
     }
     return "";
   };

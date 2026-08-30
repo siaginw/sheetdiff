@@ -11,7 +11,8 @@ const END_HEADER_RE = /(end|stop|to|finish).*?(sta|station|ft|foot|footage)/i;
 const STATION_HEADER_RE = /(sta|station)/i;
 export const ACTIVITY_HEADER_RE = /^(activity|type|method|work type|description)$/i;
 const ADDER_ACTIVITY_RE = /adder/i;
-const GAP_ACTIVITY_RE = /^gap$/i;
+/** matches "GAP", "Gap (rock)", "gap-pave" — not "gapping" (word-bounded, backslash-free) */
+const GAP_ACTIVITY_RE = /(^|[^a-z])gap([^a-z]|$)/i;
 
 /** Parse a station value to feet ("15743", "4+47", "15,743"). */
 export function parseStation(value: unknown): number | null {
@@ -23,7 +24,10 @@ export function parseStation(value: unknown): number | null {
     return Number(survey[1]) * 100 + Number(survey[2]) + frac;
   }
   const plain = /^(?:sta\.?\s*)?(\d+(?:\.\d+)?)\s*(?:ft|feet|')?$/i.exec(t);
-  if (plain) return Number(plain[1]);
+  if (plain) {
+    const n = Number(plain[1]);
+    return Number.isFinite(n) ? n : null; // 309-digit cells must not become Infinity
+  }
   return null;
 }
 
@@ -35,7 +39,9 @@ export function detectStationColumns(data: SnapshotData): { start: number; end: 
   let start: number | null = null;
   let end: number | null = null;
   headers.forEach((h, i) => {
-    const t = norm(h);
+    // headers are capped: real ones are short, adversarial 50k-char cells
+    // would make the bridged regex quadratic on the shared event loop
+    const t = norm(h).slice(0, 200);
     if (!t) return;
     if (start === null && START_HEADER_RE.test(t)) start = i;
     if (end === null && END_HEADER_RE.test(t)) end = i;

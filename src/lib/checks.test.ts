@@ -117,6 +117,15 @@ describe("runChecks", () => {
     expect(runChecks([{ tabTitle: "PE1", data: mixed, keyColumn: 0 }])).toEqual([]);
   });
 
+  it("flags exact duplicates on tiny tabs — dup detection is never gated by uniqueness", () => {
+    const dup = snap(["Activity", "Start STA", "End STA"], [
+      ["GAP", "500", "620"],
+      ["GAP", "500", "620"], // identical twin — the very case a uniqueness gate would hide
+    ]);
+    const findings = runChecks([{ tabTitle: "PE1", data: dup, keyColumn: null }]);
+    expect(findings.some((f) => f.kind === "dupe-key")).toBe(true);
+  });
+
   it("flags rows that run backwards", () => {
     const backwards = snap(["Shot", "Start Station", "End Station"], [
       ["S1", "0", "500"],

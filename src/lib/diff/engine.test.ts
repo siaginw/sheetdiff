@@ -113,6 +113,18 @@ describe("composite keys (Activity + stations — trackers without ID columns)",
     expect(r.summary.removedRows).toBe(0); // old 500-14800 bore still exists
   });
 
+  it("blank parts keep their position — skeleton rows never conflate", () => {
+    // only non-unique columns outside the composite, so composite identity engages
+    const filler = ["Plow", "900", "1000"];
+    const a = snap(["Activity", "Start STA", "End STA"], [["Plow", "", "15743"], filler]);
+    const b = snap(["Activity", "Start STA", "End STA"], [["Plow", "15743", ""], filler]);
+    const r = diffSnapshots(a, b);
+    // NOT one "changed" row: which part was blank differs, so identities differ
+    expect(r.summary.changedRows).toBe(0);
+    expect(r.summary.addedRows).toBe(1);
+    expect(r.summary.removedRows).toBe(1);
+  });
+
   it("survives full re-sorts via composite matching", () => {
     const shuffled = trackerSnap([
       ["Cobble Adder", "846", "922", "HAIDER 1"],

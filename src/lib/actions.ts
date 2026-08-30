@@ -117,7 +117,14 @@ export async function startTracking(fd: FormData): Promise<void> {
       }),
   );
 
-  await captureSnapshot(id, "manual");
+  try {
+    await captureSnapshot(id, "manual");
+  } catch (err) {
+    // never leave a ghost sheet with zero snapshots — a retry would duplicate it
+    console.error("[startTracking] first capture failed:", err instanceof Error ? err.message : err);
+    await db.delete(spreadsheets).where(eq(spreadsheets.id, id));
+    redirect("/sheets/new?url=" + encodeURIComponent(str(fd, "url")) + "&error=cannot-read");
+  }
   revalidatePath("/");
   redirect(`/sheets/${id}`);
 }
@@ -126,7 +133,12 @@ export async function snapshotNow(fd: FormData): Promise<void> {
   const user = await requireUser();
   const id = str(fd, "spreadsheetId");
   await requireOwnedSpreadsheet(id, user.id);
-  await captureSnapshot(id, "manual");
+  try {
+    await captureSnapshot(id, "manual");
+  } catch (err) {
+    console.error("[snapshot] manual capture failed:", err instanceof Error ? err.message : err);
+    redirect(`/sheets/${id}?error=snapshot-failed`);
+  }
   revalidatePath(`/sheets/${id}`);
   revalidatePath("/");
 }
@@ -292,23 +304,6 @@ export async function addNote(fd: FormData): Promise<void> {
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
-}
-
-export async function deleteNote(fd: FormData): Promise<void> {
-  const user = await requireUser();
-  const id = str(fd, "id");
-  const spreadsheetId = str(fd, "spreadsheetId");
-  const access = await requireSharedSpreadsheet(spreadsheetId, user);
-  // only the author or the owner may delete; scope by spreadsheetId too
-  const noteRows = await db
-    .select()
-    .from(notesTable)
-    .where(and(eq(notesTable.id, id), eq(notesTable.spreadsheetId, spreadsheetId)));
-  const note = noteRows[0];
-  const mayDelete = note && (access.role === "owner" || note.authorUserId === user.id);
-  if (!mayDelete) return;
-  await db.delete(notesTable).where(eq(notesTable.id, id));
-  revalidatePath(`/sheets/${spreadsheetId}`);
 }
 
 /* ------------------------------------------------------------------ */

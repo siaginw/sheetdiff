@@ -13,7 +13,7 @@
  * ID column, but "the 14800–15743 plow" is already how crews identify shots.
  */
 
-import { norm, normalizeKey } from "./diff/normalize";
+import { norm, normalizeKey, compositeKey } from "./diff/normalize";
 import type { SnapshotData } from "./diff/engine";
 import { detectCompositeKey } from "./diff/engine";
 import { computeGapReport } from "./gaps";
@@ -46,18 +46,21 @@ export interface TabChecksInput {
   keyColumn: number | null;
 }
 
-/** Row identity per tab: explicit single key, else the auto composite. */
+/**
+ * Row identity per tab: an explicit single key, else the composite of
+ * Activity + stations — WITHOUT detectCompositeKey's uniqueness gate: for
+ * duplicate detection the repeats are the point, and gating on uniqueness
+ * self-disables exactly when duplicates exist (small tabs).
+ */
 function keyOfClosure(data: SnapshotData, keyColumn: number | null): ((row: string[]) => string) | null {
   if (keyColumn !== null && keyColumn >= 0 && keyColumn < data.headers.length) {
     return (row) => normalizeKey(row[keyColumn]);
   }
-  const composite = detectCompositeKey(data);
-  if (composite) {
-    return (row) =>
-      composite
-        .map((c) => normalizeKey(row[c]))
-        .filter((v) => v !== "")
-        .join("·");
+  const stations = detectStationColumns(data);
+  const activity = detectActivityColumn(data);
+  if (stations && activity !== null) {
+    const cols = [activity, stations.start, stations.end];
+    return (row) => compositeKey(row, cols);
   }
   return null;
 }
@@ -134,7 +137,9 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
           kind: "gap",
           severity: "warning",
           tabTitle,
-          message: `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})`,
+          message:
+            `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})` +
+            (g.spansInvalid ? " — unreadable chain rows in between; check those stations for typos" : ""),
           rows: [g.afterRow],
         });
       }

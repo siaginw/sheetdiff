@@ -22,5 +22,7 @@ USER node
 ENV DATABASE_PATH=/app/data/sheetdiff.db
 VOLUME /app/data
 EXPOSE 3000
+# alpine ships busybox wget (no curl)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 # next start respects PORT
 CMD ["npm", "start"]
