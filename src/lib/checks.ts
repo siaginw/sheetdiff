@@ -4,32 +4,28 @@
  * Runs against the latest snapshot of each tracked tab and flags:
  *  - station-continuity breaks: consecutive rows whose end→start stations
  *    leave unaccounted footage (gaps) or overlap (double-counted footage)
- *  - duplicate row keys within a tab (e.g. the same shot entered as Bore
- *    and Plow)
- *  - the same key appearing in multiple tabs (e.g. a shot in PE6 and PE7)
+ *  - duplicate row identities within a tab (e.g. the same activity+range
+ *    entered twice)
+ *  - the same identity appearing in multiple tabs (e.g. a shot in PE6 and PE7)
  *
- * Station formats seen in the field: plain feet ("15743") and survey
- * notation ("4+47" = 447 ft, "267+18" = 26,718 ft).
+ * Row identity: an explicit single key column when configured/detected, else a
+ * COMPOSITE of Activity + Start STA + End STA — trackers can't always add an
+ * ID column, but "the 14800–15743 plow" is already how crews identify shots.
  */
 
 import { norm, normalizeKey } from "./diff/normalize";
 import type { SnapshotData } from "./diff/engine";
+import { detectCompositeKey } from "./diff/engine";
+import {
+  parseStation,
+  detectStationColumns,
+  detectActivityColumn,
+  isAdderRow,
+  isGapRow,
+} from "./detect";
 
-/** Parse a station value to feet. Returns null when not station-like. */
-export function parseStation(value: unknown): number | null {
-  const t = norm(value).replace(/,/g, "").trim();
-  if (t === "") return null;
-  // survey notation: "4+47", "164+82" (also tolerates multi-plus like "26+7+18"? no — strict)
-  const survey = /^(\d{1,4})\+(\d{1,2})(?:\.(\d+))?$/.exec(t);
-  if (survey) {
-    const frac = survey[3] ? Number(`0.${survey[3]}`) : 0;
-    return Number(survey[1]) * 100 + Number(survey[2]) + frac;
-  }
-  // plain feet (possibly with a unit suffix)
-  const plain = /^(?:sta\.?\s*)?(\d+(?:\.\d+)?)\s*(?:ft|feet|')?$/i.exec(t);
-  if (plain) return Number(plain[1]);
-  return null;
-}
+// re-exported for existing callers/tests
+export { parseStation, detectStationColumns, detectActivityColumn } from "./detect";
 
 export type CheckSeverity = "error" | "warning";
 
@@ -48,76 +44,68 @@ export interface TabChecksInput {
   keyColumn: number | null;
 }
 
-const START_HEADER_RE = /(start|begin|from|beg)\b.*?(sta|station|ft|foot|footage)/i;
-const END_HEADER_RE = /(end|stop|to|finish)\b.*?(sta|station|ft|foot|footage)/i;
-const STATION_HEADER_RE = /(sta|station)/i;
-const ACTIVITY_HEADER_RE = /^(activity|type|method|work type|description)$/i;
-/**
- * Adder rows (Rock Adder, Cobble Adder...) are billing overlays that REUSE a
- * bore's station range on purpose — they must never count as chain segments
- * or every adder would false-positive an overlap. Explicit "GAP" activities
- * are deliberate placeholders; the chain runs through them normally.
- */
-const ADDER_ACTIVITY_RE = /adder/i;
-
-/** Column index whose header names the activity/type, or null. */
-export function detectActivityColumn(data: SnapshotData): number | null {
-  for (let i = 0; i < data.headers.length; i++) {
-    if (ACTIVITY_HEADER_RE.test(norm(data.headers[i]))) return i;
+/** Row identity per tab: explicit single key, else the auto composite. */
+function keyOfClosure(data: SnapshotData, keyColumn: number | null): ((row: string[]) => string) | null {
+  if (keyColumn !== null && keyColumn >= 0 && keyColumn < data.headers.length) {
+    return (row) => normalizeKey(row[keyColumn]);
+  }
+  const composite = detectCompositeKey(data);
+  if (composite) {
+    return (row) =>
+      composite
+        .map((c) => normalizeKey(row[c]))
+        .filter((v) => v !== "")
+        .join("·");
   }
   return null;
 }
 
-/**
- * Find start/end station columns: prefer explicit "start station"/"end
- * station" headers, else the first two station-ish numeric columns in order.
- */
-export function detectStationColumns(data: SnapshotData): { start: number; end: number } | null {
-  const { headers, rows } = data;
-  if (headers.length === 0 || rows.length === 0) return null;
-
-  let start: number | null = null;
-  let end: number | null = null;
-  headers.forEach((h, i) => {
-    const t = norm(h);
-    if (!t) return;
-    if (start === null && START_HEADER_RE.test(t)) start = i;
-    if (end === null && END_HEADER_RE.test(t)) end = i;
-  });
-  if (start !== null && end !== null && start !== end) return { start, end };
-
-  // fallback: columns named like stations that mostly parse
-  const candidates: number[] = [];
-  headers.forEach((h, i) => {
-    if (!STATION_HEADER_RE.test(norm(h))) return;
-    const parsed = rows.filter((r) => parseStation(r[i]) !== null).length;
-    if (parsed >= Math.max(1, rows.length * 0.5)) candidates.push(i);
-  });
-  if (candidates.length >= 2) return { start: candidates[0], end: candidates[1] };
-  return null;
-}
-
 export interface FootageTotal {
-  /** summed footage (end − start) over parseable, forward-running rows */
+  /** summed PLACED footage (end − start); adders and GAP placeholders excluded */
   ft: number;
   /** rows included in the total */
   shots: number;
   /** rows whose stations didn't parse or ran backwards */
   invalid: number;
+  /** handhole/structure rows (zero-length; counted as structures, not footage) */
+  handholes: number;
+  /** explicit GAP placeholder rows, with their unworked span */
+  gaps: { count: number; ft: number };
 }
 
 /** Sum a tab's footage using the detected station columns. */
-export function computeFootage(data: SnapshotData): FootageTotal & { stations: { start: number; end: number } | null } {
+export function computeFootage(
+  data: SnapshotData,
+): FootageTotal & { stations: { start: number; end: number } | null } {
   const stations = detectStationColumns(data);
-  const out: FootageTotal & { stations: { start: number; end: number } | null } = { ft: 0, shots: 0, invalid: 0, stations };
+  const out: FootageTotal & { stations: { start: number; end: number } | null } = {
+    ft: 0,
+    shots: 0,
+    invalid: 0,
+    handholes: 0,
+    gaps: { count: 0, ft: 0 },
+    stations,
+  };
   if (!stations) return out;
   const activityCol = detectActivityColumn(data);
   for (const r of data.rows) {
-    if (activityCol !== null && ADDER_ACTIVITY_RE.test(norm(r[activityCol]))) continue; // billing overlay
+    if (isAdderRow(r, activityCol)) continue; // billing overlay
     const s = parseStation(r[stations.start]);
     const e = parseStation(r[stations.end]);
+    if (isGapRow(r, activityCol)) {
+      // a booked GAP is unworked footage: counted separately, never "placed"
+      if (s !== null && e !== null && e >= s) {
+        out.gaps.count++;
+        out.gaps.ft += e - s;
+      }
+      continue;
+    }
     if (s === null || e === null || e < s) {
       out.invalid++;
+      continue;
+    }
+    if (e === s) {
+      out.handholes++; // structures sit at a station, contribute no footage
       continue;
     }
     out.ft += e - s;
@@ -136,17 +124,18 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
     if (stations) {
       const { start, end } = stations;
       const activityCol = detectActivityColumn(data);
-      const isAdder = (r: string[]) => activityCol !== null && ADDER_ACTIVITY_RE.test(norm(r[activityCol]));
+      // adders overlay real segments — not chain rows; GAP rows chain through
+      // (they book the missing footage) but never flag as findings themselves
       const parsed = data.rows
         .map((r, i) => ({
           i,
-          adder: isAdder(r),
+          adder: isAdderRow(r, activityCol),
           start: parseStation(r[start]),
           end: parseStation(r[end]),
           startRaw: norm(r[start]),
           endRaw: norm(r[end]),
         }))
-        .filter((p) => !p.adder); // adders overlay real segments — not chain rows
+        .filter((p) => !p.adder);
       // a row running backwards is its own finding
       for (const p of parsed) {
         if (p.start !== null && p.end !== null && p.end < p.start) {
@@ -184,12 +173,12 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
       }
     }
 
-    // ---- duplicate keys within the tab ----
-    const keyCol = keyColumn ?? null;
-    if (keyCol !== null && keyCol < data.headers.length) {
+    // ---- duplicate identities within the tab ----
+    const keyOf = keyOfClosure(data, keyColumn);
+    if (keyOf) {
       const seen = new Map<string, number[]>();
       data.rows.forEach((r, i) => {
-        const k = normalizeKey(r[keyCol]);
+        const k = keyOf(r);
         if (k === "") return;
         const list = seen.get(k) ?? [];
         list.push(i + 1);
@@ -201,7 +190,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
             kind: "dupe-key",
             severity: "error",
             tabTitle,
-            message: `“${k}” appears ${rowNums.length}× (rows ${rowNums.join(", ")}) — duplicate shot?`,
+            message: `“${k.replace(/·/g, " ")}” appears ${rowNums.length}× (rows ${rowNums.join(", ")}) — duplicate shot?`,
             rows: rowNums,
           });
         }
@@ -209,12 +198,13 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
     }
   }
 
-  // ---- same key in multiple tabs ----
+  // ---- same identity in multiple tabs ----
   const keyOwners = new Map<string, { tab: string; row: number }[]>();
   for (const { tabTitle, data, keyColumn } of tabs) {
-    if (keyColumn === null || keyColumn >= data.headers.length) continue;
+    const keyOf = keyOfClosure(data, keyColumn);
+    if (!keyOf) continue;
     data.rows.forEach((r, i) => {
-      const k = normalizeKey(r[keyColumn]);
+      const k = keyOf(r);
       if (k === "") return;
       const list = keyOwners.get(k) ?? [];
       list.push({ tab: tabTitle, row: i + 1 });
@@ -228,7 +218,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
         kind: "cross-tab",
         severity: "error",
         tabTitle: owners[0].tab,
-        message: `“${k}” appears in ${[...uniqueTabs].join(" and ")} — should be in only one`,
+        message: `“${k.replace(/·/g, " ")}” appears in ${[...uniqueTabs].join(" and ")} — should be in only one`,
         rows: owners.map((o) => o.row),
       });
     }

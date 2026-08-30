@@ -60,3 +60,36 @@ describe("traceKey", () => {
     expect(traceKey(chain([{ at: 1000, rows: [["S1", "0", "100", "plow"]] }]), 0, "zz")).toEqual([]);
   });
 });
+
+describe("traceKey without ID columns (station + text matching)", () => {
+  const TH = ["Activity", "Start STA", "End STA", "Crew #"];
+  const tchain = (items: { at: number; rows: string[][] }[]): TraceSnap[] =>
+    items.map((i) => ({ createdAt: i.at, data: snap(TH, i.rows) }));
+
+  it("traces by station number: the row covering that station", () => {
+    const events = traceKey(
+      tchain([
+        { at: 1000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW B"]] },
+        { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW C"]] },
+      ]),
+      null,
+      "700",
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("changed");
+    expect(events[0].changes).toEqual([{ header: "Crew #", from: "CREW B", to: "CREW C" }]);
+  });
+
+  it("traces by free text in any cell", () => {
+    const events = traceKey(
+      tchain([
+        { at: 1000, rows: [["Plow", "0", "500", "CREW A"]] },
+        { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "HAIDER 1"]] },
+        { at: 3000, rows: [["Plow", "0", "500", "CREW A"]] },
+      ]),
+      null,
+      "HAIDER",
+    );
+    expect(events.map((e) => e.kind)).toEqual(["removed", "added"]);
+  });
+});

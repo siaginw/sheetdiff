@@ -69,7 +69,25 @@ describe("parseImportFile (XLSX)", () => {
     const findings = runChecks([{ tabTitle: "US2-PE-001", data, keyColumn: null }]);
     expect(findings).toEqual([]); // the Cobble Adder overlap must not fire
     const f = computeFootage(data);
-    expect(f.ft).toBe(300); // 0-100 + 100-200 + 200-300; handhole adds 0
-    expect(f.shots).toBe(4);
+    expect(f.ft).toBe(300); // 0-100 + 100-200 + 200-300
+    expect(f.shots).toBe(3); // handhole isn't footage
+    expect(f.handholes).toBe(1); // counted as a structure
+  });
+
+  it("accounts GAP rows as known unworked footage, never placed", async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("PE");
+    ws.addRow(["Activity", "Start STA", "End STA"]);
+    ws.addRow(["Plow", 0, 500]);
+    ws.addRow(["GAP", 500, 620]); // 120 ft booked as a known gap
+    ws.addRow(["Bore", 620, 900]);
+    const buf = await wb.xlsx.writeBuffer();
+    const { tables } = await parseImportFile(new File([buf], "tracker.xlsx"));
+    const data = toSnapshotData(tables.PE);
+    const f = computeFootage(data);
+    expect(f.ft).toBe(780); // 500 + 260 — the gap is NOT placed footage
+    expect(f.gaps).toEqual({ count: 1, ft: 120 });
+    // and the chain flows through the GAP row without flagging it
+    expect(runChecks([{ tabTitle: "PE", data, keyColumn: null }])).toEqual([]);
   });
 });

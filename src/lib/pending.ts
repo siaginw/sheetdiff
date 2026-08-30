@@ -1,6 +1,6 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "./db";
-import { snapshots, changeAcks, type Snapshot, type Tab } from "./db/schema";
+import { snapshots, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
 import { decodeSnapshot } from "./snapshots";
 import { getAckMap, isResolved, computeIntroductions, type WalkSnapshot } from "./sync";

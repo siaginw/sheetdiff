@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Mail, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";

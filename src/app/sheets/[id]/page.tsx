@@ -43,7 +43,7 @@ import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
 import { TracePanel } from "@/components/sheet/trace-panel";
 import { traceKey as traceKeyFn } from "@/lib/trace";
-import { normalizeKey } from "@/lib/diff/normalize";
+
 
 const TIMELINE_STATS_LIMIT = 30;
 
@@ -188,22 +188,21 @@ export default async function SheetPage({
     }
   }
 
-  // ---- shot history (trace) ----
+  // ---- shot history (trace): station number, free text, or row key ----
   const traceParam = typeof sp.trace === "string" ? sp.trace.trim() : "";
-  const traceKeyCol = activeTab.keyColumn ?? detectedKey;
   const traceEvents =
-    traceParam && traceKeyCol !== null && recent.length > 1
+    traceParam && recent.length > 1
       ? traceKeyFn(
           [...recent].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) })),
-          traceKeyCol,
-          normalizeKey(traceParam),
+          activeTab.keyColumn ?? null,
+          traceParam,
         )
       : [];
   const traceHrefBase = `/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}`;
 
   // ---- checks on latest snapshots of every tracked tab ----
   const checkFindings: CheckFinding[] = [];
-  let footageNow: number | null = null;
+  let activeFootage: ReturnType<typeof computeFootage> | null = null;
   let footageDelta: number | null = null;
   let footageBaseLabel = "since previous snapshot";
   if (latestData) {
@@ -225,14 +224,14 @@ export default async function SheetPage({
     checkFindings.push(...runChecks(inputs));
 
     // footage ledger for the ACTIVE tab: total + delta since collection
-    const activeFootage = computeFootage(latestData);
-    if (activeFootage.stations) {
-      footageNow = activeFootage.ft;
+    const f = computeFootage(latestData);
+    if (f.stations) {
+      activeFootage = f;
       const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
       const base = baselineSnap ?? recent[1] ?? null;
       if (base) {
         const baseFootage = computeFootage(decodeSnapshot(base.dataBlob));
-        footageDelta = activeFootage.ft - baseFootage.ft;
+        footageDelta = f.ft - baseFootage.ft;
         footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
       }
     }
@@ -358,7 +357,7 @@ export default async function SheetPage({
                 <input
                   name="trace"
                   defaultValue={traceParam}
-                  placeholder="Trace a shot…"
+                  placeholder="Trace a shot or station…"
                   className="h-7 w-full rounded-md border bg-card px-2 font-mono text-xs outline-none focus:border-ring"
                 />
                 <button
@@ -469,13 +468,24 @@ export default async function SheetPage({
           {/* diff panel */}
           <section className="min-w-0">
             {/* footage ledger */}
-            {footageNow !== null ? (
+            {activeFootage?.stations ? (
               <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-2.5 font-mono text-xs">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">footage</span>
                 <span className="text-sm font-semibold">
-                  {footageNow.toLocaleString()} <span className="font-normal text-muted-foreground">ft</span>
+                  {activeFootage.ft.toLocaleString()} <span className="font-normal text-muted-foreground">ft</span>
                 </span>
                 <span className="text-muted-foreground">· {activeTab.title}</span>
+                {activeFootage.handholes > 0 ? (
+                  <span className="text-muted-foreground">
+                    · {activeFootage.handholes} handhole{activeFootage.handholes === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {activeFootage.gaps.count > 0 ? (
+                  <span className="text-muted-foreground" title="explicit GAP rows in the sheet">
+                    · {activeFootage.gaps.count} known gap{activeFootage.gaps.count === 1 ? "" : "s"} (
+                    {activeFootage.gaps.ft.toLocaleString()} ft)
+                  </span>
+                ) : null}
                 {footageDelta !== null && footageDelta !== 0 ? (
                   <span
                     className={`font-semibold ${
@@ -493,13 +503,7 @@ export default async function SheetPage({
 
             {/* shot history */}
             {traceParam ? (
-              traceKeyCol !== null ? (
-                <TracePanel traceKeyLabel={traceParam} events={traceEvents} onClearHref={traceHrefBase} />
-              ) : (
-                <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
-                  Tracing needs a key column — pick one in tab settings.
-                </div>
-              )
+              <TracePanel traceKeyLabel={traceParam} events={traceEvents} onClearHref={traceHrefBase} />
             ) : null}
 
             {/* gap linter */}

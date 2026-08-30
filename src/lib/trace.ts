@@ -1,11 +1,14 @@
 import type { SnapshotData } from "./diff/engine";
 import { norm, normalizeKey, sameValue } from "./diff/normalize";
+import { parseStation } from "./detect";
 
 /**
- * Shot history: trace one row (matched by its key column) through a sequence
- * of snapshots and report every value change, newest first. Answers the audit
- * question "when did this shot's numbers change, and to what?" without
- * clicking through snapshot pairs.
+ * Shot history: trace one row through a sequence of snapshots and report
+ * every value change, newest first. Matching works three ways, no ID column
+ * required:
+ *  - a station NUMBER ("14800") → the row covering that station
+ *  - free text ("HAIDER") → the first row containing it
+ *  - a row key → exact composite/single-key match
  */
 
 export interface TraceChange {
@@ -25,23 +28,41 @@ export interface TraceSnap {
   data: SnapshotData;
 }
 
-/** Find the row matching `key` in a snapshot, or null. */
-function findRow(data: SnapshotData, keyCol: number, key: string): string[] | null {
-  for (const row of data.rows) {
-    if (normalizeKey(row[keyCol]) === key) return row;
+type RowMatcher = (data: SnapshotData) => string[] | null;
+
+function makeMatcher(needleRaw: string): RowMatcher {
+  const station = parseStation(needleRaw);
+  if (station !== null && /^[\d.,+]+\s*(?:ft|feet)?$/i.test(needleRaw.trim())) {
+    // station mode: the row whose station span covers the number
+    return (data) =>
+      data.rows.find((row) => {
+        const nums = row.map((v) => parseStation(v)).filter((n) => n !== null) as number[];
+        return nums.length >= 2 && nums[0]! <= station && station <= nums[nums.length - 1]!;
+      }) ?? null;
   }
-  return null;
+  const needle = needleRaw.trim().toLowerCase();
+  const asKey = needle.split(/\s+/).map((p) => normalizeKey(p)).join("·");
+  return (data) => {
+    // exact key/composite match first
+    const exact = data.rows.find((row) =>
+      row.map((v) => normalizeKey(v)).filter((v) => v !== "").join("·") === asKey && asKey !== "",
+    );
+    if (exact) return exact;
+    // then containment: any cell contains the text
+    return data.rows.find((row) => row.some((v) => v.toLowerCase().includes(needle))) ?? null;
+  };
 }
 
 /**
  * @param snaps oldest → newest, GIS imports already excluded by the caller
- * @param key already normalized (use normalizeKey on user input)
  */
-export function traceKey(snaps: TraceSnap[], keyCol: number, key: string): TraceEvent[] {
+export function traceKey(snaps: TraceSnap[], keyCol: number | null, key: string): TraceEvent[] {
+  void keyCol; // retained for API compatibility; matching is content-driven now
+  const match = makeMatcher(key);
   const events: TraceEvent[] = [];
   for (let i = 1; i < snaps.length; i++) {
-    const prev = findRow(snaps[i - 1].data, keyCol, key);
-    const cur = findRow(snaps[i].data, keyCol, key);
+    const prev = match(snaps[i - 1].data);
+    const cur = match(snaps[i].data);
     const at = snaps[i].createdAt;
 
     if (!prev && cur) {

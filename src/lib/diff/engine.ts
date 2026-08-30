@@ -14,6 +14,7 @@
  */
 
 import { norm, sameValue, normalizeKey, rowHash, colLetter, hashString } from "./normalize";
+import { detectStationColumns, detectActivityColumn } from "../detect";
 
 export interface SnapshotData {
   headers: string[];
@@ -111,6 +112,30 @@ export function detectKeyColumn(s: SnapshotData): number | null {
   return best ? best.col : null;
 }
 
+/**
+ * Composite row identity for trackers that can't have an ID column:
+ * Activity + Start station + End station ("the 14800–15743 plow"). Qualifies
+ * when all three columns exist and the combination is essentially unique.
+ */
+export function detectCompositeKey(s: SnapshotData): number[] | null {
+  if (s.rows.length < 2) return null;
+  const stations = detectStationColumns(s);
+  const activity = detectActivityColumn(s);
+  if (!stations || activity === null) return null;
+  const cols = [activity, stations.start, stations.end];
+  const seen = new Set<string>();
+  let nonEmpty = 0;
+  for (const row of s.rows) {
+    const k = cols.map((c) => normalizeKey(row[c])).filter((v) => v !== "").join("·");
+    if (k === "") continue;
+    nonEmpty++;
+    seen.add(k);
+  }
+  if (nonEmpty < 2) return null;
+  if (seen.size < nonEmpty * 0.9) return null; // combos must be ~unique to identify rows
+  return cols;
+}
+
 /** Map B columns -> A columns (null = column is new in B). */
 function matchColumns(a: SnapshotData, b: SnapshotData): {
   aToB: (number | null)[]; // A col index -> B col index
@@ -178,6 +203,28 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   if (keyCol === null) keyCol = detectKeyColumn(b);
   const keyColA = keyCol !== null ? cols.bToA[keyCol] ?? null : null;
 
+  // composite identity (Activity + stations) when no single key exists —
+  // usable only when every composite column maps into A
+  const compositeCols = keyCol === null ? detectCompositeKey(b) : null;
+  const compositeColsA = compositeCols?.map((c) => cols.bToA[c] ?? null) ?? null;
+  const compositeUsable = compositeCols !== null && compositeColsA !== null && compositeColsA.every((c) => c !== null);
+
+  const keyOfB = (row: string[]): string => {
+    if (keyCol !== null) return normalizeKey(row[keyCol]);
+    if (compositeUsable && compositeCols) {
+      const k = compositeCols.map((c) => normalizeKey(row[c])).filter((v) => v !== "").join("·");
+      return k;
+    }
+    return "";
+  };
+  const keyOfA = (row: string[]): string => {
+    if (keyCol !== null && keyColA !== null) return normalizeKey(row[keyColA]);
+    if (compositeUsable && compositeCols && compositeColsA) {
+      return compositeCols.map((_, i) => normalizeKey(row[compositeColsA[i]!])).filter((v) => v !== "").join("·");
+    }
+    return "";
+  };
+
   // ---- row matching ----
   // matchedA[i] = B row index matched to A row i (or -1)
   // matchB[k] = A row index matched to B row k (or -1)
@@ -187,17 +234,17 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   const sharedACols: number[] = [];
   for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
 
-  if (keyColA !== null && keyCol !== null) {
+  if ((keyCol !== null && keyColA !== null) || compositeUsable) {
     const queues = new Map<string, number[]>();
     for (let i = 0; i < a.rows.length; i++) {
-      const k = normalizeKey(a.rows[i][keyColA]);
+      const k = keyOfA(a.rows[i]);
       if (k === "") continue; // blank keys are not identities
       const q = queues.get(k) ?? [];
       q.push(i);
       queues.set(k, q);
     }
     for (let k = 0; k < b.rows.length; k++) {
-      const key = normalizeKey(b.rows[k][keyCol]);
+      const key = keyOfB(b.rows[k]);
       if (key === "") continue;
       const q = queues.get(key);
       if (q && q.length > 0) {
@@ -262,7 +309,12 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     columnsAdded: cols.added.map((c) => norm(b.headers[c]) || colLetter(c)),
     columnsRemoved: cols.removed.map((c) => norm(a.headers[c]) || colLetter(c)),
     keyColumnIndex: keyCol,
-    keyColumnHeader: keyCol !== null ? norm(b.headers[keyCol]) || colLetter(keyCol) : null,
+    keyColumnHeader:
+      keyCol !== null
+        ? norm(b.headers[keyCol]) || colLetter(keyCol)
+        : compositeUsable && compositeCols
+          ? compositeCols.map((c) => norm(b.headers[c]) || colLetter(c)).join(" + ")
+          : null,
     fromWhen: opts.fromWhen ?? null,
     toWhen: opts.toWhen ?? null,
   };
@@ -287,7 +339,8 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
 
   const emitB = (k: number) => {
     const i = matchB[k];
-    const key = keyCol !== null && keyColA !== null ? normalizeKey(b.rows[k][keyCol]) || null : null;
+    const rawKey = keyOfB(b.rows[k]);
+    const key = rawKey === "" ? null : rawKey;
     // stable identity for acks: key column when present, else hash of the OLD
     // row (stable across value edits, so a re-change after an ack re-flags it)
     const rowKey =
@@ -354,7 +407,8 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
 
   const emitRemoved = (i: number) => {
     summary.removedRows++;
-    const removedKey = keyCol !== null && keyColA !== null ? normalizeKey(a.rows[i][keyColA]) || null : null;
+    const removedRaw = keyOfA(a.rows[i]);
+    const removedKey = removedRaw === "" ? null : removedRaw;
     diffRows.push({
       status: "removed",
       key: removedKey,

@@ -75,6 +75,56 @@ describe("detectKeyColumn", () => {
   });
 });
 
+describe("composite keys (Activity + stations — trackers without ID columns)", () => {
+  // real tracker schema: no ID column; identity = Activity + Start STA + End STA
+  const trackerSnap = (rows: string[][]) => snap(["Activity", "Start STA", "End STA", "Crew #"], rows);
+  const before = trackerSnap([
+    ["Plow", "0", "500", "BIG M P1"],
+    ["Bore", "500", "14800", "HAIDER 1"],
+    ["Cobble Adder", "846", "922", "HAIDER 1"],
+  ]);
+  const after = trackerSnap([
+    ["Plow", "0", "500", "BIG M P1"],
+    ["Bore", "500", "14800", "HAIDER 2"], // crew changed on the same shot
+    ["Cobble Adder", "846", "922", "HAIDER 1"],
+  ]);
+
+  it("matches rows by the composite and reports a clean cell change", () => {
+    const r = diffSnapshots(before, after);
+    expect(r.summary.changedRows).toBe(1);
+    expect(r.summary.addedRows).toBe(0);
+    expect(r.summary.removedRows).toBe(0);
+    const row = r.rows.find((x) => x.status === "changed")!;
+    expect(row.cells[0]).toMatchObject({ header: "Crew #", from: "HAIDER 1", to: "HAIDER 2" });
+    expect(row.key).toContain("bore");
+    expect(r.summary.keyColumnHeader).toContain("Activity");
+  });
+
+  it("a station edit changes identity → remove + add (as with single keys)", () => {
+    const edited = trackerSnap([
+      ["Plow", "0", "500", "BIG M P1"],
+      ["Bore", "500", "14800", "HAIDER 1"],
+      ["Bore", "500", "15743", "HAIDER 1"], // end station corrected: NEW identity
+      ["Cobble Adder", "846", "922", "HAIDER 1"],
+    ]);
+    const r = diffSnapshots(before, edited);
+    expect(r.summary.changedRows).toBe(0);
+    expect(r.summary.addedRows).toBe(1);
+    expect(r.summary.removedRows).toBe(0); // old 500-14800 bore still exists
+  });
+
+  it("survives full re-sorts via composite matching", () => {
+    const shuffled = trackerSnap([
+      ["Cobble Adder", "846", "922", "HAIDER 1"],
+      ["Bore", "500", "14800", "HAIDER 1"],
+      ["Plow", "0", "500", "BIG M P1"],
+    ]);
+    const r = diffSnapshots(before, shuffled);
+    expect(r.summary.changedRows).toBe(0);
+    expect(r.summary.movedRows).toBe(2); // Bore keeps index 1 in both orders
+  });
+});
+
 describe("diffSnapshots", () => {
   const base = snap(["ID", "Name", "Qty"], [
     ["1", "Nails", "40"],
