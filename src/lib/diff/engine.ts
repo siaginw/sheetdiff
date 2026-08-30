@@ -250,18 +250,31 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   const sharedACols: number[] = [];
   for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
 
+  // Track which rows have blank keys so they can fall through to content-hash
+  // matching — real trackers pad tabs with hundreds of label-only rows whose
+  // composite key is blank; treating them as remove+add pairs poisons every
+  // downstream consumer (stats, billing, quiet-day).
+  const blankKeyedA = new Set<number>();
+  const blankKeyedB = new Set<number>();
+
   if ((keyCol !== null && keyColA !== null) || compositeUsable) {
     const queues = new Map<string, number[]>();
     for (let i = 0; i < a.rows.length; i++) {
       const k = keyOfA(a.rows[i]);
-      if (k === "") continue; // blank keys are not identities
+      if (k === "") {
+        blankKeyedA.add(i); // no key identity — fall through below
+        continue;
+      }
       const q = queues.get(k) ?? [];
       q.push(i);
       queues.set(k, q);
     }
     for (let k = 0; k < b.rows.length; k++) {
       const key = keyOfB(b.rows[k]);
-      if (key === "") continue;
+      if (key === "") {
+        blankKeyedB.add(k);
+        continue;
+      }
       const q = queues.get(key);
       if (q && q.length > 0) {
         const i = q.shift()!;
@@ -270,6 +283,60 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
       }
     }
   } else {
+    // no key at all — everything is blank-keyed for the content-hash pass
+    for (let i = 0; i < a.rows.length; i++) blankKeyedA.add(i);
+    for (let k = 0; k < b.rows.length; k++) blankKeyedB.add(k);
+  }
+
+  // Content-hash matching for rows the key pass couldn't identify: first the
+  // blank-keyed ones (padded tail rows match their identical twins across
+  // snapshots), then the general leftover pairing. This is exactly the old
+  // no-key path, applied selectively.
+  {
+    const sharedACols: number[] = [];
+    for (let ac = 0; ac < cols.aToB.length; ac++) if (cols.aToB[ac] !== null) sharedACols.push(ac);
+    const queues = new Map<string, number[]>();
+    for (let i = 0; i < a.rows.length; i++) {
+      if (matchedA[i] !== -1 || !blankKeyedA.has(i)) continue;
+      const h = rowHash(a.rows[i], sharedACols);
+      if (h === "\u0000".repeat(sharedACols.length)) continue; // fully empty
+      const q = queues.get(h) ?? [];
+      q.push(i);
+      queues.set(h, q);
+    }
+    const unmatchedB: number[] = [];
+    for (let k = 0; k < b.rows.length; k++) {
+      if (matchB[k] !== -1 || !blankKeyedB.has(k)) continue;
+      const h = rowHash(b.rows[k], sharedACols.map((ac) => cols.aToB[ac]!));
+      if (h === "\u0000".repeat(sharedACols.length)) {
+        unmatchedB.push(k);
+        continue;
+      }
+      const q: number[] | undefined = queues.get(h);
+      if (q && q.length > 0) {
+        const i = q.shift()!;
+        matchB[k] = i;
+        matchedA[i] = k;
+      } else {
+        unmatchedB.push(k);
+      }
+    }
+    // Positional pairing of leftovers (blank rows only, never replacing the
+    // old key-based pairing which already ran above)
+    const leftoverA: number[] = [];
+    for (let i = 0; i < a.rows.length; i++) {
+      if (matchedA[i] === -1 && blankKeyedA.has(i)) leftoverA.push(i);
+    }
+    let bi = 0;
+    for (const i of leftoverA) {
+      if (bi >= unmatchedB.length) break;
+      const k = unmatchedB[bi++];
+      matchB[k] = i;
+      matchedA[i] = k;
+    }
+  }
+
+  if (false) {
     // Content hashing over shared columns, then positional pairing of leftovers.
     const queues = new Map<string, number[]>();
     for (let i = 0; i < a.rows.length; i++) {
@@ -286,8 +353,8 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
         unmatchedB.push(k);
         continue;
       }
-      const q = queues.get(h);
-      if (q && q.length > 0) {
+      const q = queues.get(h) ?? [];
+      if (q.length > 0) {
         const i = q.shift()!;
         matchB[k] = i;
         matchedA[i] = k;

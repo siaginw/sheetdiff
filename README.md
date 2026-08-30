@@ -33,6 +33,8 @@ on the dashboard.
   own per tab). Sorting a sheet produces "moved" markers, never false changes.
 - **No noise.** `40` vs `40.00` vs `$40` are the same number. Trailing blanks don't diff. Long
   text values get word-level diffs.
+- **Gap report.** Reconstructs each tab's footage chain (bore/plow/trench/gap rows only) and reconciles the math: placed + known gaps − overlaps vs. designed span.
+- **Shot history.** Trace a single row through every snapshot by station number, free text, or key.
 - **Checks (the gap linter).** Station-continuity breaks (`2 ft gap: row 3 ends at 15741 but
   row 4 starts at 15743`), duplicate shots, and the same key stranded in two tabs — caught on
   every snapshot. Understands plain feet and survey notation (`4+47`).
@@ -169,6 +171,8 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   each send includes what changed since the last collection, unresolved changes, check findings,
   footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works —
   see the commented block). Sent while the app is running.
+- **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take.
+- **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice), the to-enter worklist, and late entries in one CSV.
 - **Self-maintaining data** — automatic nightly backups (`data/backups/`, keep 14 by default)
   and snapshot retention (keep the newest 200 per tab, baselines always kept). Both tunable via
   `SHEETDIFF_KEEP_SNAPSHOTS` / `SHEETDIFF_BACKUPS` in `.env`.
@@ -195,8 +199,8 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (engine, checks, gaps, trace, acks, imports)
-npm run db:push    # apply schema changes to the SQLite db
+npm test           # domain test suite (138 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```
 
@@ -214,6 +218,11 @@ Stack: Next.js (App Router) + TypeScript, Tailwind + shadcn/ui, SQLite via Drizz
 | `src/lib/scheduler.ts` | In-process scheduler (checks every minute) |
 | `src/lib/actions.ts` | Server actions (snapshot, baseline, schedule, settings) |
 | `src/components/diff/diff-view.tsx` | The GitHub-style diff UI (client) |
+| `src/lib/gaps.ts` | Auto gap report — chain reconstruction and reconciliation |
+| `src/lib/detect.ts` | Station parsing + column auto-detection |
+| `src/lib/production.ts` | Production analytics — dates, crews, TOTALS, aging |
+| `src/lib/billing.ts` | The billing-day packet |
+| `src/lib/db/migrate.ts` | Startup migrations (legacy DBs stamped non-destructively) |
 | `data/sheetdiff.db` | SQLite database (snapshots as gzip'd JSON blobs) |
 
 ### How diffs stay honest

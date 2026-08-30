@@ -2,7 +2,7 @@
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,
-crew day-rate board, aging gap ledger. Capture-time stats materialization.
+crew productivity board, aging gap ledger. Capture-time stats materialization.
 Database migrations (auto-applied on startup; legacy DBs stamped non-destructively).
 Sharing: viewer accounts by email. GIS import diff. Digest email (daily/weekly).
 Auto gap report (bore/plow/gap chain). Retention + nightly verified backups.
