@@ -306,7 +306,7 @@ describe("importGis xlsx", () => {
   it("stores nothing when no worksheet matches, then redirects with import-no-match", async () => {
     signIn("u1");
     const file = await xlsxFile([
-      ["ZZNOMATCH", [["A"], ["b"]]], // matches nothing (the "other" tab is untracked AND differently named)
+      ["OTHER", [["A"], ["b"]]], // matches the UNTRACKED tab "other" by name — must still not store
       ["MISMATCH", [["A"]]],
     ]);
     const form = fd({ spreadsheetId: "imp-sheet" });
