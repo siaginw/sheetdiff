@@ -13,7 +13,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
@@ -42,14 +42,31 @@ interface SheetStatus {
 }
 
 /** Pending changes across every tracked tab (shared resolver keeps the
- *  dashboard, CSV export, and digest in exact agreement). */
+ *  dashboard, CSV export, and digest in exact agreement). Distinguishes
+ *  "no baseline" from "quiet day / nothing pending" so the badge never lies. */
 async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
   const status: SheetStatus = { changes: 0, unresolved: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
-  for (const tab of tabRows.filter((t) => t.tracked)) {
+  const tracked = tabRows.filter((t) => t.tracked);
+
+  // resolve baseline existence INDEPENDENTLY of the pending resolver — the
+  // quiet-day short-circuit and latest===baseline both return null, but the
+  // baseline still exists (the dashboard's "up to date" state)
+  if (tracked.length > 0) {
+    const { and, eq: eqOp, ne: neOp, max } = await import("drizzle-orm");
+    const { snapshots } = await import("@/lib/db/schema");
+    const baselines = await db
+      .select({ tabId: snapshots.tabId, createdAt: snapshots.createdAt })
+      .from(snapshots)
+      .where(and(inArray(snapshots.tabId, tracked.map((t) => t.id)), eqOp(snapshots.isBaseline, true), neOp(snapshots.trigger, "import")));
+    if (baselines.length > 0) {
+      status.baselineAt = Math.max(...baselines.map((b) => b.createdAt));
+    }
+  }
+
+  for (const tab of tracked) {
     const pending = await getPendingChanges(tab);
     if (!pending) continue;
     status.latestAt = Math.max(status.latestAt ?? 0, pending.latestAt);
-    status.baselineAt = Math.max(status.baselineAt ?? 0, pending.baselineAt);
     status.detail.added += pending.counts.added;
     status.detail.removed += pending.counts.removed;
     status.detail.changed += pending.counts.changed;
@@ -343,6 +360,8 @@ export default async function Home({
                     <div className="flex items-center gap-4">
                       {st.baselineAt ? (
                         st.unresolved > 0 ? (
+                          // changes present and not all entered
+
                           <Link
                             href={`/sheets/${sheet.id}`}
                             className="flex items-center gap-2.5 font-mono text-xs"
@@ -360,7 +379,7 @@ export default async function Home({
                           </Link>
                         ) : (
                           <Badge variant="secondary" className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg">
-                            <CheckCircle2 className="size-3" /> {st.changes} entered · up to date
+                            <CheckCircle2 className="size-3" /> up to date since collection
                           </Badge>
                         )
                       ) : (

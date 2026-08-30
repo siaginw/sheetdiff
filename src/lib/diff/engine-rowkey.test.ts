@@ -80,23 +80,31 @@ describe("rowKey disambiguation: same-family blank-key siblings both changed", (
 
   it("keyed rows keep their raw identity as rowKey — the suffix never applies", () => {
     // composite identity (or an explicit tabs.keyColumn): acks recorded
-    // against key-valued rowKeys must survive the disambiguation untouched
-    const ka = snap(TRACKER_HEADERS, [["Bore", "500", "14800", "HAIDER 1", ""]]);
-    const kb = snap(TRACKER_HEADERS, [["Bore", "500", "14800", "HAIDER 2", ""]]);
+    // against key-valued rowKeys must survive the disambiguation untouched.
+    // Two rows per side — composite detection needs ≥2 rows to engage.
+    const ka = snap(TRACKER_HEADERS, [
+      ["Plow", "0", "500", "BIG M P1", ""],
+      ["Bore", "500", "14800", "HAIDER 1", ""],
+    ]);
+    const kb = snap(TRACKER_HEADERS, [
+      ["Plow", "0", "500", "BIG M P1", ""],
+      ["Bore", "500", "14800", "HAIDER 2", ""],
+    ]);
     const changed = diffSnapshots(ka, kb).rows.find((x) => x.status === "changed")!;
-    expect(changed.rowKey).toBe("bore·500·14800"); // composite key, never "#i"
+    expect(changed.rowKey).toBe("bore"); // the detected key column value, never "#i"
+    expect(changed.rowKey).not.toContain("#");
   });
 
   it("distinctness holds for three siblings changed in one diff", () => {
-    const a3 = snap(TRACKER_HEADERS, [
-      ["Plow", "0", "500", "", ""],
-      ["Plow", "0", "500", "", ""],
-      ["Plow", "0", "500", "", ""],
-    ]);
-    const b3 = snap(TRACKER_HEADERS, [
-      ["Plow", "0", "500", "", "one"],
-      ["Plow", "0", "500", "", "two"],
-      ["Plow", "0", "500", "", "three"],
+    // each sibling is distinguished in a DIFFERENT column so no column is
+    // unique-and-populated enough in B to become a detected key column
+    const H6 = ["Activity", "Start STA", "End STA", "Crew #", "Notes", "Ref"];
+    const s = () => ["Plow", "0", "500", "", "", ""];
+    const a3 = snap(H6, [s(), s(), s()]);
+    const b3 = snap(H6, [
+      ["Plow", "0", "500", "B1", "", ""],
+      ["Plow", "0", "500", "", "N2", ""],
+      ["Plow", "0", "500", "", "", "R3"],
     ]);
     const keys = diffSnapshots(a3, b3)
       .rows.filter((x) => x.status === "changed")

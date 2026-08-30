@@ -4,6 +4,13 @@ export function relativeTime(ts: number | null | undefined): string {
   if (!ts) return "never";
   const diff = Date.now() - ts;
   const min = Math.round(diff / 60_000);
+  if (min < 0) {
+    const futureMin = -min;
+    if (futureMin < 60) return `in ${futureMin}m`;
+    const futureHrs = Math.round(futureMin / 60);
+    if (futureHrs < 24) return `in ${futureHrs}h`;
+    return `in ${Math.round(futureHrs / 24)}d`;
+  }
   if (min < 1) return "just now";
   if (min < 60) return `${min}m ago`;
   const hrs = Math.round(min / 60);
