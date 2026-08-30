@@ -1,8 +1,8 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "./db";
 import { changeAcks } from "./db/schema";
-import type { DiffRow, SnapshotData } from "./diff/engine";
-import { norm, hashString } from "./diff/normalize";
+import { rowContentKey, oldRowValues, type DiffRow, type SnapshotData } from "./diff/engine";
+
 
 /**
  * Per-change sync acknowledgment resolution.
@@ -22,17 +22,6 @@ export async function getAckMap(tabId: string): Promise<Map<string, number>> {
 export function isResolved(ackMap: Map<string, number>, rowKey: string, introducedAt: number): boolean {
   const ackedAt = ackMap.get(rowKey);
   return ackedAt !== undefined && ackedAt >= introducedAt;
-}
-
-/** Row identity for snapshot-content lookups: hash of normalized values. */
-function contentHash(values: string[]): string {
-  return hashString(values.map(norm).join("\u0000"));
-}
-
-function oldRowValues(row: DiffRow): string[] {
-  const out = row.values.slice();
-  for (const c of row.cells) out[c.col] = c.from;
-  return out;
 }
 
 export interface WalkSnapshot {
@@ -72,14 +61,14 @@ export function computeIntroductions(
       pending.set(row.rowKey, {
         introduced: 0,
         done: false,
-        hash: contentHash(oldRowValues(row)),
+        hash: rowContentKey(oldRowValues(row)),
         mode: "absent",
       });
     } else {
       pending.set(row.rowKey, {
         introduced: 0,
         done: false,
-        hash: contentHash(row.values),
+        hash: rowContentKey(row.values),
         mode: "present",
       });
     }
@@ -87,7 +76,7 @@ export function computeIntroductions(
 
   for (const snap of walk) {
     if ([...pending.values()].every((p) => p.done)) break;
-    const hashes = new Set(snap.data.rows.map((r) => contentHash(r)));
+    const hashes = new Set(snap.data.rows.map(rowContentKey));
     for (const p of pending.values()) {
       if (p.done) continue;
       const isPresent = hashes.has(p.hash);

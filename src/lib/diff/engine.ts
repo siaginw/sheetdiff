@@ -30,6 +30,19 @@ export interface CellDiff {
 
 export type RowStatus = "added" | "removed" | "changed" | "moved" | "unchanged";
 
+/** Stable content identity of a row. The rowKey fallback AND the ack
+ *  introduction walk MUST produce the same string — hence one definition. */
+export function rowContentKey(values: readonly string[]): string {
+  return hashString(values.map(norm).join("\u0000"));
+}
+
+/** The OLD (A-side) values of a changed row, reconstructed from B's values. */
+export function oldRowValues(row: DiffRow): string[] {
+  const out = row.values.slice();
+  for (const c of row.cells) out[c.col] = c.from;
+  return out;
+}
+
 export interface DiffRow {
   status: RowStatus;
   key: string | null;
@@ -346,11 +359,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     const key = rawKey === "" ? null : rawKey;
     // stable identity for acks: key column when present, else hash of the OLD
     // row (stable across value edits, so a re-change after an ack re-flags it)
-    const rowKey =
-      key ??
-      hashString(
-        (i === -1 ? b.rows[k] : a.rows[i]).map((v) => norm(v)).join("\u0000"),
-      );
+    const rowKey = key ?? rowContentKey(i === -1 ? b.rows[k] : a.rows[i]);
     if (i === -1) {
       summary.addedRows++;
       diffRows.push({
@@ -415,7 +424,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     diffRows.push({
       status: "removed",
       key: removedKey,
-      rowKey: removedKey ?? hashString(a.rows[i].map((v) => norm(v)).join("\u0000")),
+      rowKey: removedKey ?? rowContentKey(a.rows[i]),
       oldIndex: i,
       newIndex: null,
       movedFrom: null,

@@ -17,7 +17,6 @@ describe("traceKey", () => {
         { at: 2000, rows: [["S5", "16000", "164+82", "bore"]] }, // end station fixed
         { at: 3000, rows: [["S5", "16000", "164+82", "plow"]] }, // type flipped
       ]),
-      0,
       "s5",
     );
     expect(events).toHaveLength(2);
@@ -34,7 +33,6 @@ describe("traceKey", () => {
         { at: 2000, rows: [["S1", "0", "100", "plow"], ["S9", "100", "150", "bore"]] },
         { at: 3000, rows: [["S1", "0", "100", "plow"]] }, // S9 deleted
       ]),
-      0,
       "s9",
     );
     expect(events).toHaveLength(2);
@@ -49,7 +47,6 @@ describe("traceKey", () => {
         { at: 2000, rows: [["S1", "0", "100", "plow"], ["S2", "100", "999", "bore"]] },
         { at: 3000, rows: [["S1", "0", "500", "plow"], ["S2", "100", "999", "bore"]] },
       ]),
-      0,
       "s2",
     );
     expect(events).toHaveLength(1); // only the 2000 event; S1's change is invisible
@@ -57,7 +54,7 @@ describe("traceKey", () => {
   });
 
   it("returns nothing for a shot that never existed", () => {
-    expect(traceKey(chain([{ at: 1000, rows: [["S1", "0", "100", "plow"]] }]), 0, "zz")).toEqual([]);
+    expect(traceKey(chain([{ at: 1000, rows: [["S1", "0", "100", "plow"]] }]), "zz")).toEqual([]);
   });
 });
 
@@ -72,7 +69,6 @@ describe("traceKey without ID columns (station + text matching)", () => {
         { at: 1000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW B"]] },
         { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW C"]] },
       ]),
-      null,
       "700",
     );
     expect(events).toHaveLength(1);
@@ -92,7 +88,6 @@ describe("traceKey without ID columns (station + text matching)", () => {
           ["2", "Bore", "0", "500", "500"],
         ]) },
       ],
-      null,
       "450", // inside the Bore 0–500 span; row-1's "1" index would have matched first under old logic
     );
     // the Bore row exists in both snapshots unchanged → no events, but the
@@ -109,7 +104,6 @@ describe("traceKey without ID columns (station + text matching)", () => {
           ["2", "Bore", "0", "500", "500"],
         ]) },
       ],
-      null,
       "450",
     );
     expect(mutated).toHaveLength(0); // the changed row (Plow @600–900) is not the one covering 450
@@ -122,7 +116,6 @@ describe("traceKey without ID columns (station + text matching)", () => {
         { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "HAIDER 1"]] },
         { at: 3000, rows: [["Plow", "0", "500", "CREW A"]] },
       ]),
-      null,
       "HAIDER",
     );
     expect(events.map((e) => e.kind)).toEqual(["removed", "added"]);

@@ -246,7 +246,6 @@ export default async function SheetPage({
     traceParam && recent.length > 1
       ? traceKeyFn(
           [...recent].filter((s) => s.dataBlob).reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
-          activeTab.keyColumn ?? null,
           traceParam,
         )
       : [];

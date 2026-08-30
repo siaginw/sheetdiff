@@ -17,24 +17,17 @@ import { Label } from "@/components/ui/label";
 import { NoteDialog } from "@/components/sheet/note-dialog";
 import { toggleAck } from "@/lib/actions";
 import { wordDiff, shouldWordDiff } from "@/lib/diff/worddiff";
-import type { DiffResult, DiffRow } from "@/lib/diff/engine";
+import { oldRowValues, type DiffResult, DiffRow } from "@/lib/diff/engine";
 
 /* ------------------------------------------------------------------ */
 /* shared helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Reconstruct the OLD (A-side) values of a changed row from B's values. */
-function oldValues(row: DiffRow): string[] {
-  const out = row.values.slice();
-  for (const c of row.cells) out[c.col] = c.from;
-  return out;
-}
-
 /** Per-column widths (in ch) so mono cells align across all lines. */
 function columnWidths(result: DiffResult, lines: DiffRow[]): number[] {
   const widths = result.columns.map((c) => Math.max(3, c.header.length));
   for (const row of lines) {
-    const vals = row.status === "removed" || row.status === "changed" ? oldValues(row) : row.values;
+    const vals = row.status === "removed" || row.status === "changed" ? oldRowValues(row) : row.values;
     for (let i = 0; i < vals.length; i++) {
       widths[i] = Math.max(widths[i], Math.min(vals[i].length, 22));
     }
@@ -251,7 +244,7 @@ function CodeLine({
   const row = item.row;
   const isCtx = item.kind === "ctx";
   const sign = item.kind === "sign" ? item.sign : "";
-  const values = item.kind === "sign" && item.sign === "-" ? oldValues(row) : row.values;
+  const values = item.kind === "sign" && item.sign === "-" ? oldRowValues(row) : row.values;
   const tone = isCtx ? "ctx" : sign === "+" ? "add" : "del";
 
   return (

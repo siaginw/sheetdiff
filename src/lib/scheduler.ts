@@ -86,11 +86,9 @@ async function tickInner() {
     for (const u of dueUsers) {
       try {
         const result = await sendDigestTo(u);
-        // bump the cooldown for any completed evaluation — otherwise users with
-        // nothing to send get re-evaluated every single minute
-        if (result.sent || result.reason === "smtp-not-configured" || result.reason === "no-email" || result.reason === "no-sheets") {
-          await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
-        }
+        // every completed evaluation (sent or skipped) bumps the cooldown —
+        // otherwise empty-inbox users get re-evaluated every minute
+        await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
         if (result.sent) {
           console.log(`[scheduler] digest sent (user ${u.id})`);
         } else if (result.reason === "smtp-not-configured") {

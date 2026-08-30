@@ -115,7 +115,10 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
   return out;
 }
 
-export async function sendDigestTo(user: User): Promise<{ sent: boolean; reason?: string }> {
+export type DigestSkipReason = "smtp-not-configured" | "no-email" | "no-sheets";
+export type DigestSendResult = { sent: true } | { sent: false; reason: DigestSkipReason };
+
+export async function sendDigestTo(user: User): Promise<DigestSendResult> {
   if (!smtpConfigured()) return { sent: false, reason: "smtp-not-configured" };
   if (!user.digestEmail) return { sent: false, reason: "no-email" };
   const sheets = await buildDigestSheets(user.id);

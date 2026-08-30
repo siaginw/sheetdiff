@@ -67,8 +67,7 @@ function makeMatcher(needleRaw: string): RowMatcher {
 /**
  * @param snaps oldest → newest, GIS imports already excluded by the caller
  */
-export function traceKey(snaps: TraceSnap[], keyCol: number | null, key: string): TraceEvent[] {
-  void keyCol; // retained for API compatibility; matching is content-driven now
+export function traceKey(snaps: TraceSnap[], key: string): TraceEvent[] {
   const match = makeMatcher(key);
   const events: TraceEvent[] = [];
   for (let i = 1; i < snaps.length; i++) {
