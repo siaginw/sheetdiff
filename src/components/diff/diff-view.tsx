@@ -517,7 +517,7 @@ export function DiffView({
                   mode === m ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {m === "code" ? "± code" : "⊞ table"}
+                {m === "code" ? "lines" : "grid"}
               </button>
             ))}
           </div>

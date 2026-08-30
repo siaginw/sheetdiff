@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { DigestSettingsDialog } from "@/components/sheet/digest-settings";
 import { ShareDialog } from "@/components/sheet/share-dialog";
 import { listMembers } from "@/lib/access";
+import { smtpConfigured } from "@/lib/digest";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +60,7 @@ export async function AppHeader({ user }: { user: User | null }) {
                   digestEmail={user.digestEmail}
                   digestTime={user.digestTime ?? "07:00"}
                   digestDay={user.digestDay ?? null}
+                  smtpReady={smtpConfigured()}
                 />
                 <ShareDialog members={memberList.map((m) => ({ id: m.id, email: m.email }))} />
                 <DropdownMenuSeparator />

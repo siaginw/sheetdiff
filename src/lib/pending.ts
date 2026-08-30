@@ -1,6 +1,6 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte } from "drizzle-orm";
 import { db } from "./db";
-import { snapshots, type Snapshot, type Tab } from "./db/schema";
+import { snapshots, snapshotStats, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
 import { decodeSnapshot } from "./snapshots";
 import { getAckMap, isResolved, computeIntroductions, type WalkSnapshot } from "./sync";
@@ -44,6 +44,25 @@ export async function getPendingChanges(
   const latest = sheetSnaps[0];
   const baseline = sheetSnaps.find((s) => s.isBaseline && s.createdAt <= latest?.createdAt);
   if (!latest || !baseline || latest.id === baseline.id) return null;
+
+  // QUIET-DAY SHORT-CIRCUIT: sum the materialized capture-time stats over
+  // (baseline, latest] — when every row is 0/0/0 (the common hourly case) there
+  // is nothing pending and the 2-blob diff + ack walk never run. Falls
+  // through to the full path when stats are missing (legacy) or non-zero.
+  const statRows = await db
+    .select({ added: snapshotStats.added, removed: snapshotStats.removed, changed: snapshotStats.changed })
+    .from(snapshotStats)
+    .where(
+      and(
+        eq(snapshotStats.tabId, tab.id),
+        gt(snapshotStats.createdAt, baseline.createdAt),
+        lte(snapshotStats.createdAt, latest.createdAt),
+      ),
+    );
+  if (statRows.length > 0) {
+    const quiet = statRows.every((r) => r.added === 0 && r.removed === 0 && r.changed === 0);
+    if (quiet) return null;
+  }
 
   const blobs = await fetchBlobs([latest.id, baseline.id]);
   const latestData = blobs.get(latest.id);

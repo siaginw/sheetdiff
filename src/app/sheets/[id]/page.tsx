@@ -431,7 +431,7 @@ export default async function SheetPage({
 
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[270px_1fr]">
           {/* timeline */}
-          <aside className="rounded-xl border bg-card">
+          <aside className="order-2 rounded-xl border bg-card lg:order-1">
             <div className="border-b px-4 py-3">
               <h2 className="font-mono text-xs font-semibold uppercase tracking-wide">History</h2>
               <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
@@ -563,7 +563,7 @@ export default async function SheetPage({
           </aside>
 
           {/* diff panel */}
-          <section className="min-w-0">
+          <section className="order-1 min-w-0 lg:order-2">
             {/* footage ledger */}
             {activeFootage?.stations ? (
               <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-2.5 font-mono text-xs">

@@ -42,10 +42,12 @@ export function DigestSettingsDialog({
   digestEmail,
   digestTime,
   digestDay,
+  smtpReady,
 }: {
   digestEmail: string | null;
   digestTime: string;
   digestDay: number | null;
+  smtpReady: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(digestEmail ?? "");
