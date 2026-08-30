@@ -43,11 +43,19 @@ function verifyActualZipSize(buf: Buffer, limit: number): void {
   let ptr = 0;
   while (ptr + 4 <= buf.length) {
     if (buf.readUInt32LE(ptr) !== 0x04034b50) break; // local file header
+    const flags = buf.readUInt16LE(ptr + 6);
     const method = buf.readUInt16LE(ptr + 8);
     const compSize = buf.readUInt32LE(ptr + 18);
     const nameLen = buf.readUInt16LE(ptr + 26);
     const extraLen = buf.readUInt16LE(ptr + 28);
     const dataStart = ptr + 30 + nameLen + extraLen;
+    // Google/Sheets exports write streamed entries with data descriptors
+    // (flag bit 3): local headers carry 0-size placeholders and the real
+    // sizes live after the data. We can't trial-inflate those (compSize=0),
+    // but the central-directory declared-size check already bounded the
+    // total — skip descriptor entries rather than rejecting the file.
+    if (flags & 0x8) break;
+    if (compSize === 0) break;
     if (dataStart + compSize > buf.length) break;
     if (method === 8) {
       zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
