@@ -88,8 +88,8 @@ describe("runChecks", () => {
     const findings = runChecks([{ tabTitle: "PE4", data: chain, keyColumn: 0 }]);
     const gap = findings.find((f) => f.kind === "gap");
     expect(gap).toBeDefined();
-    expect(gap!.message).toContain("2 ft gap");
-    expect(gap!.rows).toEqual([3, 4]);
+    expect(gap!.message).toContain("2 ft unaccounted");
+    expect(gap!.message).toContain("15,741–15,743");
   });
 
   it("flags overlaps", () => {

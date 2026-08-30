@@ -69,3 +69,16 @@ export function isAdderRow(row: string[], activityCol: number | null): boolean {
 export function isGapRow(row: string[], activityCol: number | null): boolean {
   return activityCol !== null && GAP_ACTIVITY_RE.test(norm(row[activityCol]));
 }
+
+/** True for structure rows (handholes) — they sit ON a station, not footage. */
+export function isHandholeRow(row: string[], activityCol: number | null): boolean {
+  return activityCol !== null && /handhole|\bhh\b/i.test(norm(row[activityCol]));
+}
+
+/** True for rows that make up the footage chain: bore/plow/trench/gap, never adders. */
+export function isFootageChainRow(row: string[], activityCol: number | null): boolean {
+  if (activityCol === null) return true; // no activity vocabulary — don't guess
+  const a = norm(row[activityCol]);
+  if (a === "") return false;
+  return /(bore|plow|trench|gap)/i.test(a) && !/adder/i.test(a);
+}

@@ -42,6 +42,8 @@ import { ChecksPanel } from "@/components/sheet/checks-panel";
 import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
 import { TracePanel } from "@/components/sheet/trace-panel";
+import { GapReportPanel } from "@/components/sheet/gap-report-panel";
+import { computeGapReport } from "@/lib/gaps";
 import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
@@ -203,6 +205,7 @@ export default async function SheetPage({
   // ---- checks on latest snapshots of every tracked tab ----
   const checkFindings: CheckFinding[] = [];
   let activeFootage: ReturnType<typeof computeFootage> | null = null;
+  let gapReport: ReturnType<typeof computeGapReport> | null = null;
   let footageDelta: number | null = null;
   let footageBaseLabel = "since previous snapshot";
   if (latestData) {
@@ -504,6 +507,11 @@ export default async function SheetPage({
             {/* shot history */}
             {traceParam ? (
               <TracePanel traceKeyLabel={traceParam} events={traceEvents} onClearHref={traceHrefBase} />
+            ) : null}
+
+            {/* auto gap report */}
+            {timeline.length > 0 && gapReport ? (
+              <GapReportPanel report={gapReport} tabTitle={activeTab.title} />
             ) : null}
 
             {/* gap linter */}

@@ -16,10 +16,12 @@
 import { norm, normalizeKey } from "./diff/normalize";
 import type { SnapshotData } from "./diff/engine";
 import { detectCompositeKey } from "./diff/engine";
+import { computeGapReport } from "./gaps";
 import {
   parseStation,
   detectStationColumns,
   detectActivityColumn,
+  isFootageChainRow,
   isAdderRow,
   isGapRow,
 } from "./detect";
@@ -122,55 +124,44 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
     // ---- station continuity ----
     const stations = detectStationColumns(data);
     if (stations) {
-      const { start, end } = stations;
       const activityCol = detectActivityColumn(data);
-      // adders overlay real segments — not chain rows; GAP rows chain through
-      // (they book the missing footage) but never flag as findings themselves
-      const parsed = data.rows
-        .map((r, i) => ({
-          i,
-          adder: isAdderRow(r, activityCol),
-          start: parseStation(r[start]),
-          end: parseStation(r[end]),
-          startRaw: norm(r[start]),
-          endRaw: norm(r[end]),
-        }))
-        .filter((p) => !p.adder);
-      // a row running backwards is its own finding
-      for (const p of parsed) {
-        if (p.start !== null && p.end !== null && p.end < p.start) {
+      // gap/overlap findings come from the SORTED chain reconstruction
+      // (computeGapReport) so the checks panel and the gap report can never
+      // disagree — out-of-order rows are not findings, holes and overlaps are
+      const report = computeGapReport(data);
+      for (const g of report.unaccounted) {
+        findings.push({
+          kind: "gap",
+          severity: "warning",
+          tabTitle,
+          message: `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})`,
+          rows: [g.afterRow],
+        });
+      }
+      for (const o of report.overlaps) {
+        findings.push({
+          kind: "overlap",
+          severity: "error",
+          tabTitle,
+          message: `${o.ft} ft overlap: stations ${o.from.toLocaleString()}–${o.to.toLocaleString()} double-counted (after row ${o.afterRow})`,
+          rows: [o.afterRow],
+        });
+      }
+      // backwards rows are their own finding regardless of the chain
+      const stations0 = stations;
+      data.rows.forEach((r, i) => {
+        const st = parseStation(r[stations0.start]);
+        const en = parseStation(r[stations0.end]);
+        if (st !== null && en !== null && en < st && isFootageChainRow(r, activityCol)) {
           findings.push({
             kind: "gap",
             severity: "error",
             tabTitle,
-            message: `row ${p.i + 1} runs backwards: start ${p.startRaw} > end ${p.endRaw}`,
-            rows: [p.i + 1],
+            message: `row ${i + 1} runs backwards: start ${norm(r[stations0.start])} > end ${norm(r[stations0.end])}`,
+            rows: [i + 1],
           });
         }
-      }
-      for (let k = 0; k + 1 < parsed.length; k++) {
-        const cur = parsed[k];
-        const next = parsed[k + 1];
-        if (cur.end === null || next.start === null) continue;
-        const delta = next.start - cur.end;
-        if (delta > 0) {
-          findings.push({
-            kind: "gap",
-            severity: "warning",
-            tabTitle,
-            message: `${delta} ft gap: row ${cur.i + 1} ends at ${cur.endRaw} but row ${next.i + 1} starts at ${next.startRaw}`,
-            rows: [cur.i + 1, next.i + 1],
-          });
-        } else if (delta < 0) {
-          findings.push({
-            kind: "overlap",
-            severity: "error",
-            tabTitle,
-            message: `${Math.abs(delta)} ft overlap: row ${cur.i + 1} ends at ${cur.endRaw} but row ${next.i + 1} starts at ${next.startRaw}`,
-            rows: [cur.i + 1, next.i + 1],
-          });
-        }
-      }
+      });
     }
 
     // ---- duplicate identities within the tab ----
