@@ -50,7 +50,7 @@ export async function getPendingChanges(
   // is nothing pending and the 2-blob diff + ack walk never run. Falls
   // through to the full path when stats are missing (legacy) or non-zero.
   const statRows = await db
-    .select({ added: snapshotStats.added, removed: snapshotStats.removed, changed: snapshotStats.changed })
+    .select({ snapshotId: snapshotStats.snapshotId, added: snapshotStats.added, removed: snapshotStats.removed, changed: snapshotStats.changed })
     .from(snapshotStats)
     .where(
       and(
@@ -59,7 +59,17 @@ export async function getPendingChanges(
         lte(snapshotStats.createdAt, latest.createdAt),
       ),
     );
-  if (statRows.length > 0) {
+  // COVERAGE GUARD: only trust "quiet" when EVERY snapshot in the window has a
+  // stats row. Retention cascades delete stats with their snapshots, failed
+  // stats inserts are skipped, and legacy rows predate the table — a hole in
+  // the chain means unknown territory, never "no pending changes."
+  const windowSnaps = sheetSnaps.filter(
+    (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
+  );
+  const statIds = new Set(statRows.map((r) => r.snapshotId));
+  const completeCoverage =
+    windowSnaps.length > 0 && windowSnaps.every((s) => statIds.has(s.id));
+  if (completeCoverage) {
     const quiet = statRows.every((r) => r.added === 0 && r.removed === 0 && r.changed === 0);
     if (quiet) return null;
   }
