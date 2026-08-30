@@ -4,6 +4,26 @@ import ExcelJS from "exceljs";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // decompressed xlsx expands far beyond this
 
 /**
+ * ExcelJS cell values come in many shapes; production trackers are full of
+ * formulas ({formula, result}), rich text ({richText}), hyperlinks, and Dates.
+ * Always resolve to the DISPLAYED text — the computed result for formulas.
+ */
+function cellText(v: unknown): string {
+  if (v == null) return "";
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if ("result" in o) return cellText(o.result); // formula cell → computed value
+    if ("text" in o && typeof o.text === "string") return o.text; // hyperlink
+    if (Array.isArray(o.richText)) {
+      return o.richText.map((t) => cellText((t as { text?: unknown }).text)).join("");
+    }
+    return "";
+  }
+  return String(v);
+}
+
+/**
  * Parse a GIS export (CSV or .xlsx) into tab-name -> raw grid, matching the
  * shape Google Sheets returns so snapshots and diffs work unchanged.
  * Validates size and magic bytes before handing anything to the parsers.
@@ -41,14 +61,7 @@ export async function parseImportFile(
         const r = row as unknown as { values: Record<number, unknown> };
         const max = Math.max(1, ...Object.keys(r.values ?? {}).map(Number).filter((n) => !isNaN(n)));
         for (let c = 1; c <= max; c++) {
-          const v = r.values?.[c];
-          vals.push(
-            v instanceof Date
-              ? v.toISOString().slice(0, 10)
-              : v == null
-                ? ""
-                : String(v),
-          );
+          vals.push(cellText(r.values?.[c]));
         }
         grid.push(vals);
       });

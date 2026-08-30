@@ -14,8 +14,11 @@ import { norm } from "./diff/normalize";
  *  - row 0 becomes the header row (the product treats first row as headers)
  */
 export function toSnapshotData(raw: string[][]): SnapshotData {
-  const rows = raw.map((r) => r.map((v) => norm(v)));
-  while (rows.length > 0 && rows[rows.length - 1].every((v) => v === "")) rows.pop();
+  const rows = raw
+    .map((r) => r.map((v) => norm(v)))
+    // drop fully-empty rows anywhere (Sheets/API omits some, trackers pad
+    // hundreds of blank formatted rows) — they carry no data and only add noise
+    .filter((r) => r.some((v) => v !== ""));
   const width = Math.max(1, ...rows.map((r) => r.length));
   const padded = rows.map((r) => {
     const p = r.slice(0, width);

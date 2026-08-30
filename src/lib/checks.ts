@@ -51,6 +51,22 @@ export interface TabChecksInput {
 const START_HEADER_RE = /(start|begin|from|beg)\b.*?(sta|station|ft|foot|footage)/i;
 const END_HEADER_RE = /(end|stop|to|finish)\b.*?(sta|station|ft|foot|footage)/i;
 const STATION_HEADER_RE = /(sta|station)/i;
+const ACTIVITY_HEADER_RE = /^(activity|type|method|work type|description)$/i;
+/**
+ * Adder rows (Rock Adder, Cobble Adder...) are billing overlays that REUSE a
+ * bore's station range on purpose — they must never count as chain segments
+ * or every adder would false-positive an overlap. Explicit "GAP" activities
+ * are deliberate placeholders; the chain runs through them normally.
+ */
+const ADDER_ACTIVITY_RE = /adder/i;
+
+/** Column index whose header names the activity/type, or null. */
+export function detectActivityColumn(data: SnapshotData): number | null {
+  for (let i = 0; i < data.headers.length; i++) {
+    if (ACTIVITY_HEADER_RE.test(norm(data.headers[i]))) return i;
+  }
+  return null;
+}
 
 /**
  * Find start/end station columns: prefer explicit "start station"/"end
@@ -95,7 +111,9 @@ export function computeFootage(data: SnapshotData): FootageTotal & { stations: {
   const stations = detectStationColumns(data);
   const out: FootageTotal & { stations: { start: number; end: number } | null } = { ft: 0, shots: 0, invalid: 0, stations };
   if (!stations) return out;
+  const activityCol = detectActivityColumn(data);
   for (const r of data.rows) {
+    if (activityCol !== null && ADDER_ACTIVITY_RE.test(norm(r[activityCol]))) continue; // billing overlay
     const s = parseStation(r[stations.start]);
     const e = parseStation(r[stations.end]);
     if (s === null || e === null || e < s) {
@@ -117,13 +135,18 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
     const stations = detectStationColumns(data);
     if (stations) {
       const { start, end } = stations;
-      const parsed = data.rows.map((r, i) => ({
-        i,
-        start: parseStation(r[start]),
-        end: parseStation(r[end]),
-        startRaw: norm(r[start]),
-        endRaw: norm(r[end]),
-      }));
+      const activityCol = detectActivityColumn(data);
+      const isAdder = (r: string[]) => activityCol !== null && ADDER_ACTIVITY_RE.test(norm(r[activityCol]));
+      const parsed = data.rows
+        .map((r, i) => ({
+          i,
+          adder: isAdder(r),
+          start: parseStation(r[start]),
+          end: parseStation(r[end]),
+          startRaw: norm(r[start]),
+          endRaw: norm(r[end]),
+        }))
+        .filter((p) => !p.adder); // adders overlay real segments — not chain rows
       // a row running backwards is its own finding
       for (const p of parsed) {
         if (p.start !== null && p.end !== null && p.end < p.start) {
@@ -146,16 +169,16 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
             kind: "gap",
             severity: "warning",
             tabTitle,
-            message: `${delta} ft gap: row ${k + 1} ends at ${cur.endRaw} but row ${k + 2} starts at ${next.startRaw}`,
-            rows: [k + 1, k + 2],
+            message: `${delta} ft gap: row ${cur.i + 1} ends at ${cur.endRaw} but row ${next.i + 1} starts at ${next.startRaw}`,
+            rows: [cur.i + 1, next.i + 1],
           });
         } else if (delta < 0) {
           findings.push({
             kind: "overlap",
             severity: "error",
             tabTitle,
-            message: `${Math.abs(delta)} ft overlap: row ${k + 1} ends at ${cur.endRaw} but row ${k + 2} starts at ${next.startRaw}`,
-            rows: [k + 1, k + 2],
+            message: `${Math.abs(delta)} ft overlap: row ${cur.i + 1} ends at ${cur.endRaw} but row ${next.i + 1} starts at ${next.startRaw}`,
+            rows: [cur.i + 1, next.i + 1],
           });
         }
       }
