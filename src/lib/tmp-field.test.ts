@@ -5,16 +5,21 @@
  */
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import ExcelJS from "exceljs";
 import Papa from "papaparse";
 import { toSnapshotData } from "./snapshots";
 import { buildBillingPacket, billingPacketCsv, entryLatency, verifiedStale, quietTabs } from "./billing";
-import { detectLateEntries, agingGaps, parseCompletedDate, detectCrewColumn, detectActivityColumn } from "./production";
+import { detectLateEntries, agingGaps, parseCompletedDate, detectCrewColumn } from "./production";
 import { computeGapReport } from "./gaps";
-import { diffSnapshots, computeIntroductionsDummy } from "./diff/engine";
-import { isResolved } from "./sync";
-import { norm } from "./diff/normalize";
+import { diffSnapshots, rowContentKey, detectKeyColumn, detectCompositeKey } from "./diff/engine";
+import { compositeKey, norm } from "./diff/normalize";
 import type { SnapshotData } from "./diff/engine";
+
+// ./sync imports ./db — point it at a throwaway file BEFORE the dynamic import
+// (vitest hoists static imports, so this must be dynamic — see actions.db.test.ts)
+process.env.DATABASE_PATH = path.join(os.tmpdir(), `sd-field-scratch-${process.pid}.db`);
 
 const FILE = "C:/Users/Siagi/Downloads/Frost RT3a South Dakota Production Tracker.xlsx";
 const NOW = new Date("2026-08-30T12:00:00").getTime(); // "today" per the file's newest data
@@ -63,7 +68,7 @@ function buildWalk(
   appearAt: (row: string[], i: number) => number,
 ): { createdAt: number; data: SnapshotData; finalIdx: number[] }[] {
   const times = days.map((d) => at(d));
-  return times.map((t, k) => {
+  return times.map((t) => {
     const finalIdx: number[] = [];
     const rows: string[][] = [];
     data.rows.forEach((row, i) => {
@@ -81,31 +86,55 @@ function crewOfFactory(data: SnapshotData) {
   return (row: string[]) => norm(row[crewCol]);
 }
 
-describe("M1 — buildBillingPacket on US2-PE-006 (messiest tab)", () => {
-  it("assembles the packet from a real snapshot walk", async () => {
-    const data = await loadTable("US2-PE-006");
-    const appearAt = (row: string[]) => {
+function dayRange(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let d = new Date(from); d <= new Date(to); d = new Date(d.getTime() + DAY))
+    days.push(d.toISOString().slice(0, 10));
+  return days;
+}
+
+async function peWalk(tab: string, from: string, to: string) {
+  const data = await loadTable(tab);
+  const walk = buildWalk(
+    data,
+    dayRange(from, to),
+    (row: string[]) => {
       const e = parseCompletedDate(row[17]);
       if (e) return at(e.toISOString().slice(0, 10));
       const c = parseCompletedDate(row[4]);
       if (c) return c.getTime() + DAY;
-      return at("2026-08-18"); // undated GAP/placeholder rows: in from the start
-    };
-    const days: string[] = [];
-    for (let d = new Date("2026-08-18"); d <= new Date("2026-08-30"); d = new Date(d.getTime() + DAY))
-      days.push(d.toISOString().slice(0, 10));
-    const walk = buildWalk(data, days, (row) => appearAt(row));
+      return at(from);
+    },
+  );
+  return { data, walk };
+}
+
+describe("M1 — buildBillingPacket on US2-PE-006 (messiest tab)", () => {
+  it("assembles the packet from a real snapshot walk", async () => {
+    const { walk } = await peWalk("US2-PE-006", "2026-08-18", "2026-08-30");
 
     // ---- aging gaps over the walk (real report sequence) ----
     const aged = agingGaps(
       walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })),
       NOW,
     );
-    console.log("agingGaps:", aged.map((g) => `${Math.round(g.from)}-${Math.round(g.to)} ${g.ft}ft open ${g.daysOpen}d (first ${new Date(g.firstSeen).toISOString().slice(0, 10)})`));
+    console.log(
+      "agingGaps:",
+      aged.map(
+        (g) =>
+          `${Math.round(g.from)}-${Math.round(g.to)} ${g.ft}ft open ${g.daysOpen}d (first seen ${new Date(g.firstSeen).toISOString().slice(0, 10)})`,
+      ),
+    );
 
     // ---- late entries over the walk ----
     const late = detectLateEntries(walk, 2);
-    console.log("detectLateEntries:", late.map((e) => `row ${e.row} [${e.activity}] done ${e.completedOn} appeared ${new Date(e.appearedAt).toISOString().slice(0, 10)} ${e.daysLate}d late`));
+    console.log(
+      "detectLateEntries:",
+      late.map(
+        (e) =>
+          `row ${e.row} [${e.activity}] done ${e.completedOn} appeared ${new Date(e.appearedAt).toISOString().slice(0, 10)} ${e.daysLate}d late`,
+      ),
+    );
 
     // ---- unresolved via the pending-resolver pattern (diff + introductions + acks) ----
     const baseline = walk.find((w) => w.createdAt === at("2026-08-21"))!; // last collection: Fri Aug 21
@@ -115,7 +144,27 @@ describe("M1 — buildBillingPacket on US2-PE-006 (messiest tab)", () => {
       fromWhen: baseline.createdAt,
       toWhen: latest.createdAt,
     });
-    const between = walk.filter((w) => w.createdAt > baseline.createdAt && w.createdAt <= latest.createdAt).reverse();
+    console.log("diff.summary:", JSON.stringify(diff.summary));
+    console.log(`baseline rows=${baseline.data.rows.length} latest rows=${latest.data.rows.length}`);
+
+    // what keying did the engine pick, and how many rows have a BLANK key?
+    const keyCol = detectKeyColumn(latest.data);
+    const compCols = detectCompositeKey(latest.data);
+    console.log(`detectKeyColumn -> ${keyCol} (${keyCol !== null ? latest.data.headers[keyCol] : "-"}); detectCompositeKey -> ${JSON.stringify(compCols)}`);
+    const blankKey = (row: string[]) =>
+      keyCol !== null ? norm(row[keyCol]) === "" : compCols ? compositeKey(row, compCols) === "" : false;
+    console.log(
+      `blank-key rows: baseline=${baseline.data.rows.filter(blankKey).length}/${baseline.data.rows.length} latest=${latest.data.rows.filter(blankKey).length}/${latest.data.rows.length}`,
+    );
+
+    const byStatus = new Map<string, number>();
+    for (const r of diff.rows) byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1);
+    console.log("diff rows by status:", JSON.stringify([...byStatus]));
+
+    const between = walk
+      .filter((w) => w.createdAt > baseline.createdAt && w.createdAt <= latest.createdAt)
+      .reverse();
+    const { computeIntroductions, isResolved } = await import("./sync");
     const introducedAt = computeIntroductions(
       between.map((w) => ({ createdAt: w.createdAt, data: w.data })),
       diff.rows,
@@ -127,18 +176,29 @@ describe("M1 — buildBillingPacket on US2-PE-006 (messiest tab)", () => {
       if (r.status === "added" && r.values[1] === "8793") ackMap.set(r.rowKey, at("2026-08-26"));
     }
     const unresolved = diff.rows.filter(
-      (r) => r.status !== "unchanged" && r.status !== "moved" && !isResolved(ackMap, r.rowKey, introducedAt.get(r.rowKey) ?? latest.createdAt),
+      (r) =>
+        r.status !== "unchanged" &&
+        r.status !== "moved" &&
+        !isResolved(ackMap, r.rowKey, introducedAt.get(r.rowKey) ?? latest.createdAt),
     );
-    console.log("unresolved:", unresolved.map((r) => `${r.status} [${r.values[0]}] ${r.values[1]}-${r.values[2]} "${r.values[14].slice(0, 40)}"`));
+    const unresolvedByStatus = new Map<string, number>();
+    for (const r of unresolved) unresolvedByStatus.set(r.status, (unresolvedByStatus.get(r.status) ?? 0) + 1);
+    const realRows = unresolved.filter((r) => r.values.slice(0, 3).some((v) => v !== ""));
+    console.log(`unresolved=${unresolved.length} by status=${JSON.stringify([...unresolvedByStatus])}`);
+    console.log(
+      `unresolved with real Activity/STA content=${realRows.length}: ${realRows.map((r) => `${r.status} [${r.values[0]}] ${r.values[1]}-${r.values[2]} "${(r.values[14] ?? "").slice(0, 45)}"`)}`,
+    );
 
     // ---- placed footage since baseline: added chain rows' station math ----
-    const stations = { start: 1, end: 2 };
-    const sinceFt = unresolved
-      .concat(diff.rows.filter((r) => r.status === "added")))
-      .filter((r, i, a) => a.findIndex((x) => x.rowKey === r.rowKey) === i)
+    const addedRows = diff.rows.filter((r) => r.status === "added" && r.values.slice(0, 3).some((v) => v !== ""));
+    const sinceFt = addedRows
       .filter((r) => /(bore|plow|trench)/i.test(r.values[0] ?? ""))
-      .reduce((n, r) => n + (Number(r.values[stations.end]) - Number(r.values[stations.start])), 0);
+      .reduce((n, r) => n + (Number(r.values[2]) - Number(r.values[1])), 0);
+    console.log(
+      `real rows added since baseline: ${addedRows.map((r) => `${r.values[0]} ${r.values[1]}-${r.values[2]} (${Number(r.values[2]) - Number(r.values[1])}ft)`)} -> sinceFt=${sinceFt}`,
+    );
 
+    // ---- packet as the app would build it (all unresolved, phantoms included) ----
     const packet = buildBillingPacket({
       sinceFt,
       holes: aged,
@@ -147,34 +207,44 @@ describe("M1 — buildBillingPacket on US2-PE-006 (messiest tab)", () => {
       snapshotLabel: "US2-PE-006 — Aug 30 12:00 PM",
       now: NOW,
     });
-    console.log("\n===== BILLING PACKET (US2-PE-006) =====");
-    console.log(billingPacketCsv(packet));
-    console.log("===== counts:", JSON.stringify({ placedSinceFt: packet.placedSinceFt, openHoleFt: packet.openHoleFt, toEnterCount: packet.toEnterCount, lateCount: packet.lateCount }));
+    console.log("\n===== BILLING PACKET (US2-PE-006), as-shipped inputs =====");
+    console.log(billingPacketCsv(packet).split("\n").slice(0, 6).join("\n") + `\n... (${packet.rows.length} rows total)`);
+    console.log(
+      "counts:",
+      JSON.stringify({
+        placedSinceFt: packet.placedSinceFt,
+        openHoleFt: packet.openHoleFt,
+        toEnterCount: packet.toEnterCount,
+        lateCount: packet.lateCount,
+      }),
+    );
 
-    expect(packet.placedSinceFt).toBeGreaterThan(0);
-    expect(packet.openHoleFt).toBeGreaterThan(0);
+    // ---- the packet the office manager SHOULD get (phantoms excluded) ----
+    const cleanPacket = buildBillingPacket({
+      sinceFt,
+      holes: aged,
+      unresolved: realRows,
+      lateEntries: late,
+      snapshotLabel: "US2-PE-006 — Aug 30 12:00 PM",
+      now: NOW,
+    });
+    console.log("\n===== BILLING PACKET (US2-PE-006), phantom blank rows excluded =====");
+    console.log(billingPacketCsv(cleanPacket));
+
+    expect(packet.placedSinceFt).toBe(768);
+    expect(packet.openHoleFt).toBe(28086);
   });
 });
 
 describe("M2 — billingPacketCsv round-trips comma / pipe / arrow through Papa.parse", () => {
   it("keeps every field parseable with hostile-but-realistic content", async () => {
-    const data = await loadTable("US2-PE-006");
-    const appearAt = (row: string[]) => {
-      const e = parseCompletedDate(row[17]);
-      if (e) return at(e.toISOString().slice(0, 10));
-      const c = parseCompletedDate(row[4]);
-      if (c) return c.getTime() + DAY;
-      return at("2026-08-18");
-    };
-    const days: string[] = [];
-    for (let d = new Date("2026-08-18"); d <= new Date("2026-08-30"); d = new Date(d.getTime() + DAY))
-      days.push(d.toISOString().slice(0, 10));
-    const walk = buildWalk(data, days, (row) => appearAt(row));
+    const { walk } = await peWalk("US2-PE-006", "2026-08-18", "2026-08-30");
     const aged = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })), NOW);
     const late = detectLateEntries(walk, 2);
 
     // a CHANGED row (arrow detail) — synthetic edit on a real row: Invoice # filled in
-    const baseRow = data.rows.find((r) => norm(r[0]) === "Bore" && norm(r[1]) === "38254")!;
+    const rows = (await loadTable("US2-PE-006")).rows;
+    const baseRow = rows.find((r) => norm(r[0]) === "Bore" && norm(r[1]) === "38254")!;
     const changedRow = baseRow.slice();
     changedRow[18] = "3103";
     const changedDiffRow = {
@@ -210,51 +280,42 @@ describe("M2 — billingPacketCsv round-trips comma / pipe / arrow through Papa.
       now: NOW,
     });
     const csv = billingPacketCsv(packet);
-    console.log("\n===== CSV under test =====\n" + csv);
+    console.log("\n===== CSV under test (JSON-escaped lines) =====");
+    for (const line of csv.split("\n")) console.log(JSON.stringify(line));
 
     const parsed = Papa.parse<string[]>(csv, { skipEmptyLines: "greedy" });
-    expect(parsed.errors).toEqual([]);
+    console.log("Papa errors:", JSON.stringify(parsed.errors));
     const dataRows = parsed.data.filter((r) => !r[0]!.startsWith("#"));
-    expect(dataRows.every((r) => r.length === 4)).toBe(true); // Kind,Detail,Ft,Note
+    const badWidth = dataRows.filter((r) => r.length !== 4);
+    console.log(
+      `field-width check: ${dataRows.length - badWidth.length}/${dataRows.length} data rows have exactly 4 fields` +
+        (badWidth.length ? ` — BROKEN ROWS: ${badWidth.map((r) => JSON.stringify(r)).join(" ; ")}` : ""),
+    );
 
     const arrowRow = dataRows.find((r) => r[1]!.includes("->"));
-    expect(arrowRow).toBeDefined();
-    expect(arrowRow![1]).toContain("Invoice #:  -> 3103");
-
     const pipeRow = dataRows.find((r) => r[1]!.includes("HAIDER 1|2"));
-    expect(pipeRow).toBeDefined();
-    expect(pipeRow![1]).toContain(" | ");
-
     const lateRow = dataRows.find((r) => r[0] === "late");
-    expect(lateRow).toBeDefined();
-    expect(lateRow![1]).toMatch(/Row \d+ \(Bore\) dated 2026-08-21, entered 3d late/); // comma inside detail
+    console.log("arrow survives:", JSON.stringify(arrowRow?.[1]));
+    console.log("pipe survives:", JSON.stringify(pipeRow?.[1]));
+    console.log("late row fields:", JSON.stringify(lateRow));
 
-    // snapshot label with comma must survive in the provenance header
+    expect(parsed.errors).toEqual([]);
+    expect(dataRows.every((r) => r.length === 4)).toBe(true); // fails while commas don't trigger quoting
+    expect(arrowRow![1]).toContain("Invoice #:  -> 3103");
+    expect(pipeRow![1]).toContain(" | ");
+    expect(lateRow![1]).toMatch(/Row \d+ \(Bore\) dated 2026-08-21, entered 3d late/);
     expect(csv.split("\n")[1]).toContain("# Snapshot: Frost RT3a, South Dakota");
   });
 });
 
 describe("M3 — entryLatency crew misattribution on US1-PE-009 (real two-crew Bore days)", () => {
-  it("attributes late entries to the first matching activity row, not the actual crew", async () => {
-    const data = await loadTable("US1-PE-009");
-    const days: string[] = [];
-    for (let d = new Date("2026-06-23"); d <= new Date("2026-08-08"); d = new Date(d.getTime() + DAY))
-      days.push(d.toISOString().slice(0, 10));
-    const walk = buildWalk(
-      data,
-      days,
-      (row) => {
-        const e = parseCompletedDate(row[17]);
-        if (e) return at(e.toISOString().slice(0, 10));
-        const c = parseCompletedDate(row[4]);
-        if (c) return c.getTime() + DAY;
-        return at("2026-06-23");
-      },
-    );
+  it("attributes late entries to the first row matching the ACTIVITY, not the actual crew", async () => {
+    const { data, walk } = await peWalk("US1-PE-009", "2026-06-23", "2026-08-08");
     const latest = walk[walk.length - 1]!;
     const late = detectLateEntries(walk, 2);
-    console.log(`late entries flagged: ${late.length}`);
-    console.log(late.slice(0, 12).map((e) => `  row ${e.row} [${e.activity}] done ${e.completedOn} appeared ${new Date(e.appearedAt).toISOString().slice(0, 10)} ${e.daysLate}d`).join("\n"));
+    const byActivity = new Map<string, number>();
+    for (const e of late) byActivity.set(e.activity, (byActivity.get(e.activity) ?? 0) + 1);
+    console.log(`late entries flagged: ${late.length} by activity: ${JSON.stringify([...byActivity])}`);
 
     const crewOf = crewOfFactory(data);
     const produced = entryLatency(
@@ -264,7 +325,6 @@ describe("M3 — entryLatency crew misattribution on US1-PE-009 (real two-crew B
     );
 
     // ground truth: map each late entry back to its actual final-grid row via the walk
-    const walkAt = new Map(walk.map((w) => [w.createdAt, w.finalIdx]));
     const crewCol = detectCrewColumn(data)!;
     const truth = new Map<string, number[]>();
     for (const e of late) {
@@ -281,21 +341,16 @@ describe("M3 — entryLatency crew misattribution on US1-PE-009 (real two-crew B
     console.log("\nproduced leaderboard:", JSON.stringify(produced));
     console.log("ground-truth leaderboard:", JSON.stringify(truthBoard));
 
-    // the misattribution, concretely
-    const prodIvans = produced.find((c) => /IVANS/i.test(c.crew));
-    const trueHaider = truthBoard.find((c) => /HAIDER/i.test(c.crew));
+    const trueIvans = truthBoard.find((c) => /IVANS/i.test(c.crew))!;
+    const prodIvans = produced.find((c) => /IVANS/i.test(c.crew))!;
+    const trueHaider = truthBoard.find((c) => /HAIDER/i.test(c.crew))!;
     const prodHaider = produced.find((c) => /HAIDER/i.test(c.crew));
     console.log(
-      `\nIVANS: produced ${prodIvans?.entries} entries (median ${prodIvans?.medianDays}d) vs truth ${truthBoard.find((c) => /IVANS/i.test(c.crew))?.entries} (median ${truthBoard.find((c) => /IVANS/i.test(c.crew))?.medianDays}d)`,
+      `\nIVANS: produced ${prodIvans.entries} entries (median ${prodIvans.medianDays}d) vs truth ${trueIvans.entries} (median ${trueIvans.medianDays}d)`,
     );
-    console.log(`HAIDER 1: produced ${prodHaider?.entries ?? "ABSENT"} entries vs truth ${trueHaider?.entries} (median ${trueHaider?.medianDays}d)`);
+    console.log(`HAIDER 1: produced ${prodHaider?.entries ?? "ABSENT"} entries vs truth ${trueHaider.entries} (median ${trueHaider.medianDays}d)`);
 
-    // every late Bore entry lands on the FIRST Bore row in the sheet (crew IVANS, idx9)
-    const firstBoreCrew = crewOf(data.rows.find((r) => norm(r[0]) === "Bore")!);
-    const allLateOnOneCrew = produced.length === 1 && /IVANS/i.test(produced[0]!.crew);
-    console.log(`first Bore row in sheet belongs to: ${firstBoreCrew} -> ALL late entries attributed there: ${allLateOnOneCrew}`);
-
-    // zoom: 2026-07-13 — IVANS AND HAIDER 1 both did Bore; all four rows entered 07-17 (4d late)
+    // zoom: 2026-07-13/14 — IVANS AND HAIDER 1 both did Bore; all rows entered 4d late
     const dayLate = late.filter((e) => e.completedOn === "2026-07-13" || e.completedOn === "2026-07-14");
     const dayProduced = entryLatency(
       dayLate.map((e) => ({ activity: e.activity, daysLate: e.daysLate })),
@@ -309,46 +364,35 @@ describe("M3 — entryLatency crew misattribution on US1-PE-009 (real two-crew B
       const crew = norm(data.rows[finalI]![crewCol]);
       dayTruth.set(crew, (dayTruth.get(crew) ?? 0) + 1);
     }
-    console.log(`\n2026-07-13/14 zoom: produced ${JSON.stringify(dayProduced.map((c) => ({ crew: c.crew, entries: c.entries })))} vs truth ${JSON.stringify([...dayTruth.entries()])}`);
+    console.log(
+      `\n2026-07-13/14 zoom: produced ${JSON.stringify(dayProduced.map((c) => ({ crew: c.crew, entries: c.entries })))} vs truth ${JSON.stringify([...dayTruth.entries()])}`,
+    );
 
-    expect(allLateOnOneCrew).toBe(true); // heuristic collapses everything onto one crew
-    expect(prodHaider).toBeUndefined(); // HAIDER 1 never appears despite 5+ late bores
+    expect(prodHaider).toBeUndefined(); // HAIDER 1 never appears despite 4 late bores
+    expect(prodIvans.entries).toBeGreaterThan(trueIvans.entries); // IVANS absorbs HAIDER 1's lateness
+    expect(dayProduced.find((c) => /HAIDER/i.test(c.crew))).toBeUndefined();
     expect(truthBoard.length).toBeGreaterThan(1); // truth has multiple crews
   });
 });
 
 describe("M5 — which features fire on this file today", () => {
   it("verifiedStale on US2-PE-007 walk: how many rows get flagged", async () => {
-    const data = await loadTable("US2-PE-007");
-    const days: string[] = [];
-    for (let d = new Date("2026-08-15"); d <= new Date("2026-08-30"); d = new Date(d.getTime() + DAY))
-      days.push(d.toISOString().slice(0, 10));
-    const walk = buildWalk(
-      data,
-      days,
-      (row) => {
-        const e = parseCompletedDate(row[17]);
-        if (e) return at(e.toISOString().slice(0, 10));
-        const c = parseCompletedDate(row[4]);
-        if (c) return c.getTime() + DAY;
-        return at("2026-08-15");
-      },
-    );
-    // rowChangedAt: last snapshot in which the row's content appeared/changed
-    const { rowContentKey } = await import("./diff/engine");
+    const { walk } = await peWalk("US2-PE-007", "2026-08-15", "2026-08-30");
+    const lastData = walk[walk.length - 1]!.data;
+    // rowChangedAt: when each row's current content first appeared in the walk
     const rowChangedAt = new Map<string, number>();
-    const seenAt = new Map<string, number>();
     for (const w of walk) {
       for (const row of w.data.rows) {
         const k = rowContentKey(row);
-        if (!seenAt.has(k)) seenAt.set(k, w.createdAt);
-        rowChangedAt.set(k, w.createdAt); // rows never edited: changedAt = first appearance
+        if (!rowChangedAt.has(k)) rowChangedAt.set(k, w.createdAt);
       }
     }
-    const stale = verifiedStale(walk[walk.length - 1]!.data, rowChangedAt, NOW);
-    const verifiedCol = walk[walk.length - 1]!.data.headers.findIndex((h) => /verified\s*by/i.test(norm(h)));
-    const verifiedRows = walk[walk.length - 1]!.data.rows.filter((r) => norm(r[verifiedCol]) !== "").length;
-    console.log(`verifiedStale: ${stale.length} flagged of ${verifiedRows} rows carrying "${norm(walk[walk.length - 1]!.data.headers[verifiedCol])}" initials`);
+    const stale = verifiedStale(lastData, rowChangedAt, NOW);
+    const verifiedCol = lastData.headers.findIndex((h) => /verified\s*by/i.test(norm(h)));
+    const verifiedRows = lastData.rows.filter((r) => norm(r[verifiedCol]) !== "").length;
+    console.log(
+      `verifiedStale: ${stale.length} flagged of ${verifiedRows} rows carrying "${norm(lastData.headers[verifiedCol])}" initials`,
+    );
     console.log(`  sample: ${JSON.stringify(stale.slice(0, 3))}`);
     expect(stale.length).toBeGreaterThan(0);
   });
