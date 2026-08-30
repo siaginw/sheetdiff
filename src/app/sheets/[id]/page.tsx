@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -29,7 +29,7 @@ import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
 import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
 import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
 import { db } from "@/lib/db";
-import { tabs, snapshots, notes, changeAcks } from "@/lib/db/schema";
+import { tabs, snapshots, snapshotStats, notes, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
@@ -56,6 +56,7 @@ import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
 const TIMELINE_STATS_LIMIT = 30;
+const INTRO_WALK_WINDOW = 31; // blob budget: latest + baseline + walk
 
 export default async function SheetPage({
   params,
@@ -95,33 +96,73 @@ export default async function SheetPage({
     .where(eq(snapshots.tabId, activeTab.id))
     .orderBy(desc(snapshots.createdAt));
 
-  // recent blobs for stats + headers — filter imports IN the query;
-  // limit-then-filter would shrink the window on import-heavy timelines
-  const recent = await db
-    .select()
+  // recent snapshots: metadata + capture-time stats (no blobs, no per-view diffs);
+  // blobs are fetched below only for the pieces that need grid data
+  const recentMeta = await db
+    .select({
+      id: snapshots.id,
+      runId: snapshots.runId,
+      trigger: snapshots.trigger,
+      isBaseline: snapshots.isBaseline,
+      rowCount: snapshots.rowCount,
+      createdAt: snapshots.createdAt,
+    })
     .from(snapshots)
     .where(and(eq(snapshots.tabId, activeTab.id), ne(snapshots.trigger, "import")))
     .orderBy(desc(snapshots.createdAt))
     .limit(TIMELINE_STATS_LIMIT + 1);
 
-  const latest = recent[0] ?? null;
-  const latestData = latest ? decodeSnapshot(latest.dataBlob) : null;
-  const detectedKey = latestData ? detectKeyColumn(latestData) : null;
+  // stats from the materialized table; legacy snapshots without stats fall
+  // back to on-demand diff (bounded to the same window)
+  const statsRows = recentMeta.length
+    ? await db
+        .select()
+        .from(snapshotStats)
+        .where(inArray(snapshotStats.snapshotId, recentMeta.map((m) => m.id)))
+    : [];
+  const statsById = new Map(statsRows.map((r) => [r.snapshotId, r]));
 
-  // mini stats vs previous snapshot (GitHub-style "+2 −1 ~3" per entry)
-  const statsFor = new Map<string, { add: number; rem: number; chg: number }>();
-  for (let i = 0; i + 1 < recent.length; i++) {
-    const newer = recent[i];
-    const older = recent[i + 1];
-    const d = diffSnapshots(decodeSnapshot(older.dataBlob), decodeSnapshot(newer.dataBlob), {
-      keyColumn: activeTab.keyColumn ?? null,
-    });
-    statsFor.set(newer.id, {
-      add: d.summary.addedRows,
-      rem: d.summary.removedRows,
-      chg: d.summary.changedRows,
-    });
+  // blobs only for the window the page actually renders: latest (headers/
+  // analytics), baseline + walk (ack resolution), and trace history
+  const neededIds = new Set<string>();
+  const recentById = new Map(recentMeta.map((m) => [m.id, m]));
+  const latestMeta = recentMeta[0] ?? null;
+  if (latestMeta) neededIds.add(latestMeta.id);
+  const baselineMeta = recentMeta.find((m) => m.isBaseline && m.id !== latestMeta?.id) ?? null;
+  if (baselineMeta) neededIds.add(baselineMeta.id);
+  for (const m of recentMeta.slice(0, INTRO_WALK_WINDOW)) neededIds.add(m.id);
+  const blobRows = neededIds.size
+    ? await db.select().from(snapshots).where(inArray(snapshots.id, [...neededIds]))
+    : [];
+  const blobById = new Map(blobRows.map((r) => [r.id, r]));
+
+  type RecentEntry = (typeof recentMeta)[number] & { dataBlob?: Buffer };
+  const recent: RecentEntry[] = recentMeta.map((m) => ({ ...m, dataBlob: blobById.get(m.id)?.dataBlob }));
+
+  // stats for the timeline: materialized first, on-demand fallback (uses blobs
+  // fetched above; pairs beyond the blob window show "—")
+  const statsFor = new Map<string, { add: number; rem: number; chg: number } | null>();
+  for (let i = 0; i < recentMeta.length; i++) {
+    const cur = recentMeta[i]!;
+    const stat = statsById.get(cur.id);
+    if (stat) {
+      statsFor.set(cur.id, { add: stat.added, rem: stat.removed, chg: stat.changed });
+      continue;
+    }
+    const prev = recentMeta[i + 1];
+    if (prev && blobById.has(cur.id) && blobById.has(prev.id)) {
+      const d = diffSnapshots(decodeSnapshot(blobById.get(prev.id)!.dataBlob), decodeSnapshot(blobById.get(cur.id)!.dataBlob), {
+        keyColumn: activeTab.keyColumn ?? null,
+      });
+      statsFor.set(cur.id, { add: d.summary.addedRows, rem: d.summary.removedRows, chg: d.summary.changedRows });
+    } else {
+      statsFor.set(cur.id, null); // unknown — render "—"
+    }
   }
+
+  const latest = latestMeta;
+  const latestData = latest ? (blobById.get(latest.id) ? decodeSnapshot(blobById.get(latest.id)!.dataBlob) : null) : null;
+  const detectedKey = latestData ? detectKeyColumn(latestData) : null;
 
   // resolve from/to (after a GIS import, land on sheet → import)
   const validId = (v: unknown): string | null =>
@@ -188,7 +229,7 @@ export default async function SheetPage({
     const introduced =
       between.length > 1
         ? computeIntroductions(
-            between.map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) })),
+            between.filter((s) => s.dataBlob).map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
             diff.rows,
           )
         : new Map<string, number>();
@@ -203,7 +244,7 @@ export default async function SheetPage({
   const traceEvents =
     traceParam && recent.length > 1
       ? traceKeyFn(
-          [...recent].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) })),
+          [...recent].filter((s) => s.dataBlob).reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
           activeTab.keyColumn ?? null,
           traceParam,
         )
@@ -240,9 +281,9 @@ export default async function SheetPage({
     if (f.stations) {
       activeFootage = f;
       const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
-      const base = baselineSnap ?? recent[1] ?? null;
+      const base = (baselineSnap && baselineSnap.dataBlob ? baselineSnap : recent.find((r) => r.dataBlob && r.id !== latest.id)) ?? null;
       if (base) {
-        const baseFootage = computeFootage(decodeSnapshot(base.dataBlob));
+        const baseFootage = computeFootage(decodeSnapshot(base.dataBlob!));
         footageDelta = f.ft - baseFootage.ft;
         footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
       }
@@ -259,7 +300,7 @@ export default async function SheetPage({
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
     if (recent.length > 1) {
-      const walk = [...recent].reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob) }));
+      const walk = [...recent].filter((sn) => sn.dataBlob).reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob!) }));
       lateEntries = detectLateEntries(walk);
       agedGaps = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })));
     }

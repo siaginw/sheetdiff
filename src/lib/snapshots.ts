@@ -1,10 +1,13 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
-import { and, eq, inArray } from "drizzle-orm";
+import { promisify } from "node:util";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "./db";
-import { spreadsheets, tabs, snapshots, type Spreadsheet } from "./db/schema";
+import { spreadsheets, tabs, snapshots, snapshotStats, type Spreadsheet, type Snapshot } from "./db/schema";
 import { getUserClient, fetchTabValues } from "./google";
 import { diffSnapshots, type SnapshotData, type DiffResult } from "./diff/engine";
+
+const gzipAsync = promisify(zlib.gzip);
 import { norm } from "./diff/normalize";
 
 /**
@@ -32,6 +35,11 @@ export function toSnapshotData(raw: string[][]): SnapshotData {
 
 export function encodeSnapshot(data: SnapshotData): Buffer {
   return zlib.gzipSync(Buffer.from(JSON.stringify(data), "utf8"));
+}
+
+/** Non-blocking gzip for the capture path (keeps the event loop free). */
+export async function encodeSnapshotAsync(data: SnapshotData): Promise<Buffer> {
+  return gzipAsync(Buffer.from(JSON.stringify(data), "utf8"));
 }
 
 export function decodeSnapshot(blob: Buffer): SnapshotData {
@@ -95,27 +103,56 @@ export async function captureSnapshot(
   const runId = crypto.randomUUID();
   const now = Date.now();
   let rowCount = 0;
-  const inserts = trackedTabs.map((tab) => {
+
+  // previous non-import snapshot per tab (for capture-time diff stats)
+  const prevByTab = new Map<string, SnapshotData>();
+  for (const tab of trackedTabs) {
+    const prevRows = await db
+      .select()
+      .from(snapshots)
+      .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
+      .orderBy(desc(snapshots.createdAt))
+      .limit(1);
+    if (prevRows[0]) prevByTab.set(tab.id, decodeSnapshot(prevRows[0].dataBlob));
+  }
+
+  const inserts: (typeof snapshots.$inferInsert)[] = [];
+  const statsInserts: (typeof snapshotStats.$inferInsert)[] = [];
+  for (const tab of trackedTabs) {
     const data = toSnapshotData(values[tab.title] ?? []);
     rowCount += data.rows.length;
-    return {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    inserts.push({
+      id,
       tabId: tab.id,
       runId,
       trigger,
-      isBaseline: false as const,
+      isBaseline: false,
       rowCount: data.rows.length,
       colCount: data.headers.length,
-      dataBlob: encodeSnapshot(data),
+      dataBlob: await encodeSnapshotAsync(data),
       createdAt: now,
-    };
-  });
+    });
+    const prev = prevByTab.get(tab.id);
+    if (prev) {
+      const d = diffSnapshots(prev, data, { keyColumn: tab.keyColumn ?? null });
+      statsInserts.push({
+        snapshotId: id,
+        tabId: tab.id,
+        added: d.summary.addedRows,
+        removed: d.summary.removedRows,
+        changed: d.summary.changedRows,
+        createdAt: now,
+      });
+    }
+  }
 
   // atomic: either the whole run lands with updated schedule state, or nothing.
-  // NOTE: .run() matters — drizzle query builders are lazy; without it the
+  // .run() matters: drizzle query builders are lazy; without it the
   // transaction commits having executed nothing.
   db.transaction((tx) => {
     tx.insert(snapshots).values(inserts).run();
+    if (statsInserts.length > 0) tx.insert(snapshotStats).values(statsInserts).run();
     tx
       .update(spreadsheets)
       .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })

@@ -126,6 +126,25 @@ export const changeAcks = sqliteTable(
   (t) => [uniqueIndex("change_acks_tab_row_idx").on(t.tabId, t.rowKey)],
 );
 
+/**
+ * Capture-time diff stats: each snapshot remembers its delta vs the previous
+ * non-import snapshot, so timelines never re-diff pairs per view.
+ */
+export const snapshotStats = sqliteTable(
+  "snapshot_stats",
+  {
+    snapshotId: text("snapshot_id")
+      .primaryKey()
+      .references(() => snapshots.id, { onDelete: "cascade" }),
+    tabId: text("tab_id").notNull(),
+    added: integer("added").notNull(),
+    removed: integer("removed").notNull(),
+    changed: integer("changed").notNull(),
+    createdAt: integer("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => [index("snapshot_stats_tab_idx").on(t.tabId, t.createdAt)],
+);
+
 export type Note = typeof notes.$inferSelect;
 export type ChangeAck = typeof changeAcks.$inferSelect;
 

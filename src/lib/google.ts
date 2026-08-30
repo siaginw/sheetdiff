@@ -137,7 +137,12 @@ export async function fetchSpreadsheetMeta(
   return { title: res.data.properties?.title ?? "Untitled spreadsheet", tabs };
 }
 
-/** Fetch all values of the given tabs. Returns raw grids keyed by tab title. */
+/**
+ * Fetch all values of the given tabs. Returns raw grids keyed by tab title.
+ * Chunked (~10 ranges per call) with a per-request timeout: a single bloated
+ * tab can't blow the ~10 MB response ceiling for the WHOLE capture, and one
+ * hung request can't stall the scheduler queue.
+ */
 export async function fetchTabValues(
   client: OAuth2Client,
   spreadsheetId: string,
@@ -147,10 +152,19 @@ export async function fetchTabValues(
   const sheets = google.sheets({ version: "v4", auth: client });
   // Quotes are required around tab names containing spaces/special characters.
   const ranges = tabTitles.map((t) => `'${t.replace(/'/g, "''")}'`);
-  const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
   const out: Record<string, string[][]> = {};
-  (res.data.valueRanges ?? []).forEach((vr, i) => {
-    out[tabTitles[i]] = (vr.values ?? []) as string[][];
-  });
+
+  const CHUNK = 10;
+  for (let i = 0; i < ranges.length; i += CHUNK) {
+    const chunk = ranges.slice(i, i + CHUNK);
+    const titles = tabTitles.slice(i, i + CHUNK);
+    const res = await sheets.spreadsheets.values.batchGet(
+      { spreadsheetId, ranges: chunk },
+      { timeout: 60_000 },
+    );
+    (res.data.valueRanges ?? []).forEach((vr, j) => {
+      out[titles[j] ?? String(j)] = (vr.values ?? []) as string[][];
+    });
+  }
   return out;
 }
