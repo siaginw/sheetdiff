@@ -21,8 +21,8 @@ interface TabPreview {
 }
 
 const CADENCE_ITEMS = [
-  { value: "daily-9", label: "Every day at 9:00 AM (recommended)" },
-  { value: "daily-16", label: "Every day at 4:00 PM" },
+  { value: "daily-16", label: "Every day at 4:00 PM (when you collect)" },
+  { value: "daily-9", label: "Every day at 9:00 AM" },
   { value: "hourly", label: "Every hour" },
   { value: "off", label: "Manual only — I'll snapshot myself" },
 ];
@@ -179,6 +179,26 @@ export default async function NewSheetPage({
                   </li>
                 ))}
               </ul>
+            </div>
+            <div className="grid gap-2">
+              <Label className="text-sm">How often should it snapshot?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {CADENCE_ITEMS.map((c, i) => (
+                  <label
+                    key={c.value}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+                  >
+                    <input
+                      type="radio"
+                      name="cadence"
+                      value={c.value}
+                      defaultChecked={i === 0}
+                      className="accent-primary"
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="mt-6 flex items-center justify-between">
               <p className="max-w-sm text-xs text-muted-foreground">

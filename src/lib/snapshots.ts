@@ -79,7 +79,26 @@ export function computeNextRun(sheet: Spreadsheet, from = Date.now()): number | 
  * Capture one snapshot run: fetch every tracked tab of the spreadsheet and
  * store a gzip'd snapshot per tab, grouped by runId.
  */
-export async function captureSnapshot(
+type CaptureResult = { runId: string; createdAt: number; tabCount: number; rowCount: number };
+const inFlight = new Map<string, Promise<CaptureResult>>();
+
+/** Single-flighted per spreadsheet: a manual click racing the scheduler must
+ *  not double-capture (both would diff against the same prev, double-counting
+ *  the timeline stats). */
+export function captureSnapshot(
+  spreadsheetId: string,
+  trigger: "manual" | "scheduled",
+): Promise<CaptureResult> {
+  const existing = inFlight.get(spreadsheetId);
+  if (existing) return existing;
+  const run = captureSnapshotInner(spreadsheetId, trigger).finally(() =>
+    inFlight.delete(spreadsheetId),
+  );
+  inFlight.set(spreadsheetId, run);
+  return run;
+}
+
+async function captureSnapshotInner(
   spreadsheetId: string,
   trigger: "manual" | "scheduled",
 ): Promise<{ runId: string; createdAt: number; tabCount: number; rowCount: number }> {
@@ -106,14 +125,8 @@ export async function captureSnapshot(
 
   // previous non-import snapshot per tab (for capture-time diff stats)
   const prevByTab = new Map<string, SnapshotData>();
-  for (const tab of trackedTabs) {
-    const prevRows = await db
-      .select()
-      .from(snapshots)
-      .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
-      .orderBy(desc(snapshots.createdAt))
-      .limit(1);
-    if (prevRows[0]) prevByTab.set(tab.id, decodeSnapshot(prevRows[0].dataBlob));
+  for (const [tabId, snap] of await latestNonImportSnapshots(trackedTabs.map((t) => t.id))) {
+    prevByTab.set(tabId, decodeSnapshot(snap.dataBlob));
   }
 
   const inserts: (typeof snapshots.$inferInsert)[] = [];
@@ -152,15 +165,44 @@ export async function captureSnapshot(
   // transaction commits having executed nothing.
   db.transaction((tx) => {
     tx.insert(snapshots).values(inserts).run();
-    if (statsInserts.length > 0) tx.insert(snapshotStats).values(statsInserts).run();
     tx
       .update(spreadsheets)
       .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
       .where(eq(spreadsheets.id, sheet.id))
       .run();
   });
+  // stats are an optimization: never let them roll back real snapshots (an
+  // upgraded deployment without the new table falls back to on-demand diffs)
+  if (statsInserts.length > 0) {
+    try {
+      db.insert(snapshotStats).values(statsInserts).run();
+    } catch (err) {
+      console.warn("[capture] stats materialization skipped:", err instanceof Error ? err.message : err);
+    }
+  }
 
   return { runId, createdAt: now, tabCount: trackedTabs.length, rowCount };
+}
+
+/**
+ * Latest non-import snapshot for EACH of the given tabs in ONE query —
+ * replaces the per-tab hand-rolled loop that ran 36 sequential queries on
+ * every page render and twice inside capture.
+ */
+export async function latestNonImportSnapshots(
+  tabIds: string[],
+): Promise<Map<string, Snapshot>> {
+  if (tabIds.length === 0) return new Map();
+  const rows = await db
+    .select()
+    .from(snapshots)
+    .where(and(inArray(snapshots.tabId, tabIds), ne(snapshots.trigger, "import")))
+    .orderBy(desc(snapshots.createdAt));
+  const out = new Map<string, Snapshot>();
+  for (const r of rows) {
+    if (!out.has(r.tabId)) out.set(r.tabId, r); // first per tab = newest
+  }
+  return out;
 }
 
 /** Load + diff two snapshots of the same tab. */

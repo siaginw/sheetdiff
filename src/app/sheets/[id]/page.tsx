@@ -31,7 +31,7 @@ import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
 import { db } from "@/lib/db";
 import { tabs, snapshots, snapshotStats, notes, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
-import { getTabDiff, decodeSnapshot } from "@/lib/snapshots";
+import { getTabDiff, decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { computeIntroductions, isResolved } from "@/lib/sync";
@@ -55,7 +55,8 @@ import {
 import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
-const TIMELINE_STATS_LIMIT = 30;
+const TIMELINE_STATS_LIMIT = 30; // legacy on-demand fallback window
+const TIMELINE_RENDER_CAP = 60;
 const INTRO_WALK_WINDOW = 31; // blob budget: latest + baseline + walk
 
 export default async function SheetPage({
@@ -79,6 +80,8 @@ export default async function SheetPage({
   const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id)).orderBy(tabs.position);
   if (allTabs.length === 0) notFound();
 
+  const trackedTabs = allTabs.filter((t) => t.tracked);
+  const latestDataByTab = new Map<string, { title: string; data: ReturnType<typeof decodeSnapshot> }>();
   const tabParam = typeof sp.tab === "string" ? sp.tab : null;
   const activeTab = allTabs.find((t) => t.title === tabParam) ?? allTabs.find((t) => t.tracked) ?? allTabs[0];
 
@@ -110,7 +113,7 @@ export default async function SheetPage({
     .from(snapshots)
     .where(and(eq(snapshots.tabId, activeTab.id), ne(snapshots.trigger, "import")))
     .orderBy(desc(snapshots.createdAt))
-    .limit(TIMELINE_STATS_LIMIT + 1);
+    .limit(sp.older === "1" ? 500 : TIMELINE_RENDER_CAP);
 
   // stats from the materialized table; legacy snapshots without stats fall
   // back to on-demand diff (bounded to the same window)
@@ -258,19 +261,15 @@ export default async function SheetPage({
   let footageDelta: number | null = null;
   let footageBaseLabel = "since previous snapshot";
   if (latestData) {
+    // ONE query + ONE decode per tab for BOTH checks and TOTALS reconciliation
+    const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
     const inputs: TabChecksInput[] = [];
-    for (const t of allTabs.filter((t) => t.tracked)) {
-      // exclude imports IN the query — limit(1) before filtering would drop
-      // the tab entirely when its newest snapshot is a GIS import
-      const tSnaps = await db
-        .select()
-        .from(snapshots)
-        .where(and(eq(snapshots.tabId, t.id), ne(snapshots.trigger, "import")))
-        .orderBy(desc(snapshots.createdAt))
-        .limit(1);
-      const tSnap = tSnaps[0];
+    for (const t of trackedTabs) {
+      const tSnap = latestByTab.get(t.id);
       if (tSnap) {
-        inputs.push({ tabTitle: t.title, data: decodeSnapshot(tSnap.dataBlob), keyColumn: t.keyColumn ?? null });
+        const data = decodeSnapshot(tSnap.dataBlob);
+        inputs.push({ tabTitle: t.title, data, keyColumn: t.keyColumn ?? null });
+        latestDataByTab.set(t.id, { title: t.title, data });
       }
     }
     checkFindings.push(...runChecks(inputs));
@@ -307,32 +306,22 @@ export default async function SheetPage({
     // TOTALS reconciliation when a TOTALS-like tab exists
     const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title));
     if (totalsTab) {
-      const totalsSnaps = await db
-        .select()
-        .from(snapshots)
-        .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
-        .orderBy(desc(snapshots.createdAt))
-        .limit(1);
-      if (totalsSnaps[0]) {
-        const perTab = new Map<string, number>();
-        for (const t of allTabs.filter((x) => x.tracked)) {
-          const tSnaps = await db
-            .select()
-            .from(snapshots)
-            .where(and(eq(snapshots.tabId, t.id), ne(snapshots.trigger, "import")))
-            .orderBy(desc(snapshots.createdAt))
-            .limit(1);
-          if (tSnaps[0]) {
-            const f = computeFootage(decodeSnapshot(tSnaps[0].dataBlob));
-            perTab.set(t.title.toLowerCase(), f.ft);
+      const totalsSnaps = await latestNonImportSnapshots([totalsTab.id]);
+      const totalsSnap = totalsSnaps.get(totalsTab.id);
+      if (totalsSnap) {
+        const perTab = new Map<string, { title: string; ft: number }>();
+        for (const t of trackedTabs) {
+          const entry = latestDataByTab.get(t.id);
+          if (entry) {
+            perTab.set(t.title.toLowerCase(), { title: t.title, ft: computeFootage(entry.data).ft });
           }
         }
-        totalsMismatches = reconcileTotals(decodeSnapshot(totalsSnaps[0].dataBlob), perTab);
+        totalsMismatches = reconcileTotals(decodeSnapshot(totalsSnap.dataBlob), perTab);
       }
     }
   }
 
-  const trackedCount = allTabs.filter((t) => t.tracked).length;
+  const trackedCount = trackedTabs.length;
 
   const IMPORT_ERRORS: Record<string, string> = {
     "snapshot-failed": "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
@@ -474,7 +463,7 @@ export default async function SheetPage({
               <ol className="relative max-h-[70vh] overflow-auto py-3">
                 {/* the branch line */}
                 <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-border" />
-                {timeline.slice(0, timelineOpen ? timeline.length : 60).map((s) => {
+                {timeline.slice(0, timelineOpen ? timeline.length : TIMELINE_RENDER_CAP).map((s) => {
                   const isTo = s.id === toId;
                   const isFrom = s.id === fromId;
                   const st = statsFor.get(s.id);
@@ -519,7 +508,9 @@ export default async function SheetPage({
                         </span>
                         <span className="mt-0.5 flex items-center gap-2 font-mono text-[10.5px]">
                           <span className="text-muted-foreground/70">{s.rowCount} rows</span>
-                          {st && st.add + st.rem + st.chg > 0 ? (
+                          {st == null ? (
+                            <span className="text-muted-foreground/40" title="Change counts weren't recorded for snapshots this old">—</span>
+                          ) : st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">
                               {st.add > 0 && <span className="text-diff-add-fg">+{st.add}</span>}
                               {st.rem > 0 && <span className="text-diff-del-fg">−{st.rem}</span>}
@@ -560,7 +551,7 @@ export default async function SheetPage({
                 {timeline.length > 60 ? (
                   <li className="px-4 py-1.5">
                     <a
-                      href={`${traceHrefBase}${timelineOpen ? "" : "&older=1"}${timelineOpen ? "" : ""}`}
+                      href={`${traceHrefBase}${fromId ? `&from=${fromId}` : ""}${toId ? `&to=${toId}` : ""}${traceParam ? `&trace=${encodeURIComponent(traceParam)}` : ""}${timelineOpen ? "" : "&older=1"}`}
                       className="font-mono text-[10.5px] text-muted-foreground hover:text-foreground hover:underline"
                     >
                       {timelineOpen ? "show recent only" : `show ${timeline.length - 60} older snapshot${timeline.length - 60 === 1 ? "" : "s"}…`}

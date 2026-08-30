@@ -74,12 +74,12 @@ export function ProductionPanel({
           {hygiene.length > 0 && <span className="text-diff-del-fg">{hygiene.length} date issue{hygiene.length === 1 ? "" : "s"}</span>}
           {lateEntries.length > 0 && (
             <span className="text-diff-del-fg">
-              {lateEntries.length} backdated entr{lateEntries.length === 1 ? "y" : "ies"}
+              {lateEntries.length} late entr{lateEntries.length === 1 ? "y" : "ies"}
             </span>
           )}
           {oldHoles.length > 0 && (
             <span className="text-diff-move-fg">
-              {oldHoles.length} hole{oldHoles.length === 1 ? "" : "s"} ≥1wk old
+              {oldHoles.length} hole{oldHoles.length === 1 ? "" : "s"} open over a week
             </span>
           )}
           {totalsMismatches.length > 0 && (
@@ -105,10 +105,10 @@ export function ProductionPanel({
       ) : null}
 
       {lateEntries.length > 0 ? (
-        <Section icon={<CalendarClock className="size-3.5" />} title="Backdated entries (appeared well after their date)">
+        <Section icon={<CalendarClock className="size-3.5" />} title="Late entries — showed up days after their date">
           {lateEntries.slice(0, 5).map((e, i) => (
             <Line key={i} tone="danger">
-              row {e.row} · {e.activity} dated {e.completedOn} — appeared {e.daysLate}d late ({absoluteTime(e.appearedAt)})
+              sheet row {e.row} · {e.activity} dated {e.completedOn} — showed up {e.daysLate} days later ({absoluteTime(e.appearedAt)})
             </Line>
           ))}
           {lateEntries.length > 5 && <Line tone="muted">+{lateEntries.length - 5} more…</Line>}
@@ -127,7 +127,7 @@ export function ProductionPanel({
       ) : null}
 
       {totalsMismatches.length > 0 ? (
-        <Section icon={<Scale className="size-3.5" />} title="TOTALS tab reconciliation">
+        <Section icon={<Scale className="size-3.5" />} title="TOTALS doesn't add up">
           {totalsMismatches.slice(0, 5).map((m, i) => (
             <Line key={i} tone="danger">
               {m.tabTitle}: TOTALS says {ft(m.totalsSays)} ft · tab adds up to {ft(m.tabAddsUp)} ft ({m.delta > 0 ? "+" : "−"}

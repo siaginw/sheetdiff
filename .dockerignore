@@ -8,3 +8,6 @@ data
 docs
 *.md
 !README.md
+.zcode
+*.tsbuildinfo
+.github

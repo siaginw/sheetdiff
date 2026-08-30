@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await db.run(sql`SELECT 1`);
+    // a real table probe: "SELECT 1" alone goes green with zero tables created
+    await db.run(sql`SELECT 1 FROM users LIMIT 1`);
   } catch {
     return NextResponse.json({ ok: false, db: false }, { status: 503 });
   }

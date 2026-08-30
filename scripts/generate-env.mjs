@@ -53,9 +53,9 @@ console.log("Next: add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see READM
 
 // create the database too, so `npm run dev` works right after
 const { spawnSync } = await import("node:child_process");
-const push = spawnSync("npx", ["drizzle-kit", "push"], { stdio: "inherit", shell: true });
+const push = spawnSync("npx", ["drizzle-kit", "migrate"], { stdio: "inherit", shell: true });
 if (push.status !== 0) {
-  console.log("Database creation skipped — run `npm run db:push` manually.");
+  console.log("Database creation skipped — run `npm run db:migrate` manually.");
 } else {
   console.log("Database ready (data/sheetdiff.db).");
 }

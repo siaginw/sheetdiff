@@ -1,6 +1,13 @@
-import type { SnapshotData } from "./diff/engine";
-import { norm } from "./diff/normalize";
-import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow } from "./detect";
+import { rowContentKey, type SnapshotData } from "./diff/engine";
+import { compositeKey } from "./diff/normalize";
+import { norm, normalizeKey } from "./diff/normalize";
+
+/** Local-calendar day key (never toISOString — that is UTC and shifts days). */
+function localDayKey(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
 
 /**
  * Production-domain analytics beyond the chain: crew productivity, TOTALS-tab
@@ -27,28 +34,38 @@ export function detectCrewColumn(data: SnapshotData): number | null {
   return null;
 }
 
-/** Parse the completion-date formats crews actually type. */
+/** Parse the completion-date formats crews actually type. Rollover is NEVER
+ *  silent: "14/07/2026" (day-first) or "6/31/26" return null and surface as
+ *  "unreadable" hygiene findings instead of landing in the wrong month. */
 export function parseCompletedDate(value: unknown): Date | null {
   const t = norm(value);
   if (t === "") return null;
+  const build = (y: number, m: number, d: number): Date | null => {
+    // month is 1-based here; JS rolls over silently — validate explicitly
+    if (m < 1 || m > 12) return null;
+    if (y < 1990 || y > 2100) return null;
+    const dim = new Date(y, m, 0).getDate(); // days in month
+    if (d < 1 || d > dim) return null;
+    return new Date(y, m - 1, d);
+  };
   // ISO-ish (exceljs Dates are pre-serialized to this by the importer)
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
-  if (iso) {
-    const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-    return isNaN(d.getTime()) ? null : d;
-  }
-  // US numeric: 7/14, 07/14/2026, 7-14-26
-  const us = /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/.exec(t);
+  if (iso) return build(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  // US numeric: 7/14, 07/14/2026, 7-14-26 (M/D order — a day-first entry with
+  // month > 12 returns null rather than silently swapping)
+  const us = /^(\d{1,2})[\/ -](\d{1,2})(?:[\/ -](\d{2,4}))?$/.exec(t);
   if (us) {
     const now = new Date();
-    const year = us[3] ? Number(us[3].length === 2 ? `20${us[3]}` : us[3]) : now.getFullYear();
-    const d = new Date(year, Number(us[1]) - 1, Number(us[2]));
-    return isNaN(d.getTime()) ? null : d;
+    const yy = us[3] ? Number(us[3].length === 2 ? `20${us[3]}` : us[3]) : now.getFullYear();
+    return build(yy, Number(us[1]), Number(us[2]));
   }
   // "May 28 2026" / "Thu May 28 2026" (JS Date stringification from exceljs)
   const parsed = new Date(t);
-  if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 1990 && parsed.getFullYear() < 2100) {
-    return parsed;
+  if (!isNaN(parsed.getTime())) {
+    // "Thu May 28 2026 19:00:00" carries a time — compare the CALENDAR day,
+    // and return midnight-normalized so downstream day keys are stable
+    const b = build(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    return b;
   }
   return null;
 }
@@ -68,6 +85,7 @@ export function dateHygiene(data: SnapshotData, today = new Date()): DateHygiene
   const out: DateHygieneFinding[] = [];
   data.rows.forEach((row, i) => {
     if (!isFootageChainRow(row, activityCol)) return;
+    if (isGapRow(row, activityCol)) return; // booked holes never have completion dates
     const s = parseStation(row[stations.start]);
     const e = parseStation(row[stations.end]);
     if (s === null || e === null || e <= s) return; // handholes/unparseable aren't footage
@@ -99,10 +117,9 @@ export interface LateEntry {
 /**
  * Backdated entries: rows whose completion date is far older than the first
  * snapshot in which they appeared — "new work entered today" vs "old work
- * entered late." `walk` is oldest → newest snapshots of one tab (non-import);
- * a row is LATE when (first-appeared capture − Date Complete) exceeds the
- * tolerance. Default 2 days keeps the legitimate Friday-evening→Monday-morning
- * entry pattern (2.3 days) out of the findings.
+ * entered late." A row EDITED in a later snapshot (crew name fixed, etc.) is
+ * NOT late: first appearance is tracked across the whole walk via the shared
+ * rowContentKey identity, not adjacent-snapshot membership.
  */
 export function detectLateEntries(
   walk: { createdAt: number; data: SnapshotData }[],
@@ -114,17 +131,28 @@ export function detectLateEntries(
   const activityCol = detectActivityColumn(walk[walk.length - 1]!.data);
   if (dateCol === null) return [];
 
+  // "New work" = a work identity (Activity + stations composite) never seen in
+  // any earlier snapshot. An EDITED row keeps its composite identity, so a
+  // supervisor fixing a crew name weeks later is never a late entry.
+  // identity columns from the LAST snapshot (activity + stations, ungated —
+  // this is identity, not duplicate detection; single-row tabs included)
+  const ref = walk[walk.length - 1]!.data;
+  const refSt = detectStationColumns(ref);
+  const refAct = detectActivityColumn(ref);
+  const compositeCols: number[] | null = refSt && refAct !== null ? [refAct, refSt.start, refSt.end] : null;
+  const identityOf = (row: string[]): string =>
+    compositeCols ? compositeKey(row, compositeCols) : rowContentKey(row);
+  const seenEver = new Set<string>();
+  for (const row of walk[0]!.data.rows) seenEver.add(identityOf(row));
   for (let k = 1; k < walk.length; k++) {
-    const prev = walk[k - 1]!;
     const cur = walk[k]!;
-    const prevSet = new Set(prev.data.rows.map((r) => norm(r.join("·")))); // newness check still needs prev
     for (let i = 0; i < cur.data.rows.length; i++) {
       const row = cur.data.rows[i]!;
-      if (prevSet.has(norm(row.join("·")))) continue; // not new in this snapshot
+      const identity = identityOf(row);
+      if (seenEver.has(identity)) continue; // edited, moved, or unchanged — not new
       const d = parseCompletedDate(row[dateCol]);
       if (d === null) continue;
-      const lateByMs = cur.createdAt - d.getTime();
-      const daysLate = Math.floor(lateByMs / 86_400_000);
+      const daysLate = Math.floor((cur.createdAt - d.getTime()) / 86_400_000);
       if (daysLate > toleranceDays) {
         out.push({
           row: i + 1,
@@ -135,6 +163,7 @@ export function detectLateEntries(
         });
       }
     }
+    for (const row of cur.data.rows) seenEver.add(identityOf(row));
   }
   return out.reverse(); // newest first
 }
@@ -147,36 +176,49 @@ export interface TotalsMismatch {
 }
 
 /**
- * Reconcile the TOTALS tab against the PE tabs' own math. totalsData rows
- * carry the PE name in some cell and its footage in the nearest numeric cell;
- * perTabFootage is the computed footage per tab title.
+ * Reconcile the TOTALS tab against the PE tabs' own math. The compared cell is
+ * chosen by HEADER (e.g. "Total Conduit Placed") when one matches — first-
+ * numeric grabs the wrong column on real trackers. A row agrees when ANY of
+ * its numeric cells is within tolerance; rows with a blank placed cell (work
+ * not started) are skipped.
  */
 export function reconcileTotals(
   totalsData: SnapshotData,
-  perTabFootage: Map<string, number>,
+  perTabFootage: Map<string, { title: string; ft: number }>,
   toleranceFt = 1,
 ): TotalsMismatch[] {
   const out: TotalsMismatch[] = [];
+  const byLower = new Map([...perTabFootage].map(([k, v]) => [k.toLowerCase(), v]));
+
+  // header-guided numeric column (falls back to any numeric cell)
+  const placedCol = totalsData.headers.findIndex((h) =>
+    /total.*(placed|conduit)|placed/i.test(norm(h)),
+  );
+
   for (const row of totalsData.rows) {
     const nameCell = row.find((v) => {
       const t = norm(v).toLowerCase();
-      return t !== "" && perTabFootage.has(t);
+      return t !== "" && byLower.has(t);
     });
     if (nameCell === undefined) continue;
-    const title = norm(nameCell).toLowerCase();
-    // nearest numeric cell in the row that isn't the identifier itself
+    const entry = byLower.get(norm(nameCell).toLowerCase())!;
+
     const nums: number[] = [];
-    for (const cell of row) {
-      if (cell === nameCell) continue;
-      const n = Number(norm(cell).replace(/,/g, ""));
-      if (Number.isFinite(n) && norm(cell) !== "") nums.push(n);
+    for (let c = 0; c < row.length; c++) {
+      if (row[c] === nameCell) continue;
+      const n = Number(norm(row[c]).replace(/,/g, ""));
+      if (Number.isFinite(n) && norm(row[c]) !== "") nums.push(n);
     }
     if (nums.length === 0) continue;
-    const totalsSays = nums[0]!;
-    const addsUp = perTabFootage.get(title)!;
-    if (Math.abs(totalsSays - addsUp) > toleranceFt) {
-      out.push({ tabTitle: title, totalsSays, tabAddsUp: addsUp, delta: totalsSays - addsUp });
-    }
+    const placedNums = placedCol >= 0 && Number.isFinite(Number(norm(row[placedCol]).replace(/,/g, "")))
+      ? [Number(norm(row[placedCol]).replace(/,/g, ""))]
+      : nums;
+    if (placedNums.length === 1 && norm(row[placedCol] ?? "") === "") continue; // not started
+
+    const agrees = placedNums.some((n) => Math.abs(n - entry.ft) <= toleranceFt);
+    if (agrees) continue;
+    const totalsSays = placedNums[0]!;
+    out.push({ tabTitle: entry.title, totalsSays, tabAddsUp: entry.ft, delta: totalsSays - entry.ft });
   }
   return out;
 }
@@ -204,23 +246,28 @@ export function computeCrewBoard(data: SnapshotData): CrewBoard {
   if (!stations || crewCol === null) return board;
 
   const dayMap = new Map<string, CrewDay>();
-  const crewMap = new Map<string, { ft: number; shots: number; days: Set<string> }>();
+  const crewDisplayFor = new Map<string, string>(); // normalized key -> first-seen casing
+  const crewMap = new Map<string, { ft: number; shots: number; days: Set<string>; display: string }>();
   for (const row of data.rows) {
     if (!isFootageChainRow(row, activityCol)) continue;
     const s = parseStation(row[stations.start]);
     const e = parseStation(row[stations.end]);
     if (s === null || e === null || e <= s) continue;
     const ft = e - s;
-    const crew = norm(row[crewCol]) || "(no crew)";
+    // crews are hand-typed: "PPC PLOW" / "PPC Plow" / "BigM P1" are one crew
+    const crewDisplay = norm(row[crewCol]);
+    const crew = crewDisplay === "" ? "(no crew)" : normalizeKey(crewDisplay);
     if (crew === "(no crew)") board.uncategorizedFt += ft;
+    const shown = crewDisplayFor.get(crew) ?? crewDisplay;
+    crewDisplayFor.set(crew, shown);
     const dateRaw = dateCol !== null ? parseCompletedDate(row[dateCol]) : null;
-    const dateKey = dateRaw ? dateRaw.toISOString().slice(0, 10) : "";
+    const dateKey = dateRaw ? localDayKey(dateRaw) : "";
     const day = dayMap.get(`${crew}|${dateKey}`);
     if (day) {
       day.ft += ft;
       day.shots++;
     } else {
-      dayMap.set(`${crew}|${dateKey}`, { crew, date: dateKey, ft, shots: 1 });
+      dayMap.set(`${crew}|${dateKey}`, { crew: shown, date: dateKey, ft, shots: 1 });
     }
     const c = crewMap.get(crew);
     if (c) {
@@ -228,12 +275,12 @@ export function computeCrewBoard(data: SnapshotData): CrewBoard {
       c.shots++;
       if (dateKey) c.days.add(dateKey);
     } else {
-      crewMap.set(crew, { ft, shots: 1, days: new Set(dateKey ? [dateKey] : []) });
+      crewMap.set(crew, { ft, shots: 1, days: new Set(dateKey ? [dateKey] : []), display: shown });
     }
   }
   board.days = [...dayMap.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.crew.localeCompare(b.crew)));
-  board.crews = [...crewMap.entries()]
-    .map(([crew, c]) => ({ crew, ft: c.ft, shots: c.shots, days: c.days.size }))
+  board.crews = [...crewMap.values()]
+    .map((c) => ({ crew: c.display, ft: c.ft, shots: c.shots, days: c.days.size }))
     .sort((a, b) => b.ft - a.ft);
   return board;
 }
@@ -256,27 +303,31 @@ export function agingGaps(
   reports: { createdAt: number; report: { unaccounted: { from: number; to: number; ft: number }[] } }[],
   now = Date.now(),
 ): AgingGap[] {
-  const tracker = new Map<string, AgingGap & { closedAt?: number }>();
+  const tracker = new Map<string, AgingGap>();
   for (const { createdAt, report } of reports) {
     const seen = new Set<string>();
     for (const g of report.unaccounted) {
       const key = `${Math.round(g.from)}-${Math.round(g.to)}`;
       seen.add(key);
       const existing = tracker.get(key);
-      if (existing && existing.closedAt === undefined) {
-        existing.lastSeen = createdAt;
-      } else if (!existing) {
+      if (existing && existing.daysOpen !== -1) {
+        existing.lastSeen = createdAt; // still open
+      } else if (existing) {
+        // REOPENED after closing: aging restarts from today, honestly
+        Object.assign(existing, { firstSeen: createdAt, lastSeen: createdAt, daysOpen: 0 });
+      } else {
+        // first sighting — or a REOPEN after the hole closed: aging restarts
         tracker.set(key, { from: g.from, to: g.to, ft: g.ft, firstSeen: createdAt, lastSeen: createdAt, daysOpen: 0 });
       }
     }
-    // holes absent from this snapshot's report are closed
+    // holes absent from this report closed as of this snapshot
     for (const [key, gap] of tracker) {
-      if (!seen.has(key) && gap.closedAt === undefined) gap.closedAt = createdAt;
+      if (!seen.has(key)) gap.daysOpen = -1; // closed marker
     }
   }
   const out: AgingGap[] = [];
   for (const g of tracker.values()) {
-    if (g.closedAt !== undefined) continue; // only OPEN holes
+    if (g.daysOpen === -1) continue; // closed as of the latest report
     g.daysOpen = Math.max(0, Math.floor((now - g.firstSeen) / 86_400_000));
     out.push(g);
   }

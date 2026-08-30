@@ -18,6 +18,9 @@ describe("parseCompletedDate", () => {
     expect(parseCompletedDate("2026-07-14")?.toISOString().slice(0, 10)).toBe("2026-07-14");
     expect(parseCompletedDate("7/14/2026")?.getFullYear()).toBe(2026);
     expect(parseCompletedDate("7/14")?.getMonth()).toBe(6); // year defaults to current
+    expect(parseCompletedDate("14/07/2026")).toBeNull(); // day-first: month 14 is NOT a rollover
+    expect(parseCompletedDate("6/31/26")).toBeNull(); // June has 30 days, not a silent July 1
+    expect(parseCompletedDate("9999-99-99")).toBeNull();
     expect(parseCompletedDate("Thu May 28 2026 19:00:00")?.getMonth()).toBe(4);
     expect(parseCompletedDate("")).toBeNull();
     expect(parseCompletedDate("TBD")).toBeNull();
@@ -34,6 +37,7 @@ describe("dateHygiene", () => {
       ["Plow", "900", "1200", "sometime", "A"],  // unreadable
       ["Bore", "1200", "1500", "12/25/2026", "C"], // future
       ["48 Handhole", "500", "500", "", "B"],    // not footage — ignored
+      ["GAP", "1500", "1620", "", "C"],          // booked hole — never counted
     ];
     const f = dateHygiene(snap(H, rows), today);
     expect(f.map((x) => x.kind)).toEqual(["undated", "unreadable", "future"]);
@@ -58,6 +62,16 @@ describe("detectLateEntries", () => {
     expect(late[0]!.activity).toBe("Plow");
   });
 
+  it("a row EDITED later is not late — only first appearance counts", () => {
+    const t1 = new Date(2026, 6, 13, 18).getTime();
+    const t2 = new Date(2026, 6, 20, 18).getTime();
+    const walk = [
+      { createdAt: t1, data: snap(H, [["Plow", "0", "500", "7/13/2026", "CREW A"]]) },
+      { createdAt: t2, data: snap(H, [["Plow", "0", "500", "7/13/2026", "CREW A (fixed)"]]) },
+    ];
+    expect(detectLateEntries(walk)).toEqual([]); // supervisor fixed the crew name — not backdated
+  });
+
   it("does not flag next-day entry of same-day work", () => {
     const t1 = new Date("2026-07-13T18:00:00").getTime();
     const t2 = new Date("2026-07-14T08:00:00").getTime();
@@ -70,26 +84,40 @@ describe("detectLateEntries", () => {
 });
 
 describe("reconcileTotals", () => {
-  it("flags TOTALS rows that disagree with the tab's own math", () => {
+  it("uses the header-guided placed column, not the first numeric", () => {
+    // real-tracker shape: [PE, Drawing, Plow ft, ..., Total Conduit Placed]
     const totals = snap(
-      ["Permit Package", "Drawing", "Designed Footage"],
+      ["Permit Package", "Drawing Number", "Plow/ Trench", "Total Conduit Placed"],
       [
-        ["US2-PE-001", "US2-DR-001", "5000"],
-        ["US2-PE-002", "US2-DR-002", "1200"], // tab adds up to 1000
+        ["US2-PE-001", "US1-DR-001", "23044", "25662"], // placed matches; Plow col differs (would false-fire on first-numeric)
+        ["US2-PE-002", "US1-DR-002", "38358", "52994"], // placed differs by 296
       ],
     );
     const perTab = new Map([
-      ["us2-pe-001", 5000],
-      ["us2-pe-002", 1000],
+      ["us2-pe-001", { title: "US2-PE-001", ft: 25662 }],
+      ["us2-pe-002", { title: "US2-PE-002", ft: 52698 }],
     ]);
-    const mismatches = reconcileTotals(totals, perTab);
-    expect(mismatches).toHaveLength(1);
-    expect(mismatches[0]).toMatchObject({ tabTitle: "us2-pe-002", totalsSays: 1200, tabAddsUp: 1000, delta: 200 });
+    const m = reconcileTotals(totals, perTab);
+    expect(m).toHaveLength(1);
+    expect(m[0]).toMatchObject({ tabTitle: "US2-PE-002", totalsSays: 52994, tabAddsUp: 52698 });
   });
 
-  it("is quiet when they agree", () => {
-    const totals = snap(["PE", "Ft"], [["US2-PE-001", "5000"]]);
-    expect(reconcileTotals(totals, new Map([["us2-pe-001", 5000]]))).toEqual([]);
+  it("agrees when ANY numeric cell is within tolerance (drawing numbers etc.)", () => {
+    const totals = snap(["PE", "Drawing", "Placed"], [["US2-PE-002", "1102", "1000"]]);
+    expect(reconcileTotals(totals, new Map([["us2-pe-002", { title: "US2-PE-002", ft: 1000 }]]))).toEqual([]);
+  });
+
+  it("skips not-started tabs (blank placed cell) and returns real-case titles", () => {
+    const totals = snap(["PE", "Total Conduit Placed"], [
+      ["US2-PE-003", ""],       // not started
+      ["US2-PE-004", "9999"],   // real mismatch
+    ]);
+    const m = reconcileTotals(totals, new Map([
+      ["us2-pe-003", { title: "US2-PE-003", ft: 0 }],
+      ["us2-pe-004", { title: "US2-PE-004", ft: 9000 }],
+    ]));
+    expect(m).toHaveLength(1);
+    expect(m[0]!.tabTitle).toBe("US2-PE-004"); // real case, not the lowercase key
   });
 });
 
@@ -137,5 +165,21 @@ describe("agingGaps", () => {
     expect(aged2).toHaveLength(1);
     expect(aged2[0]!.daysOpen).toBe(8);
     expect(aged2[0]!.ft).toBe(120);
+  });
+
+  it("a hole that closes then REOPENS ages from the reopen, never vanishes", () => {
+    const day = 86_400_000;
+    const now = 10 * day;
+    const gapAt2 = (from: number, to: number) => computeGapReport(
+      snap(["Activity", "Start STA", "End STA"], [["Plow", "0", String(from)], ["Plow", String(to), "2000"]]),
+    );
+    const reports = [
+      { createdAt: 1 * day, report: gapAt2(500, 620) },
+      { createdAt: 2 * day, report: { ...gapAt2(0, 0), unaccounted: [] } }, // closed
+      { createdAt: 6 * day, report: gapAt2(500, 620) },                     // REOPENED
+    ];
+    const aged = agingGaps(reports, now);
+    expect(aged).toHaveLength(1); // the ledger's whole job: it is open RIGHT NOW
+    expect(aged[0]!.daysOpen).toBe(4); // aged from the reopen, not the original sighting
   });
 });
