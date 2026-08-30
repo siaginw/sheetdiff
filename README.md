@@ -8,6 +8,8 @@ your data always know what changed since they last pulled it.
 
 ![The diff view](docs/img/diff-light.png)
 
+**In one line:** automatic snapshots, human-readable diffs, and an audit trail of who changed what — with a gap linter that catches missing footage and overlapping stations in utility-construction production logs before invoicing or GIS upload. Self-hosted and open source: keep your spreadsheets, keep your data, gain the accountability enterprise trackers charge $40–150 per user per month for.
+
 **The workflow it fixes:** a team enters data into shared sheets, a manager pulls that data daily
 into another system (an ERP, GIS, anywhere). Someone fixes a number *after* the pull — the
 manager never finds out, the downstream system goes stale. SheetDiff makes that change impossible
