@@ -18,7 +18,32 @@ const enc = (data) => zlib.gzipSync(Buffer.from(JSON.stringify(data)));
 const now = Date.now();
 const HOUR = 3_600_000;
 
-db.exec("DELETE FROM change_acks; DELETE FROM notes; DELETE FROM snapshots; DELETE FROM tabs; DELETE FROM spreadsheets; DELETE FROM users;");
+// wipe ONLY demo data — a real deployment must never be destroyed by a demo seed
+const realUsers = db.prepare("SELECT count(*) c FROM users WHERE google_sub NOT IN ('smoke-fake-sub','viewer-fake-sub')").get();
+if (realUsers.c > 0) {
+  console.error("REFUSING TO SEED: this database has real (non-demo) users. Demo seed only works on an empty/demo database.");
+  process.exit(1);
+}
+const demoIds = db.prepare("SELECT id FROM users WHERE google_sub IN ('smoke-fake-sub','viewer-fake-sub')").all().map(r => r.id);
+if (demoIds.length > 0) {
+  const ph = demoIds.map(() => '?').join(',');
+  const demoSheets = db.prepare(`SELECT id FROM spreadsheets WHERE user_id IN (${ph})`).all(...demoIds).map(r => r.id);
+  if (demoSheets.length > 0) {
+    const ph2 = demoSheets.map(() => '?').join(',');
+    const demoTabs = db.prepare(`SELECT id FROM tabs WHERE spreadsheet_id IN (${ph2})`).all(...demoSheets).map(r => r.id);
+    if (demoTabs.length > 0) {
+      const ph3 = demoTabs.map(() => '?').join(',');
+      db.prepare(`DELETE FROM snapshots WHERE tab_id IN (${ph3})`).run(...demoTabs);
+      db.prepare(`DELETE FROM change_acks WHERE tab_id IN (${ph3})`).run(...demoTabs);
+      db.prepare(`DELETE FROM snapshot_stats WHERE tab_id IN (${ph3})`).run(...demoTabs);
+    }
+    db.prepare(`DELETE FROM notes WHERE spreadsheet_id IN (${ph2})`).run(...demoSheets);
+    db.prepare(`DELETE FROM tabs WHERE spreadsheet_id IN (${ph2})`).run(...demoSheets);
+    db.prepare(`DELETE FROM spreadsheets WHERE id IN (${ph2})`).run(...demoSheets);
+  }
+  db.prepare(`DELETE FROM members WHERE owner_user_id IN (${ph})`).run(...demoIds);
+  db.prepare(`DELETE FROM users WHERE id IN (${ph})`).run(...demoIds);
+}
 
 const userId = crypto.randomUUID();
 db.prepare(

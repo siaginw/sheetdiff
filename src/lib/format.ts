@@ -10,16 +10,25 @@ export function relativeTime(ts: number | null | undefined): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.round(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const d = new Date(ts);
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() !== new Date().getFullYear()
+      ? { month: "short", day: "numeric", year: "numeric" } // Dec-vs-Jan diffs stay unambiguous
+      : { month: "short", day: "numeric" };
+  return d.toLocaleDateString(undefined, opts);
 }
 
 export function absoluteTime(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const d = new Date(ts);
+  const year = d.getFullYear() !== new Date().getFullYear() ? ", " + d.getFullYear() : "";
+  return (
+    d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }) + year
+  );
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

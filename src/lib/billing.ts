@@ -87,7 +87,11 @@ export function billingPacketCsv(p: BillingPacket): string {
     `Kind,Detail,Ft,Note`,
   ];
   for (const r of p.rows) {
-    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const esc = (v: string) => {
+    // formula guard first (same rule as csvSafe — this CSV goes to Excel)
+    const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+    return /["\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
     lines.push([r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(","));
   }
   return lines.join("\n");

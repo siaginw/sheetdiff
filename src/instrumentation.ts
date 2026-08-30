@@ -6,7 +6,9 @@ export async function register() {
   try {
     ensureMigrated();
   } catch (err) {
-    console.error("[migrate] failed:", err instanceof Error ? err.message : err);
+    // fail closed: a drifted schema must not serve requests or run captures
+    console.error("[migrate] FATAL:", err instanceof Error ? err.message : err);
+    throw err;
   }
   const { startScheduler } = await import("./lib/scheduler");
   startScheduler();

@@ -76,7 +76,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // provenance stamps: every export names the snapshot it came from
   const stamp = [
     `# SheetDiff changes-to-enter — generated ${new Date().toISOString()}`,
-    `# Sheet: ${sheet.title}`,
+    `# Sheet: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))}`,
   ];
   const csv = stamp.join(String.fromCharCode(10)) + String.fromCharCode(10) + Papa.unparse(rows);
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
