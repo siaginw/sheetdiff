@@ -1,0 +1,24 @@
+"use server";
+
+import { getSessionUser } from "./session";
+import { sendDigestTo } from "./digest";
+
+/** Fire the digest to the configured address right now, so SMTP setup can be
+ *  validated immediately instead of waiting for the scheduled send. */
+export async function sendTestDigest(): Promise<{ ok: boolean; error?: string }> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+  if (!user.digestEmail) return { ok: false, error: "Set a recipient address first" };
+  try {
+    const result = await sendDigestTo(user);
+    if (result.sent) return { ok: true };
+    const reasons: Record<string, string> = {
+      "smtp-not-configured": "SMTP isn't configured in .env (SMTP_HOST / SMTP_USER / SMTP_PASS)",
+      "no-email": "No recipient address",
+      "no-sheets": "No accessible sheets to report on",
+    };
+    return { ok: false, error: reasons[result.reason ?? ""] ?? result.reason ?? "Send failed" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

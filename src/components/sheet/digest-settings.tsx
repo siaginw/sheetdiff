@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Mail } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Mail, Send } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { saveDigestSettings } from "@/lib/actions";
+import { sendTestDigest } from "@/lib/digest-actions";
 
 const DAY_ITEMS = [
   { value: "daily", label: "Every day" },
@@ -48,6 +50,17 @@ export function DigestSettingsDialog({
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(digestEmail ?? "");
   const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
+  const [testing, setTesting] = useState(false);
+
+  const sendTest = () => {
+    setTesting(true);
+    void sendTestDigest()
+      .then((r) => {
+        if (r.ok) toast.success(`Test digest sent to ${email}`);
+        else toast.error(`Test failed: ${r.error}`);
+      })
+      .finally(() => setTesting(false));
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -114,7 +127,15 @@ export function DigestSettingsDialog({
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={sendTest}
+              disabled={!email.trim() || testing}
+            >
+              <Send className="size-4" /> {testing ? "Sending…" : "Send test"}
+            </Button>
             <Button type="submit">Save</Button>
           </DialogFooter>
         </form>

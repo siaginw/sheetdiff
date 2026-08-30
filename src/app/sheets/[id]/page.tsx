@@ -41,6 +41,9 @@ import { snapshotNow, setBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
 import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
+import { TracePanel } from "@/components/sheet/trace-panel";
+import { traceKey as traceKeyFn } from "@/lib/trace";
+import { normalizeKey } from "@/lib/diff/normalize";
 
 const TIMELINE_STATS_LIMIT = 30;
 
@@ -184,6 +187,19 @@ export default async function SheetPage({
       resolvedRows[r.rowKey] = isResolved(ackMap, r.rowKey, introduced.get(r.rowKey) ?? toSnap.createdAt);
     }
   }
+
+  // ---- shot history (trace) ----
+  const traceParam = typeof sp.trace === "string" ? sp.trace.trim() : "";
+  const traceKeyCol = activeTab.keyColumn ?? detectedKey;
+  const traceEvents =
+    traceParam && traceKeyCol !== null && recent.length > 1
+      ? traceKeyFn(
+          [...recent].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) })),
+          traceKeyCol,
+          normalizeKey(traceParam),
+        )
+      : [];
+  const traceHrefBase = `/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}`;
 
   // ---- checks on latest snapshots of every tracked tab ----
   const checkFindings: CheckFinding[] = [];
@@ -337,6 +353,21 @@ export default async function SheetPage({
               <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                 {activeTab.title} · {timeline.length} snapshot{timeline.length === 1 ? "" : "s"}
               </p>
+              <form method="GET" action={`/sheets/${sheet.id}`} className="mt-2 flex gap-1.5">
+                <input type="hidden" name="tab" value={activeTab.title} />
+                <input
+                  name="trace"
+                  defaultValue={traceParam}
+                  placeholder="Trace a shot…"
+                  className="h-7 w-full rounded-md border bg-card px-2 font-mono text-xs outline-none focus:border-ring"
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-md border px-2 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  go
+                </button>
+              </form>
             </div>
             {timeline.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -458,6 +489,17 @@ export default async function SheetPage({
                   <span className="text-muted-foreground">unchanged {footageBaseLabel}</span>
                 ) : null}
               </div>
+            ) : null}
+
+            {/* shot history */}
+            {traceParam ? (
+              traceKeyCol !== null ? (
+                <TracePanel traceKeyLabel={traceParam} events={traceEvents} onClearHref={traceHrefBase} />
+              ) : (
+                <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm text-muted-foreground">
+                  Tracing needs a key column — pick one in tab settings.
+                </div>
+              )
             ) : null}
 
             {/* gap linter */}
