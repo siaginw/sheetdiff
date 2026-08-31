@@ -81,7 +81,7 @@ should stay off on any real deployment.
 ## Privacy
 
 Self-hosted means YOU hold the data — snapshots, tokens, notes, everything lives in
-your  directory. Ship a policy for your users from the template in
+your `data/` directory. Ship a policy for your users from the template in
 [PRIVACY.md](PRIVACY.md).
 
 ## Self-hosting (always-on)
@@ -180,16 +180,23 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   diffs it against the latest sheet snapshot: shots missing on either side, station
   mismatches, type disagreements. Excel tabs are matched to tracked tabs by name; CSV maps
   to a tab you pick. Imports appear in the timeline as `⭳ GIS import` entries.
+- **Entry queue export** — one CSV row per *shot* in the tab's own column order, oldest
+  introduction first: the typing list for the office system, not a cell-change log. Removed
+  rows ship as delete-downstream summaries.
+- **Weekly production report** — `…/report`: footage per week (as dated by crews),
+  week-over-week delta, printable one-pager.
 - **Daily/weekly digest email** — account menu → *Digest email…*: pick daily or a weekday, and
   each send includes what changed since the last collection, unresolved changes, check findings,
-  footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works —
+  footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works — see the commented block in `.env.example`).
 
 For deliverability on your own domain, consider signing with DKIM — nodemailer
 supports it via `dkim: { domainName, keySelector, privateKey }` transport options
 (see nodemailer.com/dkim).
   see the commented block). Sent while the app is running.
 - **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take.
-- **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice), the to-enter worklist, and late entries in one CSV.
+- **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice),
+  over-placement warnings (TOTALS Placed beyond Designed), the office-entry backlog per the
+  sheet's own "entered" column, the to-enter worklist, and late entries in one CSV.
 - **Monitoring.** Set `HEALTHCHECK_PING_URL` (see `.env.example`) to a free healthchecks.io monitor and get alerted if snapshots ever silently stop.
 
 **When the app seems quiet:** check `docker compose logs sheetdiff` for `[scheduler]` errors (most common: revoked Google token — re-authenticate via the app), verify `curl localhost:3000/api/health` shows `"ok":true` (a non-zero `staleCaptures` means scheduled snapshots are overdue — the pages still render from old data, so this is often the first visible sign), check disk space (`data/backups/` grows), and confirm the container is running (`docker ps`). To restore: stop the container, copy the newest `data/backups/sheetdiff-YYYY-MM-DD.db` over `data/sheetdiff.db` (delete the `-wal` and `-shm` siblings), restart.
@@ -220,7 +227,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (251 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (262 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

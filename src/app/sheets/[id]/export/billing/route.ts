@@ -53,12 +53,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   let totalSinceFt = 0;
   let anyBaselineFound = false;
   let latestLabel = "unknown";
+  let latestAtMs = 0;
 
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
     const latestReport = computeGapReport(decodeSnapshot(latestSnap.dataBlob));
-    latestLabel = absoluteTime(latestSnap.createdAt);
+    if (latestSnap.createdAt > latestAtMs) {
+      latestAtMs = latestSnap.createdAt;
+      latestLabel = absoluteTime(latestSnap.createdAt);
+    }
 
     // this tab's baseline (query per tab — bounded, billing-export only)
     const baselineRows = await db
@@ -115,6 +119,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     unresolved: unresolvedRows,
     lateEntries: allLateEntries,
     overplacement,
+    office: officeByTab,
     snapshotLabel: latestLabel,
   });
 

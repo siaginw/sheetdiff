@@ -523,3 +523,24 @@ export function weeklyProduction(data: SnapshotData): WeekBucket[] {
   }
   return [...byWeek.values()].sort((a, b) => a.weekStart - b.weekStart);
 }
+
+/** Aggregate weekly buckets across a sheet's tracked tabs (the report page's
+ *  numbers): weeks merged ascending, plus the placed total. Pure, so the
+ *  one-pager's math is testable without rendering it. */
+export function aggregateWeekly(tabs: { weeks: WeekBucket[]; placedFt: number }[]): {
+  weeks: WeekBucket[];
+  placedFt: number;
+} {
+  const byWeek = new Map<number, WeekBucket>();
+  let placedFt = 0;
+  for (const t of tabs) {
+    placedFt += t.placedFt;
+    for (const w of t.weeks) {
+      const bucket = byWeek.get(w.weekStart) ?? { weekStart: w.weekStart, ft: 0, shots: 0 };
+      bucket.ft += w.ft;
+      bucket.shots += w.shots;
+      byWeek.set(w.weekStart, bucket);
+    }
+  }
+  return { weeks: [...byWeek.values()].sort((a, b) => a.weekStart - b.weekStart), placedFt };
+}

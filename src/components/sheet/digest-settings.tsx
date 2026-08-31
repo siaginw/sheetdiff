@@ -53,18 +53,19 @@ export function DigestSettingsDialog({
   digestDay: number | null;
   smtpReady: boolean;
 }) {
-  const [email, setEmail] = useState(digestEmail ?? "");
-  const [saved, setSaved] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DigestBody digestEmail={digestEmail} digestTime={digestTime} digestDay={digestDay} smtpReady={smtpReady} onSaved={() => onOpenChange(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  // server state can change between opens — re-sync rather than show a stale
-  // address that looks configured
-  const handleOpenChange = (next: boolean) => {
-    if (next) setEmail(digestEmail ?? "");
-    onOpenChange(next);
-  };
+function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: { digestEmail: string | null; digestTime: string; digestDay: number | null; smtpReady: boolean; onSaved: () => void }) {
+  const [email, setEmail] = useState(digestEmail ?? "");
   const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
   const [testing, setTesting] = useState(false);
-
   const sendTest = () => {
     setTesting(true);
     void sendTestDigest()
@@ -74,94 +75,90 @@ export function DigestSettingsDialog({
       })
       .finally(() => setTesting(false));
   };
-
-  if (saved) {
-    toast.success(
-      email.trim() ? `Digest saved — ${email.trim()} will get ${day === "daily" ? "daily" : "weekly"} emails.` : "Digest turned off.",
-    );
-    setSaved(false);
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form
-          action={saveDigestSettings}
-          onSubmit={() => {
-            setSaved(true);
-            onOpenChange(false);
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Digest email</DialogTitle>
-            <DialogDescription>
-              A scheduled email with what changed since the last collection, unresolved changes,
-              check findings, footage movement, and audit notes. Clear the address to turn it
-              off.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-5 items-center gap-2">
-              <Label htmlFor="digest-email" className="col-span-1 text-right text-sm">To</Label>
-              <Input
-                id="digest-email"
-                name="digestEmail"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="erin@company.com"
-                className="col-span-4"
-              />
-            </div>
-            <div className="grid grid-cols-5 items-center gap-2">
-              <Label className="col-span-1 text-right text-sm">How often</Label>
-              <input type="hidden" name="digestDay" value={day} />
-              <Select
-                items={DAY_ITEMS}
-                value={day}
-                onValueChange={(v) => {
-                  if (typeof v === "string") setDay(v);
-                }}
-              >
-                <SelectTrigger className="col-span-4">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DAY_ITEMS.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-5 items-center gap-2">
-              <Label htmlFor="digest-time" className="col-span-1 text-right text-sm">At</Label>
-              <Input
-                id="digest-time"
-                name="digestTime"
-                type="time"
-                defaultValue={digestTime}
-                className="col-span-4"
-              />
-            </div>
+    <>
+
+      <form
+        action={saveDigestSettings}
+        onSubmit={() => {
+          toast.success(
+            email.trim()
+              ? `Digest saved — ${email.trim()} will get ${day === "daily" ? "daily" : "weekly"} emails.`
+              : "Digest turned off.",
+          );
+          onSaved();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Digest email</DialogTitle>
+          <DialogDescription>
+            A scheduled email with what changed since the last collection, unresolved changes,
+            check findings, footage movement, and audit notes. Clear the address to turn it
+            off.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-5 items-center gap-2">
+            <Label htmlFor="digest-email" className="col-span-1 text-right text-sm">To</Label>
+            <Input
+              id="digest-email"
+              name="digestEmail"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="erin@company.com"
+              className="col-span-4"
+            />
           </div>
-          <DialogFooter className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={sendTest}
-              disabled={!email.trim() || testing || !smtpReady}
-              title={smtpReady
-                ? undefined
-                : "This server has no SMTP settings (.env: SMTP_HOST / SMTP_USER / SMTP_PASS) — whoever runs SheetDiff needs to add them."}
+          <div className="grid grid-cols-5 items-center gap-2">
+            <Label className="col-span-1 text-right text-sm">How often</Label>
+            <input type="hidden" name="digestDay" value={day} />
+            <Select
+              items={DAY_ITEMS}
+              value={day}
+              onValueChange={(v) => {
+                if (typeof v === "string") setDay(v);
+              }}
             >
-              <Send className="size-4" /> {testing ? "Sending…" : "Send test"}
-            </Button>
-            <Button type="submit">Save</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+              <SelectTrigger className="col-span-4">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DAY_ITEMS.map((d) => (
+                  <SelectItem key={d.value} value={d.value}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-5 items-center gap-2">
+            <Label htmlFor="digest-time" className="col-span-1 text-right text-sm">At</Label>
+            <Input
+              id="digest-time"
+              name="digestTime"
+              type="time"
+              defaultValue={digestTime}
+              className="col-span-4"
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={sendTest}
+            disabled={!email.trim() || testing || !smtpReady}
+            title={smtpReady
+              ? undefined
+              : "This server has no SMTP settings (.env: SMTP_HOST / SMTP_USER / SMTP_PASS) — whoever runs SheetDiff needs to add them."}
+          >
+            <Send className="size-4" /> {testing ? "Sending…" : "Send test"}
+          </Button>
+          <Button type="submit">Save</Button>
+        </DialogFooter>
+      </form>
+    
+    </>
   );
 }

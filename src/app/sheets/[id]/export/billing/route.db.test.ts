@@ -151,6 +151,25 @@ beforeAll(async () => {
 
   await seedSheet("no-tabs", "owner", "No Tracked Tabs");
   await seedTab("nt-1", "no-tabs", false);
+
+  // Office-pipeline sheet: the tab carries its own "Entered in InEight"
+  // column. Completed-but-unentered rows must surface as billing to-enter
+  // rows via the office backlog (stuck + aging buckets — never "normal").
+  const OH = ["Activity", "Start STA", "End STA", "Crew #", "Date Complete", "Entered in InEight"];
+  const daysAgo = (days: number) => {
+    const d = new Date(Date.now() - days * DAY);
+    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  };
+  await seedSheet("off-sheet", "owner", "Office Tracker");
+  await seedTab("off-1", "off-sheet");
+  await seedSnapshot("of-base", "off-1", "of0", "manual", true, T0, [OH]);
+  await seedSnapshot("of-last", "off-1", "of1", "manual", false, T2, [
+    OH,
+    ["Stuck Bore", "0", "100", "CREW S", daysAgo(20), ""], // stuck: blank in the entered column
+    ["Aging Bore", "100", "200", "CREW A", daysAgo(5), ""], // aging
+    ["Fresh Plow", "200", "300", "CREW F", daysAgo(1), ""], // normal — NOT billing material
+    ["Done Plow", "300", "400", "CREW D", daysAgo(10), "9/1/2026"], // already entered downstream
+  ]);
 });
 
 describe("temp-db harness", () => {
@@ -249,5 +268,23 @@ describe("billing route: unknowable footage says so, never a confident 0", () =>
     expect(lines[2]).toBe(
       "# Placed since collection: COULD NOT DETERMINE — verify collection marker | Open holes: 0 ft | To enter: 0 | Late entries: 0",
     );
+  });
+});
+
+describe("billing route: office-entry backlog reaches the packet", () => {
+  it("stuck and aging completed-but-unentered rows ship as to-enter rows, normal and entered ones don't", async () => {
+    signIn("owner");
+    const res = await get("off-sheet");
+    expect(res.status).toBe(200);
+    const body = (await res.text()).split("\n").slice(4);
+    // stuck + aging rows, attributed to the sheet's own entered column and tab
+    // (the entered-column name appears ONLY in the office-backlog meta)
+    expect(body.some((l) => l.includes("Stuck Bore") && l.includes("unentered downstream") && l.includes("Entered in InEight"))).toBe(true);
+    expect(body.some((l) => l.includes("Aging Bore") && l.includes("unentered downstream") && l.includes("Entered in InEight"))).toBe(true);
+    // the normal-bucket row and the already-entered row never become office
+    // lines (the fresh row still shows as a NEW to-enter row from the diff —
+    // just never with the unentered-downstream office meta)
+    expect(body.some((l) => l.includes("Fresh Plow") && l.includes("unentered downstream"))).toBe(false);
+    expect(body.some((l) => l.includes("Done Plow") && l.includes("unentered downstream"))).toBe(false);
   });
 });

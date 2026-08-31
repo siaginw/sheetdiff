@@ -74,6 +74,19 @@ re-saved unless the textarea was emptied first); backwards-row findings
 collapse; collapsed cross-tab findings only reference their own tab's rows;
 suite grew to 244.
 
+Fleet 11: queue-export headers are formula-guarded like values; a quiet sheet
+no longer reports a missing collection point (quiet-day null was conflated with
+no-baseline); the queue sorts oldest-first even before the first ack (the walk
+now runs whenever there are unresolved rows); the office-pipeline backlog
+reaches the production panel body AND the billing CSV (both were half-wired);
+printing works from dark mode (light tokens under @media print); the dead-man
+ping cannot hang the scheduler (10s timeout) and its decision is extracted and
+test-pinned; dialogs reset state through portal-unmounted body children (the
+controlled-onOpenChange approach never fired for programmatic opens);
+TabSettings is keyed per tab (cross-tab settings corruption); export stamps name
+the true latest snapshot; report aggregation extracted and pinned; CI runs
+Node 22+24; Dependabot configured; suite 262.
+
 Pass 10 (deep dive): crews canonicalize (the real tracker's 36 hand-spellings
 of ~10 crews defragmented, most-typed spelling shown); over-placement guard
 (TOTALS Placed vs Designed per package — do-not-invoice rows; the real file

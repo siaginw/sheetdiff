@@ -7,7 +7,7 @@ import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
 import { latestNonImportSnapshots, decodeSnapshot } from "@/lib/snapshots";
-import { weeklyProduction, type WeekBucket } from "@/lib/production";
+import { weeklyProduction, aggregateWeekly, type WeekBucket } from "@/lib/production";
 import { computeFootage } from "@/lib/checks";
 import { absoluteTime, relativeTime } from "@/lib/format";
 import { PrintButton } from "@/components/sheet/print-button";
@@ -33,25 +33,18 @@ export default async function ReportPage({
   const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
 
   // aggregate weekly footage across every tracked tab that has stations+dates
-  const byWeek = new Map<number, WeekBucket>();
-  let placedFt = 0;
   let latestAt: number | null = null;
+  const perTab: { weeks: WeekBucket[]; placedFt: number }[] = [];
   for (const tab of trackedTabs) {
     const snap = latestByTab.get(tab.id);
     if (!snap) continue;
     const data = decodeSnapshot(snap.dataBlob);
     const f = computeFootage(data);
     if (!f.stations) continue;
-    placedFt += f.ft;
     latestAt = Math.max(latestAt ?? 0, snap.createdAt);
-    for (const w of weeklyProduction(data)) {
-      const bucket = byWeek.get(w.weekStart) ?? { weekStart: w.weekStart, ft: 0, shots: 0 };
-      bucket.ft += w.ft;
-      bucket.shots += w.shots;
-      byWeek.set(w.weekStart, bucket);
-    }
+    perTab.push({ weeks: weeklyProduction(data), placedFt: f.ft });
   }
-  const weeks = [...byWeek.values()].sort((a, b) => a.weekStart - b.weekStart);
+  const { weeks, placedFt } = aggregateWeekly(perTab);
   const thisWeek = weeks[weeks.length - 1] ?? null;
   const lastWeek = weeks[weeks.length - 2] ?? null;
   const totalFt = weeks.reduce((n, w) => n + w.ft, 0);

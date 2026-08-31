@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, CircleSlash, LayoutList } from "lucide-rea
 import type { GapReport } from "@/lib/gaps";
 
 function ft(n: number): string {
-  return n.toLocaleString();
+  return n.toLocaleString("en-US");
 }
 
 function SegmentList({

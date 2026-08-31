@@ -112,7 +112,7 @@ export function DigestEmail({
                     {" · "}
                     <span style={{ color: s.footageDelta > 0 ? "#1a7f37" : "#cf222e" }}>
                       {s.footageDelta > 0 ? "+" : "−"}
-                      {Math.abs(s.footageDelta).toLocaleString()} ft footage
+                      {Math.abs(s.footageDelta).toLocaleString("en-US")} ft footage
                     </span>
                   </>
                 ) : null}

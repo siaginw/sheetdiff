@@ -296,3 +296,15 @@ describe("multi-member shared-content families date at their own formation (flee
     expect(unresolved).toHaveLength(1); // the 3000 convergence stays pending
   });
 });
+
+describe("shouldPing (dead-man honesty)", () => {
+  it("pings only when a capture succeeded AND a URL is configured", async () => {
+    const { shouldPing } = await import("./scheduler");
+    expect(shouldPing(true, "https://hc.example/ping")).toBe(true);
+    // the dead-OAuth failure mode: ticks succeed, captures fail → silent
+    expect(shouldPing(false, "https://hc.example/ping")).toBe(false);
+    // no monitor configured → nothing
+    expect(shouldPing(true, undefined)).toBe(false);
+    expect(shouldPing(false, undefined)).toBe(false);
+  });
+});

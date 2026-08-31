@@ -49,7 +49,7 @@ execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], 
 const { db } = await import("@/lib/db");
 const { snapshots, snapshotStats, spreadsheets, tabs, users } = await import("@/lib/db/schema");
 const { encodeSnapshot, toSnapshotData } = await import("@/lib/snapshots");
-const { getPendingChanges } = await import("@/lib/pending");
+const { getPendingChanges, hasCollectedBaseline } = await import("@/lib/pending");
 const { setAck } = await import("@/lib/sync");
 const { GET } = await import("./route");
 
@@ -64,7 +64,8 @@ const GRID_A1 = [["Shot", "Qty", "Note"], ["s1", "40", ""], ["s2", "10", "new"]]
 const GRID_B0 = [["ID", "Qty", "Note"], ["9", "5", "a"]];
 const GRID_B1 = [["ID", "Qty", "Note"], ["9", "7", "b"]];
 
-const trackedTabs = async () => (await db.select().from(tabs).where(eq(tabs.spreadsheetId, "sh1"))).filter((t) => t.tracked);
+const trackedTabs = async (sheetId = "sh1") =>
+  (await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheetId))).filter((t) => t.tracked);
 
 async function csvLines(id: string): Promise<string[]> {
   const res = await GET(new Request("http://localhost/"), { params: Promise.resolve({ id }) });
@@ -96,6 +97,45 @@ beforeAll(async () => {
     { snapshotId: "sa1", tabId: "ta", added: 1, removed: 0, changed: 0, createdAt: 2000 },
     { snapshotId: "sb1", tabId: "tb", added: 0, removed: 0, changed: 1, createdAt: 3000 },
   ]);
+
+  // sh2: quiet since collection — baseline + a 0/0/0 capture after it (the
+  // fully-acked quiet morning). getPendingChanges is null here, and the
+  // queue must say "nothing pending", NOT "no collection point".
+  await db.insert(spreadsheets).values({ id: "sh2", userId: "u1", googleId: "g2", title: "Quiet", url: "https://x", createdAt: 1 });
+  await db.insert(tabs).values({ id: "tq1", spreadsheetId: "sh2", title: "Q", position: 0, tracked: true, keyColumn: 0 });
+  await db.insert(snapshots).values([
+    snapRow("sq0", "tq1", "rq1", true, 1000, [["K"], ["x"]]),
+    snapRow("sq1", "tq1", "rq2", false, 5000, [["K"], ["x"]]),
+  ]);
+  await db.insert(snapshotStats).values({ snapshotId: "sq1", tabId: "tq1", added: 0, removed: 0, changed: 0, createdAt: 5000 });
+
+  // sh3: snapshots but NO baseline anywhere — the one true "no collection point"
+  await db.insert(spreadsheets).values({ id: "sh3", userId: "u1", googleId: "g3", title: "NoBase", url: "https://x", createdAt: 1 });
+  await db.insert(tabs).values({ id: "tnb", spreadsheetId: "sh3", title: "N", position: 0, tracked: true, keyColumn: 0 });
+  await db.insert(snapshots).values([
+    snapRow("sn0", "tnb", "rn1", false, 1000, [["K"], ["x"]]),
+    snapRow("sn1", "tnb", "rn2", false, 2000, [["K"], ["x"], ["y"]]),
+  ]);
+
+  // sh4: FRESH sheet, no acks — two rows introduced at different times, with
+  // the LATER one sitting ABOVE the earlier one in sheet order. Oldest-first
+  // must win over sheet order exactly here (no ack has ever dated anything).
+  await db.insert(spreadsheets).values({ id: "sh4", userId: "u1", googleId: "g4", title: "Fresh", url: "https://x", createdAt: 1 });
+  await db.insert(tabs).values({ id: "tf", spreadsheetId: "sh4", title: "F", position: 0, tracked: true, keyColumn: 0 });
+  await db.insert(snapshots).values([
+    snapRow("sf0", "tf", "rf1", true, 1000, [["Shot", "Qty"], ["old1", "1"]]),
+    snapRow("sf1", "tf", "rf2", false, 2000, [["Shot", "Qty"], ["old1", "1"], ["old2", "2"]]),
+    snapRow("sf2", "tf", "rf3", false, 3000, [["Shot", "Qty"], ["new1", "9"], ["old1", "1"], ["old2", "2"]]),
+  ]);
+
+  // tab D on sh1: a formula header — sheet-controlled text the CSV must
+  // neutralize exactly like it neutralizes values
+  await db.insert(tabs).values({ id: "td", spreadsheetId: "sh1", title: "D", position: 3, tracked: true, keyColumn: 0 });
+  await db.insert(snapshots).values([
+    snapRow("sd0", "td", "rd1", true, 1000, [['=HYPERLINK("http://evil.example";"click")', "Qty"], ["d1", "5"]]),
+    snapRow("sd1", "td", "rd2", false, 5000, [['=HYPERLINK("http://evil.example";"click")', "Qty"], ["d1", "5"], ["d2", "6"]]),
+  ]);
+  await db.insert(snapshotStats).values({ snapshotId: "sd1", tabId: "td", added: 1, removed: 0, changed: 0, createdAt: 5000 });
 });
 
 afterAll(() => {
@@ -148,5 +188,46 @@ describe("entry queue export", () => {
     const removed = lines.find((l) => l.startsWith("A,REMOVED"));
     expect(removed).toBeDefined();
     expect(removed!).toContain("DELETE DOWNSTREAM: s1 | 40");
+  });
+
+  it("a formula HEADER is neutralized like a formula value", async () => {
+    // sheet-controlled header text (=HYPERLINK / =cmd DDE class) must never
+    // reach Excel as a live formula — same csvSafe rule the values get. Papa
+    // quote-wraps the field (it contains quotes), so the neutralizing
+    // apostrophe lands just inside the opening quote.
+    const lines = await csvLines("sh1");
+    const dHeader = lines.find((l) => l.startsWith("Tab,Status,Changed columns") && l.includes("HYPERLINK"));
+    expect(dHeader).toBeDefined();
+    expect(dHeader!.includes("\"'=HYPERLINK")).toBe(true);
+    expect(dHeader!.includes("\"=HYPERLINK")).toBe(false);
+  });
+
+  it("a quiet-since-collection tab is an honest EMPTY queue, not a missing collection point", async () => {
+    // the fully-acked quiet morning: getPendingChanges is null (quiet-day
+    // short-circuit) but the baseline is right there
+    const quiet = await getPendingChanges((await trackedTabs("sh2"))[0]!);
+    expect(quiet).toBeNull();
+    expect(await hasCollectedBaseline((await trackedTabs("sh2"))[0]!)).toEqual({ latestAt: 5000 });
+    const res = await GET(new Request("http://localhost/"), { params: Promise.resolve({ id: "sh2" }) });
+    const body = await res.text();
+    expect(body).toContain("# Nothing pending — every tracked tab is quiet since its collection point.");
+    expect(body).not.toContain("No collection point");
+  });
+
+  it("a sheet with no baseline at all still gets the collection-point message", async () => {
+    const res = await GET(new Request("http://localhost/"), { params: Promise.resolve({ id: "sh3" }) });
+    const body = await res.text();
+    expect(body).toContain("# No collection point yet — mark a snapshot as collected first.");
+  });
+
+  it("oldest-first holds on a FRESH sheet with no acks (introduction order beats sheet order)", async () => {
+    // new1 sits ABOVE old2 in the sheet, but old2 was introduced a snapshot
+    // earlier — the stale backlog leads exactly when nothing has ever been acked
+    const lines = await csvLines("sh4");
+    const iOld = lines.findIndex((l) => l.startsWith("F,NEW,,old2"));
+    const iNew = lines.findIndex((l) => l.startsWith("F,NEW,,new1"));
+    expect(iOld).toBeGreaterThan(-1);
+    expect(iNew).toBeGreaterThan(-1);
+    expect(iOld).toBeLessThan(iNew);
   });
 });

@@ -1,8 +1,8 @@
-import { CalendarClock, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
+import { CalendarClock, ClipboardCheck, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
 import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline } from "@/lib/production";
 import { absoluteTime } from "@/lib/format";
 
-const ft = (n: number) => n.toLocaleString();
+const ft = (n: number) => n.toLocaleString("en-US");
 
 function Section({
   icon,
@@ -25,19 +25,22 @@ function Section({
   );
 }
 
-function Line({ tone, children }: { tone?: "danger" | "muted" | "good"; children: React.ReactNode }) {
+function Line({ tone, children }: { tone?: "danger" | "warn" | "muted" | "good"; children: React.ReactNode }) {
   const cls =
     tone === "danger"
       ? "bg-diff-del-bg text-diff-del-fg"
-      : tone === "good"
-        ? "bg-diff-add-bg text-diff-add-fg"
-        : "bg-muted/60 text-foreground/80";
+      : tone === "warn"
+        ? "bg-diff-move-bg text-diff-move-fg"
+        : tone === "good"
+          ? "bg-diff-add-bg text-diff-add-fg"
+          : "bg-muted/60 text-foreground/80";
   return <p className={`rounded-md px-2 py-1 font-mono text-xs ${cls}`}>{children}</p>;
 }
 
 /**
  * The production report: everything the daily huddle argues about, generated —
- * date hygiene, backdated entries, TOTALS reconciliation, crew board, aging holes.
+ * date hygiene, backdated entries, TOTALS reconciliation, crew board, aging
+ * holes, and the office-entry backlog the sheet's own entered-column carries.
  */
 export function ProductionPanel({
   tabTitle,
@@ -60,6 +63,7 @@ export function ProductionPanel({
 }) {
   const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
+  const officeWaiting = office && office.enteredColumn ? office.stuck.length + office.aging.length + office.normal.length : 0;
 
   return (
     <details className="group mb-4 rounded-xl border bg-card">
@@ -100,7 +104,7 @@ export function ProductionPanel({
               {office.stuck.length} stuck in office (oldest {office.stuck[0]!.daysWaiting}d)
             </span>
           )}
-          {office && office.stuck.length === 0 && office.aging.length > 0 && (
+          {office && office.aging.length > 0 && (
             <span className="text-diff-move-fg">{office.aging.length} waiting on office entry</span>
           )}
           {problems === 0 && oldHoles.length === 0 && !(office && (office.stuck.length > 0 || office.aging.length > 0)) && <span className="text-diff-add-fg">clean</span>}
@@ -123,6 +127,26 @@ export function ProductionPanel({
           ))}
           {crewBoard.uncategorizedFt > 0 && (
             <Line tone="muted">{ft(crewBoard.uncategorizedFt)} ft with no crew named</Line>
+          )}
+        </Section>
+      ) : null}
+
+      {officeWaiting > 0 && office ? (
+        <Section icon={<ClipboardCheck className="size-3.5" />} title={`Waiting on office entry (per the sheet's “${office.enteredColumn}” column)`}>
+          {office.stuck.slice(0, 5).map((r) => (
+            <Line key={`stuck-${r.row}`} tone="danger">
+              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"} unentered
+            </Line>
+          ))}
+          {office.stuck.length > 5 && <Line tone="muted">+{office.stuck.length - 5} more stuck…</Line>}
+          {office.aging.slice(0, 5).map((r) => (
+            <Line key={`aging-${r.row}`} tone="warn">
+              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"} unentered
+            </Line>
+          ))}
+          {office.aging.length > 5 && <Line tone="muted">+{office.aging.length - 5} more aging…</Line>}
+          {office.normal.length > 0 && (
+            <Line tone="muted">+{office.normal.length} completed within the last 2 days — normal keying lag</Line>
           )}
         </Section>
       ) : null}
@@ -182,7 +206,7 @@ export function ProductionPanel({
         </Section>
       ) : null}
 
-      {problems === 0 && agedGaps.length === 0 && (!crewBoard || crewBoard.crews.length === 0) ? (
+      {problems === 0 && agedGaps.length === 0 && officeWaiting === 0 && (!crewBoard || crewBoard.crews.length === 0) ? (
         <p className="border-t px-4 py-3 text-sm text-muted-foreground">No production analytics available for this tab.</p>
       ) : null}
     </details>

@@ -34,6 +34,13 @@ async function loadDue(now: number): Promise<Spreadsheet[]> {
     );
 }
 
+/** Dead-man semantics: ping only after a tick that captured something.
+ *  Pure so the decision is pinnable — a dead OAuth token makes every capture
+ *  fail while ticks succeed, and the monitor must go silent then. */
+export function shouldPing(capturedSomething: boolean, url: string | undefined): boolean {
+  return Boolean(url) && capturedSomething;
+}
+
 async function tick() {
   if (ticking) return; // a slow Google fetch must not double-capture
   ticking = true;
@@ -45,7 +52,10 @@ async function tick() {
     // the product silently starves (staleCaptures on /api/health is the
     // slower signal; this is the fast one).
     const ping = process.env.HEALTHCHECK_PING_URL;
-    if (ping && captured) await fetch(ping, { method: "POST" }).catch(() => {});
+    // bounded ping: a dead-man monitor that hangs (or slowly drips bytes)
+    // must never pin `ticking` and stall every later capture
+    if (ping && captured)
+      await fetch(ping, { method: "POST", signal: AbortSignal.timeout(10_000) }).catch(() => {});
   } finally {
     ticking = false;
   }

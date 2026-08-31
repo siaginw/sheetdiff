@@ -179,3 +179,42 @@
       linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px);
   }
 }
+
+/* PRINT: paper is always light. Browsers drop translucent backgrounds but
+   keep text colors, so a dark-mode .dark session would print near-white
+   (oklch(0.985)) text on white paper — invisible. Force the full light
+   palette (including the GitHub-accurate diff colors) under @media print
+   regardless of theme; nothing about the user's screen theme changes. */
+@media print {
+  :root,
+  .dark {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: #1f883d;
+    --primary-foreground: #ffffff;
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --diff-add-bg: #e6ffec;
+    --diff-add-fg: #1a7f37;
+    --diff-add-token: #8ce0a2;
+    --diff-del-bg: #ffebe9;
+    --diff-del-fg: #cf222e;
+    --diff-del-token: #ffc7c0;
+    --diff-hunk-bg: #ddf4ff;
+    --diff-hunk-fg: #0550ae;
+    --diff-move-bg: #fff8c5;
+    --diff-move-fg: #9a6700;
+  }
+}

@@ -140,14 +140,13 @@ can't loop every minute), due digest emails (every completed evaluation — sent
 or skipped — bumps the cooldown), and daily maintenance after 3am local:
 snapshot retention (newest N=200 non-baseline per tab, baselines always kept,
 floor of 2) plus verified SQLite backups to `data/backups/` (keep 14). If
-`HEALTHCHECK_PING_URL` is set, each successful tick pings it — a dead-man
-switch that alerts when snapshots silently stop.
+`HEALTHCHECK_PING_URL` is set, it is pinged only when a tick completed at least one successful capture — a dead OAuth token fails every capture while ticks still succeed, so the ping goes silent and the monitor notices.
 
 ## HTTP surface & access control
 
-Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export`
+Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export`, `/export/queue` (entry-queue CSV), `/export/billing`
 (worklist CSV), `/sheets/[id]/export/billing` (billing packet CSV),
-`/auth/{login,callback,demo}`, `/api/health`.
+`/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/api/health`.
 
 `src/lib/access.ts`: owners control their sheets; `members` (matched by
 lowercased Google email) get viewer access to everything the owner shares —

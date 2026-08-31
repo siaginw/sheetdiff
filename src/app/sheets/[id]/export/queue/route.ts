@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges } from "@/lib/pending";
+import { getPendingChanges, hasCollectedBaseline } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
 import { csvSafe } from "@/lib/csv";
 
@@ -41,13 +41,31 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const sections: Section[] = [];
   let anyBaseline = false;
   let latestLabel = "unknown";
+  let latestAtMs = 0;
 
   for (const tab of tracked) {
     const pending = await getPendingChanges(tab);
-    if (!pending) continue;
+    if (!pending) {
+      // null is ALSO the quiet-day short-circuit ("collected, nothing new
+      // since") — a fully-acked quiet morning is a GOOD state and must not be
+      // reported as a missing collection point. Only a tab with no collected
+      // baseline at all keeps that message true.
+      const collected = await hasCollectedBaseline(tab);
+      if (collected) {
+        anyBaseline = true;
+        if (collected.latestAt > latestAtMs) {
+          latestAtMs = collected.latestAt;
+          latestLabel = absoluteTime(collected.latestAt);
+        }
+      }
+      continue;
+    }
     anyBaseline = true;
-    latestLabel = absoluteTime(pending.latestAt);
-    const header = ["Tab", "Status", "Changed columns", ...pending.diff.columns.map((c) => c.header)];
+    if (pending.latestAt > latestAtMs) {
+      latestAtMs = pending.latestAt;
+      latestLabel = absoluteTime(pending.latestAt);
+    }
+    const header = ["Tab", "Status", "Changed columns", ...pending.diff.columns.map((c) => csvSafe(c.header))];
     // oldest first within the tab: the stale backlog leads
     const ordered = [...pending.unresolved].sort(
       (a, b) =>
@@ -85,6 +103,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     });
   }
 
+  const stamp = [
+    `# SheetDiff entry queue — one row per shot, oldest first — generated ${new Date().toISOString()}`,
+    `# Snapshot: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))} · ${latestLabel}`,
+  ];
+
+  // every tab quiet since its collection point: an honest EMPTY queue with a
+  // stamp, not the no-collection-point message (the baseline is right there)
+  if (sections.length === 0) {
+    const csv = stamp.join("\n") + "\n# Nothing pending — every tracked tab is quiet since its collection point.\n";
+    return new NextResponse(csv, {
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }
+
   // tabs ordered by their oldest pending entry
   sections.sort((a, b) => a.oldestAt - b.oldestAt);
 
@@ -93,10 +125,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     table.push(s.header);
     table.push(...s.lines);
   }
-  const stamp = [
-    `# SheetDiff entry queue — one row per shot, oldest first — generated ${new Date().toISOString()}`,
-    `# Snapshot: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))} · ${latestLabel}`,
-  ];
   const csv = stamp.join("\n") + "\n" + Papa.unparse(table);
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date().toISOString().slice(0, 10);

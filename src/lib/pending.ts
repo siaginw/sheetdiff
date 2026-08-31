@@ -29,10 +29,16 @@ export interface PendingChanges {
   introducedAt: Map<string, number>;
 }
 
-export async function getPendingChanges(
-  tab: Pick<Tab, "id" | "keyColumn">,
-): Promise<PendingChanges | null> {
-  const meta = await db
+interface TabSnapshotMeta {
+  id: string;
+  createdAt: number;
+  isBaseline: boolean;
+  trigger: string;
+}
+
+/** Snapshot metadata for one tab, newest first, GIS imports excluded. */
+async function loadSheetMeta(tabId: string): Promise<TabSnapshotMeta[]> {
+  return db
     .select({
       id: snapshots.id,
       createdAt: snapshots.createdAt,
@@ -40,10 +46,31 @@ export async function getPendingChanges(
       trigger: snapshots.trigger,
     })
     .from(snapshots)
-    .where(eq(snapshots.tabId, tab.id))
+    .where(eq(snapshots.tabId, tabId))
     .orderBy(desc(snapshots.createdAt));
+}
 
-  const sheetSnaps = meta.filter((s) => s.trigger !== "import");
+/**
+ * Whether the tab has a COLLECTED BASELINE to diff against (and when its
+ * latest capture ran). getPendingChanges returns null for quiet tabs too —
+ * callers that need to tell "nothing collected yet" from "collected, quiet
+ * since" (the entry queue's no-collection-point message) ask here instead of
+ * guessing from the null.
+ */
+export async function hasCollectedBaseline(
+  tab: Pick<Tab, "id">,
+): Promise<{ latestAt: number } | null> {
+  const sheetSnaps = (await loadSheetMeta(tab.id)).filter((s) => s.trigger !== "import");
+  const latest = sheetSnaps[0];
+  const baseline = sheetSnaps.find((s) => s.isBaseline && s.createdAt <= latest?.createdAt);
+  if (!latest || !baseline) return null;
+  return { latestAt: latest.createdAt };
+}
+
+export async function getPendingChanges(
+  tab: Pick<Tab, "id" | "keyColumn">,
+): Promise<PendingChanges | null> {
+  const sheetSnaps = (await loadSheetMeta(tab.id)).filter((s) => s.trigger !== "import");
   const latest = sheetSnaps[0];
   const baseline = sheetSnaps.find((s) => s.isBaseline && s.createdAt <= latest?.createdAt);
   if (!latest || !baseline || latest.id === baseline.id) return null;
@@ -95,18 +122,7 @@ export async function getPendingChanges(
     unresolved: changeRows.length,
   };
 
-  // no acks at all → everything pending, skip the walk entirely
   const ackMap = await getAckMap(tab.id);
-  if (ackMap.size === 0) {
-    return {
-      diff,
-      latestAt: latest.createdAt,
-      baselineAt: baseline.createdAt,
-      unresolved: changeRows,
-      counts,
-      introducedAt: new Map(),
-    };
-  }
 
   // Introduction walk: the full window from baseline (exclusive) to latest,
   // WITH the baseline as the bounding anchor — its blob is already loaded, and
@@ -114,17 +130,34 @@ export async function getPendingChanges(
   // the diff spans). Capped for pathological retention-fueled windows; a capped
   // walk dates unbounded rows at its own oldest edge (re-flag direction, never
   // a silent miss).
+  // Runs whenever there is anything to DATE, not just when acks exist: a
+  // fresh sheet with no acks yet still wants oldest-first ordering (the entry
+  // queue's primary sort). The quiet-day short-circuit above already keeps the
+  // common no-change case free of the walk's blob fetches.
   const windowAll = sheetSnaps.filter(
     (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
   );
   let introducedAt = new Map<string, number>();
-  if (windowAll.length > 0) {
+  if ((ackMap.size > 0 || changeRows.length > 0) && windowAll.length > 0) {
     const walkSnaps = windowAll.slice(0, INTRO_WALK_LIMIT).concat([baseline]);
     const walkBlobs = await fetchBlobs(walkSnaps.map((s) => s.id));
     const walk: WalkSnapshot[] = walkSnaps
       .map((s) => ({ createdAt: s.createdAt, data: walkBlobs.get(s.id) }))
       .filter((w): w is WalkSnapshot => Boolean(w.data));
     introducedAt = computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) });
+  }
+
+  // no acks at all → everything pending, no resolution filtering (the walk ran
+  // above purely to date the rows for oldest-first ordering)
+  if (ackMap.size === 0) {
+    return {
+      diff,
+      latestAt: latest.createdAt,
+      baselineAt: baseline.createdAt,
+      unresolved: changeRows,
+      counts,
+      introducedAt,
+    };
   }
 
   const unresolved = changeRows.filter(

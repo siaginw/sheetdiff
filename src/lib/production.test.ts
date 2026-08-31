@@ -9,7 +9,9 @@ import {
   agingGaps,
   officePipeline,
   weeklyProduction,
+  aggregateWeekly,
 } from "./production";
+import type { WeekBucket } from "./production";
 import { computeGapReport } from "./gaps";
 import type { SnapshotData } from "./diff/engine";
 
@@ -298,5 +300,23 @@ describe("weeklyProduction (footage per week, as dated)", () => {
   it("returns [] without a date column", () => {
     const data = snap(["Activity", "Start STA", "End STA"], [["Plow", "0", "500"]]);
     expect(weeklyProduction(data)).toEqual([]);
+  });
+});
+
+describe("aggregateWeekly (the report page's math)", () => {
+  const W = (weekStart: number, ft: number, shots = 1): WeekBucket => ({ weekStart, ft, shots });
+  it("merges tabs on the same week and sums placed; weeks ascending", () => {
+    const r = aggregateWeekly([
+      { weeks: [W(1000, 500), W(2000, 300)], placedFt: 800 },
+      { weeks: [W(1000, 200), W(3000, 50)], placedFt: 250 },
+    ]);
+    expect(r.placedFt).toBe(1050);
+    expect(r.weeks.map((w) => w.weekStart)).toEqual([1000, 2000, 3000]);
+    expect(r.weeks[0]!.ft).toBe(700); // merged across tabs
+    expect(r.weeks[0]!.shots).toBe(2);
+  });
+
+  it("empty tabs aggregate to nothing", () => {
+    expect(aggregateWeekly([])).toEqual({ weeks: [], placedFt: 0 });
   });
 });

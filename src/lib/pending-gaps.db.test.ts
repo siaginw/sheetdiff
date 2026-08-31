@@ -68,7 +68,7 @@ const { and, eq, inArray } = await import("drizzle-orm");
 const { db } = await import("./db");
 const { changeAcks, snapshots, snapshotStats, spreadsheets, tabs, users } = await import("./db/schema");
 const { captureSnapshot, decodeSnapshot, encodeSnapshot, toSnapshotData } = await import("./snapshots");
-const { getPendingChanges } = await import("./pending");
+const { getPendingChanges, hasCollectedBaseline } = await import("./pending");
 const { importGis, startTracking } = await import("./actions");
 
 const captureMock = vi.mocked(captureSnapshot);
@@ -157,6 +157,12 @@ beforeAll(async () => {
   // tp2/tp3: walk histories for fresh-ack vs stale-ack resolution
   await seedWalkHistory("tp2", "tp2", 1000, 2000, 3000);
   await seedWalkHistory("tp3", "tp3", 1000, 2000, 3000);
+
+  // tf: SAME walk history, but NO acks anywhere — a fresh sheet. The
+  // introduction walk must still run (the entry queue's oldest-first sort
+  // has no other data source until the first ack exists).
+  await seedTab("tf", "s-pend", 0);
+  await seedWalkHistory("tf", "tf", 1000, 2000, 3000);
 
   // tn: snapshots but NO baseline; te: no snapshots at all
   await seedSnapshot("tn-1", "tn", "tn-0", "manual", false, 1000, [["Shot", "Qty"], ["S1", "1"]]);
@@ -261,6 +267,34 @@ describe("getPendingChanges quiet-day short-circuit", () => {
     expect(res!.latestAt).toBe(5000);
     expect(res!.unresolved.map((r) => r.rowKey)).toEqual(["s1"]);
     expect(res!.counts).toEqual({ added: 0, removed: 0, changed: 1, unresolved: 1 }); // diff agrees with the materialized stats
+  });
+});
+
+describe("hasCollectedBaseline (telling quiet from never-collected)", () => {
+  it("a QUIET tab (null from getPendingChanges) still HAS its collection point", async () => {
+    // tq is the quiet tab above — null pending, but the baseline exists and
+    // the latest capture time is metadata, no blob ever touched
+    const tq = await tabRow("tq");
+    expect(await getPendingChanges(tq)).toBeNull();
+    expect(await hasCollectedBaseline(tq)).toEqual({ latestAt: 4500 });
+  });
+
+  it("null when there is no baseline (or no snapshots at all)", async () => {
+    expect(await hasCollectedBaseline(await tabRow("tn"))).toBeNull();
+    expect(await hasCollectedBaseline(await tabRow("te"))).toBeNull();
+  });
+});
+
+describe("introduction dating without acks (fresh sheets)", () => {
+  it("dates every unresolved row's introduction even when no ack exists", async () => {
+    // tf has the same history as tp2/tp3 but zero acks: everything stays
+    // unresolved AND introducedAt is populated (S2's new content at 2000,
+    // S3 at 3000) — the entry queue's oldest-first sort depends on it
+    const res = await getPendingChanges(await tabRow("tf"));
+    expect(res).not.toBeNull();
+    expect(res!.unresolved.map((r) => r.rowKey)).toEqual(["s2", "s3"]);
+    expect(res!.introducedAt.get("s2")).toBe(2000);
+    expect(res!.introducedAt.get("s3")).toBe(3000);
   });
 });
 

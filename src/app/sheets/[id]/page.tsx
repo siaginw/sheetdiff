@@ -569,7 +569,7 @@ export default async function SheetPage({
               <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-2.5 font-mono text-xs">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">footage</span>
                 <span className="text-sm font-semibold">
-                  {activeFootage.ft.toLocaleString()} <span className="font-normal text-muted-foreground">ft</span>
+                  {activeFootage.ft.toLocaleString("en-US")} <span className="font-normal text-muted-foreground">ft</span>
                 </span>
                 <span className="text-muted-foreground">· {activeTab.title}</span>
                 {activeFootage.handholes > 0 ? (
@@ -580,7 +580,7 @@ export default async function SheetPage({
                 {activeFootage.gaps.count > 0 ? (
                   <span className="text-muted-foreground" title="explicit GAP rows in the sheet">
                     · {activeFootage.gaps.count} known gap{activeFootage.gaps.count === 1 ? "" : "s"} (
-                    {activeFootage.gaps.ft.toLocaleString()} ft)
+                    {activeFootage.gaps.ft.toLocaleString("en-US")} ft)
                   </span>
                 ) : null}
                 {footageDelta !== null && footageDelta !== 0 ? (
@@ -590,7 +590,7 @@ export default async function SheetPage({
                     }`}
                   >
                     {footageDelta > 0 ? "+" : "−"}
-                    {Math.abs(footageDelta).toLocaleString()} ft {footageBaseLabel}
+                    {Math.abs(footageDelta).toLocaleString("en-US")} ft {footageBaseLabel}
                   </span>
                 ) : footageDelta === 0 ? (
                   <span className="text-muted-foreground">unchanged {footageBaseLabel}</span>
@@ -646,6 +646,7 @@ export default async function SheetPage({
               })}
               <div className="ml-auto pb-2">
                 {isOwner ? <TabSettingsDialog
+              key={activeTab.id}
                   spreadsheetId={sheet.id}
                   tabId={activeTab.id}
                   tabTitle={activeTab.title}
