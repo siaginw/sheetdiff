@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  FileText,
+  ReceiptText,
   Star,
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
@@ -47,7 +49,10 @@ import {
   invoiceStatus,
   computeCrewBoard,
   agingGaps,
+  dedupeTabData,
+  sheetBillableNow,
 } from "@/lib/production";
+import { detectPermitTab, isPermitTabTitle, permitFindings, type PermitFinding } from "@/lib/permits";
 import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
@@ -317,22 +322,34 @@ export default async function SheetPage({
   let overplacements: ReturnType<typeof detectOverplacement> = [];
   let office: ReturnType<typeof officePipeline> | null = null;
   let invoices: ReturnType<typeof invoiceStatus> | null = null;
+  let permits: PermitFinding[] = [];
+  // sheet-wide billable-now count on DEDUPED latest data — the same number
+  // the billing dashboard shows, so the top-bar badge can never disagree
+  // with the money page
+  let billableNowCount = 0;
   if (latestData) {
     office = officePipeline(latestData);
     invoices = invoiceStatus(latestData);
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
+    if (latestDataByTab.size > 0) {
+      billableNowCount = sheetBillableNow(
+        [...latestDataByTab.values()].map((e) => ({ title: e.title, data: e.data })),
+      );
+    }
     if (recent.length > 1) {
       const walk = [...recent].filter((sn) => sn.dataBlob).reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob!) }));
       lateEntries = detectLateEntries(walk);
       agedGaps = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })));
     }
     // TOTALS reconciliation + over-placement guard when a TOTALS-like tab exists
+    let totalsData: ReturnType<typeof decodeSnapshot> | null = null;
     const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title));
     if (totalsTab) {
       const totalsSnaps = await latestNonImportSnapshots([totalsTab.id]);
       const totalsSnap = totalsSnaps.get(totalsTab.id);
       if (totalsSnap) {
+        totalsData = decodeSnapshot(totalsSnap.dataBlob);
         const perTab = new Map<string, { title: string; ft: number }>();
         for (const t of trackedTabs) {
           const entry = latestDataByTab.get(t.id);
@@ -340,8 +357,34 @@ export default async function SheetPage({
             perTab.set(t.title.toLowerCase(), { title: t.title, ft: computeFootage(entry.data).ft });
           }
         }
-        totalsMismatches = reconcileTotals(decodeSnapshot(totalsSnap.dataBlob), perTab);
-        overplacements = detectOverplacement(decodeSnapshot(totalsSnap.dataBlob));
+        totalsMismatches = reconcileTotals(totalsData, perTab);
+        overplacements = detectOverplacement(totalsData);
+      }
+    }
+    // permit-status join: the Permit Tracker tab (tracked or not) crossed
+    // with what the working tabs say was placed — on DEDUPED data, so a
+    // copy tab can't double-report the same placed row
+    const permitCandidates = allTabs.filter((t) => isPermitTabTitle(t.title));
+    if (permitCandidates.length > 0) {
+      const snapsByTab = await latestNonImportSnapshots(permitCandidates.map((t) => t.id));
+      const candData: { title: string; data: ReturnType<typeof decodeSnapshot> }[] = [];
+      for (const t of permitCandidates) {
+        const s = snapsByTab.get(t.id);
+        if (s) candData.push({ title: t.title, data: decodeSnapshot(s.dataBlob) });
+      }
+      const permitTab = detectPermitTab(candData);
+      if (permitTab) {
+        const workingTabs = [...latestDataByTab.values()]
+          .filter((e) => e.title !== permitTab.title)
+          .map((e) => ({ title: e.title, data: e.data }));
+        const { freshByTab, pureCopies } = dedupeTabData(workingTabs);
+        permits = permitFindings({
+          permitTab: permitTab.data,
+          totals: totalsData,
+          peTabs: workingTabs
+            .filter((t) => !pureCopies.has(t.title))
+            .map((t) => ({ title: t.title, data: { headers: t.data.headers, rows: freshByTab.get(t.title) ?? [] } })),
+        });
       }
     }
   }
@@ -420,6 +463,23 @@ export default async function SheetPage({
                 unenteredCount={unenteredCount}
               />
             ) : null}
+            {/* the money views, one click from the sheet they describe — the
+                badge carries the SAME deduped billable-now count the billing
+                dashboard shows */}
+            <Button variant="ghost" size="sm" render={<Link href={`/sheets/${sheet.id}/report`} />}>
+              <FileText className="size-4" /> Report
+            </Button>
+            <Button variant="ghost" size="sm" render={<Link href={`/sheets/${sheet.id}/billing`} />}>
+              <ReceiptText className="size-4" /> Billing day
+              {billableNowCount > 0 ? (
+                <span
+                  className="ml-0.5 rounded-full bg-diff-move-bg px-1.5 font-mono text-[10px] font-semibold leading-4 text-diff-move-fg"
+                  title={`${billableNowCount} completed, GIS-checked, never entered — open Billing day`}
+                >
+                  {billableNowCount}
+                </span>
+              ) : null}
+            </Button>
             {isOwner ? (
             <form action={snapshotNow}>
               <input type="hidden" name="spreadsheetId" value={sheet.id} />
@@ -628,6 +688,7 @@ export default async function SheetPage({
                 overplacements={overplacements}
                 crewBoard={crewBoard}
                 agedGaps={agedGaps}
+                permits={permits}
               />
             ) : null}
 

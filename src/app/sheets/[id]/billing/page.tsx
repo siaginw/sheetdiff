@@ -24,6 +24,7 @@ import {
   detectOverplacement,
   officePipeline,
   invoiceStatus,
+  dedupeTabData,
   type AgingGap,
   type LateEntry,
   type OverplacementFinding,
@@ -64,8 +65,19 @@ export default async function BillingPage({
   const pendingRows: { status: string; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
 
   // compilation tabs (Line List copies working tabs) would double-count every
-  // hole, billable row, and office backlog entry on the money page
-  const seenRows = new Set<string>();
+  // hole, billable row, and office backlog entry on the money page — the
+  // shared cross-tab dedup (same algorithm as the CSV export and the weekly
+  // report) keys each row once; a pure copy tab contributes nothing
+  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot> }[] = [];
+  const dataByTitle = new Map<string, ReturnType<typeof decodeSnapshot>>();
+  for (const tab of trackedTabs) {
+    const latestSnap = latestByTab.get(tab.id);
+    if (!latestSnap) continue;
+    const data = decodeSnapshot(latestSnap.dataBlob);
+    tabData.push({ title: tab.title, data });
+    dataByTitle.set(tab.title, data);
+  }
+  const { freshByTab, pureCopies } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
@@ -73,15 +85,11 @@ export default async function BillingPage({
       latestAtMs = latestSnap.createdAt;
       latestLabel = absoluteTime(latestSnap.createdAt);
     }
-    const latestData = decodeSnapshot(latestSnap.dataBlob);
-    const freshRows = latestData.rows.filter((r) => {
-      const k = r.map((v) => v.trim()).join("\u0000");
-      if (seenRows.has(k)) return false;
-      seenRows.add(k);
-      return true;
-    });
-    if (freshRows.length === 0 && latestData.rows.length > 0) continue;
-    const freshData = { headers: latestData.headers, rows: freshRows };
+    if (pureCopies.has(tab.title)) continue;
+    const freshData = {
+      headers: dataByTitle.get(tab.title)!.headers,
+      rows: freshByTab.get(tab.title) ?? [],
+    };
     const latestReport = computeGapReport(freshData);
 
     const baselineRows = await db

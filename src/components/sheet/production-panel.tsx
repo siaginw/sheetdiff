@@ -1,5 +1,6 @@
-import { CalendarClock, ClipboardCheck, HardHat, Receipt, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
+import { CalendarClock, ClipboardCheck, FileCheck2, HardHat, Receipt, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
 import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline, InvoiceStatus } from "@/lib/production";
+import type { PermitFinding } from "@/lib/permits";
 import { absoluteTime } from "@/lib/format";
 
 const ft = (n: number) => n.toLocaleString("en-US");
@@ -53,6 +54,7 @@ export function ProductionPanel({
   office,
 
   invoices,
+  permits,
 }: {
   tabTitle: string;
   hygiene: DateHygieneFinding[];
@@ -64,8 +66,11 @@ export function ProductionPanel({
   office: OfficePipeline | null;
 
   invoices: InvoiceStatus | null;
+  /** permit-status join findings (sheet-wide) — absent when no Permit Tracker */
+  permits?: PermitFinding[] | null;
 }) {
-  const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
+  const problems =
+    hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length + (permits?.length ?? 0);
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
   const officeWaiting = office && office.enteredColumn ? office.stuck.length + office.aging.length + office.normal.length : 0;
   // invoice findings count toward "clean"/empty-state the same as every other
@@ -110,6 +115,11 @@ export function ProductionPanel({
             <span className="text-diff-del-fg">
               {overplacements.length} over-placed (+
               {ft(overplacements.reduce((n, o) => n + o.overBy, 0))} ft)
+            </span>
+          )}
+          {permits && permits.length > 0 && (
+            <span className="text-diff-del-fg">
+              {permits.length} permit finding{permits.length === 1 ? "" : "s"}
             </span>
           )}
           {invoices && invoices.billableNow.length > 0 && (
@@ -247,6 +257,36 @@ export function ProductionPanel({
             </Line>
           ))}
           {overplacements.length > 5 && <Line tone="muted">+{overplacements.length - 5} more…</Line>}
+        </Section>
+      ) : null}
+
+      {permits && permits.length > 0 ? (
+        <Section icon={<FileCheck2 className="size-3.5" />} title="Permits (joined to the Permit Tracker tab)">
+          {permits
+            .filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved")
+            .slice(0, 5)
+            .map((p, i) => (
+              <Line key={`p-${i}`} tone="danger">
+                {p.detail}
+                {p.meta ? <span className="opacity-70"> · {p.meta}</span> : null}
+              </Line>
+            ))}
+          {permits.filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved").length > 5 ? (
+            <Line tone="muted">
+              +{permits.filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved").length - 5} more…
+            </Line>
+          ) : null}
+          {permits
+            .filter((p) => p.kind === "submitted-aging")
+            .slice(0, 5)
+            .map((p, i) => (
+              <Line key={`a-${i}`} tone="warn">
+                {p.detail}
+              </Line>
+            ))}
+          {permits.filter((p) => p.kind === "submitted-aging").length > 5 ? (
+            <Line tone="muted">+{permits.filter((p) => p.kind === "submitted-aging").length - 5} more aging…</Line>
+          ) : null}
         </Section>
       ) : null}
 

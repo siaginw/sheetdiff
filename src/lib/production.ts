@@ -546,6 +546,117 @@ export function aggregateWeekly(tabs: { weeks: WeekBucket[]; placedFt: number }[
 }
 
 /* ------------------------------------------------------------------ */
+/* work stoppages — the "why was this week quiet" context              */
+/* ------------------------------------------------------------------ */
+
+const STOPPAGE_TITLE_RE = /stoppage|shut\s*down|delay\s*log/i;
+const STOPPAGE_DATE_RE = /^date$/i;
+const STOPPAGE_DESC_RE = /description|reason|cause|notes/i;
+
+/** Title-only prefilter so pages can avoid decoding blobs of unrelated tabs;
+ *  the full detection (headers too) is `detectStoppageTab`. */
+export function isStoppageTabTitle(title: string): boolean {
+  return STOPPAGE_TITLE_RE.test(title);
+}
+
+/** A Work Stoppages tab: titled like one AND carrying Date + Description
+ *  headers (title alone would match a permit tab named "Stoppages Pending"
+ *  that logs nothing dated). Null when the sheet has no such tab. */
+export function detectStoppageTab(tabs: { title: string; data: SnapshotData }[]): {
+  title: string;
+  data: SnapshotData;
+} | null {
+  for (const t of tabs) {
+    if (!STOPPAGE_TITLE_RE.test(t.title)) continue;
+    const hasDate = t.data.headers.some((h) => STOPPAGE_DATE_RE.test(norm(h)));
+    const hasDesc = t.data.headers.some((h) => STOPPAGE_DESC_RE.test(norm(h)));
+    if (hasDate && hasDesc) return t;
+  }
+  return null;
+}
+
+export interface StoppageWeek {
+  /** Monday of the week the stoppage falls in (local calendar), epoch ms */
+  weekStart: number;
+  count: number;
+  /** one example reason — enough to jog a superintendent's memory */
+  exemplar: string;
+}
+
+/** Bucket the stoppage log's dated rows into the SAME Monday buckets
+ *  weeklyProduction uses, so the report can sit "N stoppages (reason)"
+ *  beside the week's footage. Undated/unreadable rows are skipped — the
+ *  quiet-log guard (below) is what surfaces a log nobody maintains. */
+export function stoppageWeeks(data: SnapshotData): Map<number, StoppageWeek> {
+  let dateCol: number | null = null;
+  let descCol: number | null = null;
+  for (let i = 0; i < data.headers.length; i++) {
+    const h = norm(data.headers[i]);
+    if (dateCol === null && STOPPAGE_DATE_RE.test(h)) dateCol = i;
+    if (descCol === null && STOPPAGE_DESC_RE.test(h)) descCol = i;
+  }
+  const byWeek = new Map<number, StoppageWeek>();
+  if (dateCol === null || descCol === null) return byWeek;
+  for (const r of data.rows) {
+    const d = parseCompletedDate(r[dateCol]);
+    if (d === null) continue; // undated/unreadable — not bucketable
+    const desc = norm(r[descCol]);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dow = (day.getDay() + 6) % 7; // Monday = 0 — same math as weeklyProduction
+    const monday = day.getTime() - dow * 86_400_000;
+    const bucket = byWeek.get(monday) ?? { weekStart: monday, count: 0, exemplar: desc };
+    bucket.count += 1;
+    if (desc !== "" && bucket.exemplar === "") bucket.exemplar = desc;
+    byWeek.set(monday, bucket);
+  }
+  return byWeek;
+}
+
+export interface QuietStoppageLog {
+  /** days the stoppage log trails the newest completed work */
+  daysBehind: number;
+  newestStoppage: string;
+  newestCompletion: string;
+}
+
+/** Quiet-log guard: crews stop logging stoppages before they stop having
+ *  them. When the newest dated stoppage trails the newest Date Complete
+ *  (across the production tabs) by more than `toleranceDays` (default two
+ *  weeks), the report asks the question out loud instead of implying a
+ *  stoppage-free stretch. Null = nothing to judge (no log, no dated work, or
+ *  the log is current). */
+export function quietStoppageLog(
+  stoppages: Map<number, StoppageWeek>,
+  productionTabs: SnapshotData[],
+  toleranceDays = 14,
+): QuietStoppageLog | null {
+  if (stoppages.size === 0) return null;
+  const newestStoppageMs = Math.max(...stoppages.keys());
+  let newestCompletionMs = 0;
+  let newestCompletionRaw = "";
+  for (const data of productionTabs) {
+    const dateCol = detectDateColumn(data);
+    if (dateCol === null) continue;
+    for (const r of data.rows) {
+      const d = parseCompletedDate(r[dateCol]);
+      if (d === null) continue;
+      if (d.getTime() > newestCompletionMs) {
+        newestCompletionMs = d.getTime();
+        newestCompletionRaw = norm(r[dateCol]);
+      }
+    }
+  }
+  if (newestCompletionMs === 0) return null;
+  const daysBehind = Math.floor((newestCompletionMs - newestStoppageMs) / 86_400_000);
+  if (daysBehind <= toleranceDays) return null;
+  return {
+    daysBehind,
+    newestStoppage: localDayKey(new Date(newestStoppageMs)),
+    newestCompletion: newestCompletionRaw,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* invoice ledger — what's billable, what's billed, what's stuck       */
 /* ------------------------------------------------------------------ */
 
@@ -696,25 +807,65 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   return out;
 }
 
-/** Cross-tab rollup dedup: compilation tabs (Line List) copy the working
- *  tabs' rows by design — sheet-wide sums must count each shot once. Keys on
- *  the composite identity (Activity + stations + row content), first tab
- *  wins. Returns the deduped rows plus how many copies were dropped. */
-export function dedupeRollupRows(tabs: { title: string; data: SnapshotData }[]): {
-  rows: { tab: string; row: string[] }[];
+export interface DedupedTabs {
+  /** tab title -> the rows that FIRST appeared on that tab (identities an
+   *  earlier tab already claimed are dropped — first tab wins; tabs iterate
+   *  in sheet-position order, which the callers guarantee) */
+  freshByTab: Map<string, string[][]>;
+  /** tabs whose every non-blank row was a copy — pure compilation tabs. The
+   *  billing/report aggregations skip these entirely: re-deriving analytics
+   *  from a copy would re-add what the dedup just dropped. */
+  pureCopies: Set<string>;
+  /** how many copied rows were dropped sheet-wide */
   duplicatesDropped: number;
-} {
+}
+
+/** Cross-tab dedup — the ONE algorithm every sheet-wide rollup uses (billing
+ *  page, billing CSV, weekly report, billable-now badge). Compilation tabs
+ *  (Line List, PE-7 copies) copy the working tabs' rows by design; counting
+ *  each shot once keys the whole row content (`norm` per cell, NUL-joined —
+ *  a pipe separator collides with real cell values). Blank-padding rows are
+ *  skipped, never counted as duplicates. */
+export function dedupeTabData(tabs: { title: string; data: SnapshotData }[]): DedupedTabs {
   const seen = new Set<string>();
-  const rows: { tab: string; row: string[] }[] = [];
-  let dropped = 0;
+  const freshByTab = new Map<string, string[][]>();
+  const pureCopies = new Set<string>();
+  let duplicatesDropped = 0;
   for (const t of tabs) {
+    const fresh: string[][] = [];
+    let hadContent = false;
     for (const r of t.data.rows) {
       const k = r.map(norm).join("\u0000");
       if (k === "" || /^\u0000+$/.test(k)) continue; // blank padding
-      if (seen.has(k)) { dropped++; continue; }
+      hadContent = true;
+      if (seen.has(k)) {
+        duplicatesDropped++;
+        continue;
+      }
       seen.add(k);
-      rows.push({ tab: t.title, row: r });
+      fresh.push(r);
     }
+    freshByTab.set(t.title, fresh);
+    if (hadContent && fresh.length === 0) pureCopies.add(t.title);
   }
-  return { rows, duplicatesDropped: dropped };
+  return { freshByTab, pureCopies, duplicatesDropped };
+}
+
+/** Sheet-wide "billable now" count on DEDUPED latest data — the number the
+ *  billing dashboard shows, so the sheet-page badge and the money page can
+ *  never disagree (a copy tab must not promise two invoices for one shot). */
+export function sheetBillableNow(
+  tabs: { title: string; data: SnapshotData }[],
+  now = Date.now(),
+): number {
+  const { freshByTab, pureCopies } = dedupeTabData(tabs);
+  let count = 0;
+  for (const t of tabs) {
+    if (pureCopies.has(t.title)) continue;
+    count += invoiceStatus(
+      { headers: t.data.headers, rows: freshByTab.get(t.title) ?? [] },
+      now,
+    ).billableNow.length;
+  }
+  return count;
 }

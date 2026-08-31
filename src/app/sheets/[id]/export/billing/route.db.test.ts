@@ -170,6 +170,26 @@ beforeAll(async () => {
     ["Fresh Plow", "200", "300", "CREW F", daysAgo(1), ""], // normal — NOT billing material
     ["Done Plow", "300", "400", "CREW D", daysAgo(10), "9/1/2026"], // already entered downstream
   ]);
+
+  // Copy-tab sheet: cd-b (position 1) duplicates cd-a's rows verbatim. The
+  // CSV must count each shot once — the route shipped with a `seenRows` set
+  // that was declared but never used (its own commit message claimed the
+  // dedup was applied), so the artifact handed to accounting doubled every
+  // hole and every placed foot on copy-tab sheets while the dashboard page
+  // showed the honest numbers.
+  await seedSheet("csv-copy", "owner", "CSV Copy Tracker");
+  await db.insert(tabs).values({ id: "cd-a", spreadsheetId: "csv-copy", title: "cd-a", position: 0, tracked: true, keyColumn: 0 });
+  await db.insert(tabs).values({ id: "cd-b", spreadsheetId: "csv-copy", title: "cd-b", position: 1, tracked: true, keyColumn: 0 });
+  await seedSnapshot("cc-a-base", "cd-a", "cc0", "manual", true, T0, grid(["Plow", "0", "500", "CREW A", "8/20/2026"]));
+  await seedSnapshot("cc-a-last", "cd-a", "cc1", "manual", false, T2, grid(
+    ["Plow", "0", "500", "CREW A", "8/20/2026"],
+    ["Bore", "700", "900", "CREW A", "8/28/2026"], // opens the 500-700 hole, +200 ft since baseline
+  ));
+  await seedSnapshot("cc-b-base", "cd-b", "cc2", "manual", true, T1, grid(["Plow", "0", "500", "CREW A", "8/20/2026"]));
+  await seedSnapshot("cc-b-last", "cd-b", "cc3", "manual", false, T3, grid(
+    ["Plow", "0", "500", "CREW A", "8/20/2026"],
+    ["Bore", "700", "900", "CREW A", "8/28/2026"],
+  ));
 });
 
 describe("temp-db harness", () => {
@@ -286,5 +306,25 @@ describe("billing route: office-entry backlog reaches the packet", () => {
     // just never with the unentered-downstream office meta)
     expect(body.some((l) => l.includes("Fresh Plow") && l.includes("unentered downstream"))).toBe(false);
     expect(body.some((l) => l.includes("Done Plow") && l.includes("unentered downstream"))).toBe(false);
+  });
+});
+
+describe("billing route: a copy tab must not double the CSV (the dead seenRows regression)", () => {
+  it("counts placed footage and the open hole once, not once per tab that lists them", async () => {
+    signIn("owner");
+    const res = await get("csv-copy");
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\n");
+    // 200 ft since baseline and ONE 200 ft hole — cd-b's identical rows add
+    // nothing. The copy tab's worklist is skipped too (same behavior as the
+    // dashboard page): its "NEW row" is the same work cd-a already queued,
+    // and asking the office to enter it twice is the bug, not the fix.
+    expect(lines[2]).toBe(
+      "# Placed since collection: 200 ft | Open holes: 200 ft | To enter: 1 | Late entries: 0",
+    );
+    const holeLines = lines.filter((l) => l.startsWith("hole,"));
+    expect(holeLines).toHaveLength(1);
+    // the hole is attributed to the FIRST tab in position order, never the copy
+    expect(holeLines[0]).toMatch(/^hole,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(cd-a\)$/);
   });
 });

@@ -226,7 +226,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (289 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (312 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

@@ -97,6 +97,8 @@ const grid = (...rows: string[][]) => [H, ...rows];
 
 const COPY_SHEET = "rep-copy"; // PE-7 duplicates PE-4's row (the demo case)
 const DISTINCT_SHEET = "rep-distinct"; // two tabs, no copies — must still sum
+const STOPPAGE_SHEET = "rep-stop"; // production + a kept-current Work Stoppages log
+const STALE_SHEET = "rep-stale"; // the stoppage log trails the work by six weeks
 
 beforeAll(async () => {
   await seedUser("owner");
@@ -116,6 +118,26 @@ beforeAll(async () => {
   await seedTab("rep-b", DISTINCT_SHEET, 1);
   await seedSnapshot("rd-a", "rep-a", "rd0", T, grid(["Plow", "0", "500", "8/20/2026"]));
   await seedSnapshot("rd-b", "rep-b", "rd1", T, grid(["Bore", "500", "1000", "8/21/2026"]));
+
+  // Work Stoppages join: a dedicated log tab (UNTRACKED — the join must not
+  // require tracking) whose dated rows explain the worked weeks. The stale
+  // variant trails the newest completion by six weeks to trip the guard.
+  const SH = ["Date", "Description"];
+  await seedSheet(STOPPAGE_SHEET, "Stoppage Tracker");
+  await seedTab("sp-prod", STOPPAGE_SHEET, 0);
+  await seedSnapshot("sp-p", "sp-prod", "sp0", T, grid(["Plow", "0", "500", "8/20/2026"]));
+  await db.insert(tabs).values({ id: "sp-log", spreadsheetId: STOPPAGE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
+  await seedSnapshot("sp-l", "sp-log", "sp1", T, [
+    SH,
+    ["8/20/2026", "waiting on utility locate"], // same week as the footage
+    ["8/21/2026", "rock"],
+  ]);
+
+  await seedSheet(STALE_SHEET, "Stale Stoppage Log");
+  await seedTab("st-prod", STALE_SHEET, 0);
+  await seedSnapshot("st-p", "st-prod", "st0", T, grid(["Plow", "0", "500", "8/28/2026"]));
+  await db.insert(tabs).values({ id: "st-log", spreadsheetId: STALE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
+  await seedSnapshot("st-l", "st-log", "st1", T, [SH, ["7/6/2026", "permit hold"]]); // six weeks stale
 });
 
 const render = async (id: string) => ReportPage({ params: Promise.resolve({ id }) });
@@ -156,5 +178,25 @@ describe("report page: a copy tab must not blank the report or double-count it",
   it("404s for a sheet the caller cannot access", async () => {
     state.userId = null;
     await expect(render("rep-copy")).rejects.toThrow("REDIRECT"); // signed out -> login
+  });
+});
+
+describe("report page: the Work Stoppages log joins the week table", () => {
+  it("counts the week's stoppages with an exemplar reason — no quiet-log nag when the log is current", async () => {
+    state.userId = "owner";
+    const text = pageText(await render(STOPPAGE_SHEET));
+    expect(text).toContain("stoppages"); // the column
+    expect(text).toContain("2 stoppages"); // both entries land in the week of 8/17
+    expect(text).toContain("waiting on utility locate"); // the exemplar reason
+    expect(text).not.toContain("is the log being kept?");
+  });
+
+  it("asks whether the log is being kept when it trails the newest completed work by weeks", async () => {
+    state.userId = "owner";
+    const text = pageText(await render(STALE_SHEET));
+    expect(text).toContain("is the log being kept?");
+    expect(text).toContain("2026-07-06"); // the guard names the stale newest entry
+    // the column renders for worked weeks even when the log has nothing for them
+    expect(text).toContain("stoppages");
   });
 });

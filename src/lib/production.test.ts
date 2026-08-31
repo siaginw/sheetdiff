@@ -11,7 +11,12 @@ import {
   weeklyProduction,
   aggregateWeekly,
   invoiceStatus,
-  dedupeRollupRows,
+  dedupeTabData,
+  sheetBillableNow,
+  detectStoppageTab,
+  isStoppageTabTitle,
+  stoppageWeeks,
+  quietStoppageLog,
 } from "./production";
 import type { WeekBucket } from "./production";
 import { computeGapReport } from "./gaps";
@@ -434,15 +439,104 @@ describe("invoiceStatus (the office's own billing ledger)", () => {
   });
 });
 
-describe("dedupeRollupRows (compilation tabs copy working tabs)", () => {
-  it("counts each identical row once across tabs; blank padding ignored", () => {
-    const row = ["Plow", "0", "500", "CREW A"];
-    const out = dedupeRollupRows([
-      { title: "PE-4", data: snap(["Activity", "Start STA", "End STA", "Crew"], [row, ["", "", "", ""]]) },
-      { title: "Line List", data: snap(["Activity", "Start STA", "End STA", "Crew"], [row, row, ["Bore", "500", "14800", "CREW B"]]) },
+describe("dedupeTabData (compilation tabs copy working tabs)", () => {
+  const HEAD = ["Activity", "Start STA", "End STA", "Crew"];
+  const row = ["Plow", "0", "500", "CREW A"];
+
+  it("counts each identical row once across tabs; blank padding ignored; first tab wins", () => {
+    const out = dedupeTabData([
+      { title: "PE-4", data: snap(HEAD, [row, ["", "", "", ""]]) },
+      { title: "Line List", data: snap(HEAD, [row, row, ["Bore", "500", "14800", "CREW B"]]) },
     ]);
-    expect(out.rows).toHaveLength(2); // the plow once + the bore
+    expect(out.freshByTab.get("PE-4")).toEqual([row]); // blank padding skipped, not deduped
+    expect(out.freshByTab.get("Line List")).toEqual([["Bore", "500", "14800", "CREW B"]]);
     expect(out.duplicatesDropped).toBe(2);
-    expect(out.rows[0]!.tab).toBe("PE-4"); // first tab wins
+    expect(out.pureCopies.size).toBe(0);
+  });
+
+  it("names a tab whose every non-blank row is a copy as a pure compilation tab", () => {
+    const out = dedupeTabData([
+      { title: "PE-4", data: snap(HEAD, [row]) },
+      { title: "PE7", data: snap(HEAD, [row, ["", "", "", ""], ["", "", "", ""]]) },
+    ]);
+    expect(out.pureCopies).toEqual(new Set(["PE7"]));
+    expect(out.freshByTab.get("PE7")).toEqual([]);
+    // an all-blank tab is EMPTY, not a copy — callers may still read its headers
+    const blank = dedupeTabData([{ title: "Blank", data: snap(HEAD, [["", "", "", ""]]) }]);
+    expect(blank.pureCopies.size).toBe(0);
+  });
+
+  it("a mixed tab keeps its own fresh rows while the copies drop", () => {
+    const out = dedupeTabData([
+      { title: "PE-4", data: snap(HEAD, [row]) },
+      { title: "PE-5", data: snap(HEAD, [row, ["Bore", "500", "900", "CREW B"]]) },
+    ]);
+    expect(out.freshByTab.get("PE-5")).toEqual([["Bore", "500", "900", "CREW B"]]);
+    expect(out.duplicatesDropped).toBe(1);
+    expect(out.pureCopies.size).toBe(0);
+  });
+});
+
+describe("sheetBillableNow (the badge must equal the billing dashboard's number)", () => {
+  const BH = ["Activity", "Start STA", "End STA", "Date Complete", "Bore Log in GIS?", "Entered in InEight"];
+  const NOW = Date.UTC(2026, 7, 30);
+  const billable = ["Bore", "500", "900", "2026-08-20", "Yes", ""];
+
+  it("sums billable rows across tabs but never counts a copy tab twice", () => {
+    const tabs = [
+      { title: "PE-4", data: snap(BH, [billable, ["Plow", "0", "500", "2026-08-19", "", "7/1/2026"]]) },
+      { title: "PE7", data: snap(BH, [billable]) }, // pure copy of PE-4's billable row
+      { title: "PE-5", data: snap(BH, [["Bore", "0", "300", "2026-08-21", "Yes", ""]]) }, // its own
+    ];
+    expect(sheetBillableNow(tabs, NOW)).toBe(2); // 1 (PE-4) + 1 (PE-5) — the copy adds nothing
+  });
+
+  it("returns 0 when no tab tracks an office ledger (feature no-ops)", () => {
+    expect(sheetBillableNow([{ title: "PE-4", data: snap(H, [["Plow", "0", "500", "2026-08-19", "A"]]) }], NOW)).toBe(0);
+  });
+});
+
+describe("stoppage join (weekly report explains quiet weeks)", () => {
+  const SH = ["Date", "Description"];
+  const PH = ["Activity", "Start STA", "End STA", "Date Complete"];
+
+  it("detects a stoppage tab by title AND Date/Description headers", () => {
+    const stoppage = { title: "Work Stoppages", data: snap(SH, []) };
+    expect(detectStoppageTab([stoppage])).toBe(stoppage);
+    expect(detectStoppageTab([{ title: "Work Stoppages", data: snap(["Permit", "Status"], []) }])).toBeNull(); // no dated log
+    expect(detectStoppageTab([{ title: "PE-4", data: snap(SH, []) }])).toBeNull(); // wrong tab entirely
+    expect(isStoppageTabTitle("Daily stoppage log")).toBe(true);
+    expect(isStoppageTabTitle("PE-4")).toBe(false);
+  });
+
+  it("buckets stoppages into the same Monday buckets weeklyProduction uses", () => {
+    // 8/20/2026 is a Thursday -> Monday 8/17; 8/24 is the NEXT Monday
+    const weeks = stoppageWeeks(snap(SH, [
+      ["8/20/2026", "utility locate late"],
+      ["8/21/2026", "rock"],
+      ["8/24/2026", ""], // blank reason still counts as a logged day
+      ["not a date", "never bucketed"],
+    ]));
+    expect(weeks.size).toBe(2);
+    const wk1 = weeks.get(new Date(2026, 7, 17).getTime())!;
+    expect(wk1.count).toBe(2);
+    expect(wk1.exemplar).toBe("utility locate late");
+    const wk2 = weeks.get(new Date(2026, 7, 24).getTime())!;
+    expect(wk2.count).toBe(1);
+    // the same rows land in weeklyProduction's buckets for the same Mondays
+    const prod = weeklyProduction(snap(PH, [["Plow", "0", "500", "8/20/2026"]]));
+    expect(prod[0]!.weekStart).toBe(wk1.weekStart);
+  });
+
+  it("quiet-log guard fires only when the log trails the work by weeks", () => {
+    const weeks = stoppageWeeks(snap(SH, [["7/6/2026", "waiting on permit"]]));
+    const current = [snap(PH, [["Plow", "0", "500", "7/10/2026"]])];
+    expect(quietStoppageLog(weeks, current)).toBeNull(); // 4 days behind — kept current
+    const stale = [snap(PH, [["Plow", "0", "500", "8/26/2026"]])];
+    const q = quietStoppageLog(weeks, stale)!; // 7 weeks behind
+    expect(q.daysBehind).toBeGreaterThan(40);
+    expect(q.newestStoppage).toBe("2026-07-06");
+    expect(q.newestCompletion).toBe("8/26/2026");
+    expect(quietStoppageLog(new Map(), stale)).toBeNull(); // no log at all — nothing to judge
   });
 });

@@ -7,7 +7,7 @@ import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { computeGapReport } from "@/lib/gaps";
-import { agingGaps, detectLateEntries, detectOverplacement, officePipeline, invoiceStatus, type LateEntry, type AgingGap, type OverplacementFinding, type OfficePipeline } from "@/lib/production";
+import { agingGaps, detectLateEntries, detectOverplacement, officePipeline, invoiceStatus, dedupeTabData, type LateEntry, type AgingGap, type OverplacementFinding, type OfficePipeline } from "@/lib/production";
 import { buildBillingPacket, billingPacketCsv } from "@/lib/billing";
 import { absoluteTime } from "@/lib/format";
 
@@ -56,10 +56,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   let latestLabel = "unknown";
   let latestAtMs = 0;
 
-  // compilation tabs double every finding — dedupe rows cross-tab before
-// any per-tab aggregation (the dashboard page does the same; the CSV and
-// the screen must never disagree on billing day)
-  const seenRows = new Set<string>();
+  // compilation tabs double every finding — dedupe rows cross-tab BEFORE any
+  // per-tab aggregation via the shared helper (the dashboard page does the
+  // same; the CSV and the screen must never disagree on billing day)
+  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot> }[] = [];
+  const dataByTitle = new Map<string, ReturnType<typeof decodeSnapshot>>();
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
@@ -67,12 +68,26 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // the office pipeline, and the invoice ledger all read this same snapshot
     // (gunzip + JSON.parse is synchronous event-loop work; the same blob was
     // decoded four times per tab here before)
-    const latestData = decodeSnapshot(latestSnap.dataBlob);
-    const latestReport = computeGapReport(latestData);
+    const data = decodeSnapshot(latestSnap.dataBlob);
+    tabData.push({ title: tab.title, data });
+    dataByTitle.set(tab.title, data);
+  }
+  const { freshByTab, pureCopies } = dedupeTabData(tabData);
+  for (const tab of trackedTabs) {
+    const latestSnap = latestByTab.get(tab.id);
+    if (!latestSnap) continue;
     if (latestSnap.createdAt > latestAtMs) {
       latestAtMs = latestSnap.createdAt;
       latestLabel = absoluteTime(latestSnap.createdAt);
     }
+    if (pureCopies.has(tab.title)) continue;
+    // the deduped latest data — every aggregate below reads it, so a copied
+    // row is counted exactly once no matter which tab re-lists it
+    const latestData = {
+      headers: dataByTitle.get(tab.title)!.headers,
+      rows: freshByTab.get(tab.title) ?? [],
+    };
+    const latestReport = computeGapReport(latestData);
 
     // this tab's baseline (query per tab — bounded, billing-export only)
     const baselineRows = await db

@@ -7,7 +7,18 @@ import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
 import { latestNonImportSnapshots, decodeSnapshot } from "@/lib/snapshots";
-import { weeklyProduction, aggregateWeekly, dedupeRollupRows, type WeekBucket } from "@/lib/production";
+import {
+  weeklyProduction,
+  aggregateWeekly,
+  dedupeTabData,
+  detectStoppageTab,
+  isStoppageTabTitle,
+  stoppageWeeks,
+  quietStoppageLog,
+  type WeekBucket,
+  type StoppageWeek,
+  type QuietStoppageLog,
+} from "@/lib/production";
 import { computeFootage } from "@/lib/checks";
 import type { SnapshotData } from "@/lib/diff/engine";
 import { absoluteTime, relativeTime } from "@/lib/format";
@@ -30,14 +41,15 @@ export default async function ReportPage({
   if (!access) notFound();
   const sheet = access.sheet;
 
-  const trackedTabs = (await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)).orderBy(tabs.position)).filter((t) => t.tracked);
+  const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)).orderBy(tabs.position);
+  const trackedTabs = allTabs.filter((t) => t.tracked);
   const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
 
   // aggregate weekly footage across every tracked tab that has stations+dates
   let latestAt: number | null = null;
   const perTab: { weeks: WeekBucket[]; placedFt: number }[] = [];
   // compilation tabs (Line List, PE-7 copies) copy the working tabs — count
-  // each shot once via the TESTED cross-tab dedup helper (first tab wins),
+  // each shot once via the shared cross-tab dedup helper (first tab wins),
   // never an inline reimplementation. A tab left with no fresh rows is a pure
   // copy: SKIP it — a bare `return` here used to blank the whole report the
   // moment any tracked tab duplicated another's rows.
@@ -50,24 +62,41 @@ export default async function ReportPage({
     latestAt = Math.max(latestAt ?? 0, snap.createdAt);
     tabData.push({ title: tab.title, data });
   }
-  const { rows: deduped, duplicatesDropped } = dedupeRollupRows(tabData);
-  const freshByTab = new Map<string, string[][]>();
-  for (const { tab, row } of deduped) {
-    const list = freshByTab.get(tab);
-    if (list) list.push(row);
-    else freshByTab.set(tab, [row]);
-  }
+  const { freshByTab, pureCopies, duplicatesDropped } = dedupeTabData(tabData);
+  const prodTabs: SnapshotData[] = []; // fresh (deduped) data — the quiet-log clock
   for (const { title, data } of tabData) {
+    if (pureCopies.has(title)) continue; // pure compilation tab
     const fresh = freshByTab.get(title) ?? [];
-    if (fresh.length === 0 && data.rows.length > 0) continue; // pure compilation tab
+    const freshData = { headers: data.headers, rows: fresh };
+    prodTabs.push(freshData);
     perTab.push({
-      weeks: weeklyProduction({ headers: data.headers, rows: fresh }),
+      weeks: weeklyProduction(freshData),
       // placed comes from the FRESH rows — computeFootage on the whole tab
       // would re-add every copy the dedup just dropped
-      placedFt: computeFootage({ headers: data.headers, rows: fresh }).ft,
+      placedFt: computeFootage(freshData).ft,
     });
   }
   const { weeks, placedFt } = aggregateWeekly(perTab);
+
+  // Work Stoppages: a dedicated log tab (tracked or not) explains quiet weeks
+  // instead of implying nobody worked. Title match first (cheap — no blob
+  // decode for unrelated tabs), then the header check via detectStoppageTab.
+  let stoppages: Map<number, StoppageWeek> | null = null;
+  let quietLog: QuietStoppageLog | null = null;
+  const stoppageCandidates = allTabs.filter((t) => isStoppageTabTitle(t.title));
+  if (stoppageCandidates.length > 0) {
+    const snapsByTab = await latestNonImportSnapshots(stoppageCandidates.map((t) => t.id));
+    const candData: { title: string; data: SnapshotData }[] = [];
+    for (const t of stoppageCandidates) {
+      const snap = snapsByTab.get(t.id);
+      if (snap) candData.push({ title: t.title, data: decodeSnapshot(snap.dataBlob) });
+    }
+    const stoppageTab = detectStoppageTab(candData);
+    if (stoppageTab) {
+      stoppages = stoppageWeeks(stoppageTab.data);
+      quietLog = quietStoppageLog(stoppages, prodTabs);
+    }
+  }
   const thisWeek = weeks[weeks.length - 1] ?? null;
   const lastWeek = weeks[weeks.length - 2] ?? null;
   const totalFt = weeks.reduce((n, w) => n + w.ft, 0);
@@ -147,19 +176,40 @@ export default async function ReportPage({
                   <tr className="border-b text-left text-muted-foreground">
                     <th className="py-1.5 pr-4 font-medium">week of</th>
                     <th className="py-1.5 pr-4 text-right font-medium">footage</th>
-                    <th className="py-1.5 text-right font-medium">shots</th>
+                    <th className="py-1.5 pr-4 text-right font-medium">shots</th>
+                    {stoppages ? <th className="py-1.5 font-medium">stoppages</th> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {[...weeks].reverse().map((w) => (
-                    <tr key={w.weekStart} className="border-b border-border/40">
-                      <td className="py-1.5 pr-4">{new Date(w.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
-                      <td className="py-1.5 pr-4 text-right">{w.ft.toLocaleString("en-US")} ft</td>
-                      <td className="py-1.5 text-right">{w.shots}</td>
-                    </tr>
-                  ))}
+                  {[...weeks].reverse().map((w) => {
+                    const sw = stoppages?.get(w.weekStart) ?? null;
+                    return (
+                      <tr key={w.weekStart} className="border-b border-border/40">
+                        <td className="py-1.5 pr-4">{new Date(w.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
+                        <td className="py-1.5 pr-4 text-right">{w.ft.toLocaleString("en-US")} ft</td>
+                        <td className="py-1.5 pr-4 text-right">{w.shots}</td>
+                        {stoppages ? (
+                          <td className="max-w-[220px] py-1.5" title={sw?.exemplar ?? undefined}>
+                            {sw ? (
+                              <>
+                                <span className="font-semibold">{`${sw.count} stoppage${sw.count === 1 ? "" : "s"}`}</span>
+                                {sw.exemplar ? <span className="text-muted-foreground"> · {sw.exemplar}</span> : null}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              {quietLog ? (
+                <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                  Stoppage log looks quiet: newest entry {quietLog.newestStoppage} is {quietLog.daysBehind} day{quietLog.daysBehind === 1 ? "" : "s"} behind the newest completed work ({quietLog.newestCompletion}) — is the log being kept?
+                </p>
+              ) : null}
               <p className="mt-3 text-[10.5px] text-muted-foreground">
                 &ldquo;As dated&rdquo; = a row lands in the week its Date Complete says. Late-entered
                 rows shift retroactively — check the production panel&rsquo;s late entries before
