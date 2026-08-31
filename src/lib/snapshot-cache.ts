@@ -87,7 +87,9 @@ export function clearSnapshotCache(): void {
 }
 
 function frozen<T>(value: T): T {
-  if (process.env.NODE_ENV === "production") return value; // zero prod cost
+  // freeze in PRODUCTION too: a shared-object mutation corrupts every later
+  // read process-wide — the one-time freeze cost (microseconds per snapshot)
+  // is cheaper than that class of bug
   return deepFreeze(value);
 }
 
