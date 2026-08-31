@@ -21,7 +21,7 @@ const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='tabl
 const journal = JSON.parse(fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"));
 const journalHashes = journal.entries.map((e) => {
   const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
-  return { when: e.when, hash: crypto.createHash("sha256").update(sqlText).digest("hex") };
+  return { tag: e.tag, when: e.when, hash: crypto.createHash("sha256").update(sqlText).digest("hex") };
 });
 sqlite.exec('CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
 // applied ROW count, not table existence — an empty table (legacy DB, or a
@@ -45,11 +45,29 @@ if (hasUsers && journalHashes.some((j) => !appliedHashes.has(j.hash))) {
 }
 
 if (hasUsers && appliedHashes.size === 0) {
+  // CRITICAL: stamp only entries already reflected in the schema — a v0.2 DB
+  // lacks 0001's columns; stamping it would skip the ALTERs and crash every
+  // new-column read. Mirror of src/lib/db/migrate.ts.
+  const columnExists = (table, col) => {
+    try { sqlite.prepare(`SELECT ${col} FROM ${table} LIMIT 1`).get(); return true; }
+    catch { return false; }
+  };
+  const markers = {
+    "0000_equal_darkstar": { table: "change_acks", col: "row_key" },
+    "0001_glorious_infant_terrible": { table: "spreadsheets", col: "capture_fail_streak" },
+  };
+  const already = journal.entries.filter((e) => {
+    const mk = markers[e.tag];
+    if (!mk) return false;
+    const h = journalHashes.find((x) => x.tag === e.tag);
+    return mk && columnExists(mk.table, mk.col) && h;
+  });
   const ins = sqlite.prepare('INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)');
-  for (const j of journalHashes) {
-    ins.run(j.hash, j.when);
+  for (const e of already) {
+    const h = journalHashes.find((x) => x.tag === e.tag);
+    if (h) ins.run(h.hash, e.when);
   }
-  console.log(`[migrate] stamped ${journalHashes.length} baseline migration(s) on legacy DB`);
+  console.log(`[migrate] stamped ${already.length}/${journal.entries.length} migration(s) in the legacy schema — the rest apply normally`);
 }
 
 // apply POSITIONALLY, like drizzle's boot-path migrator: entries beyond the

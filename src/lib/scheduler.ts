@@ -90,6 +90,8 @@ async function tickInner(): Promise<boolean> {
       // the stale due time retries every minute forever.
       const bumped = computeNextRun(sheet, now) ?? now + 6 * 3_600_000;
       await db.update(spreadsheets).set({ nextRunAt: bumped }).where(eq(spreadsheets.id, sheet.id));
+      const { recordCaptureFailure } = await import("./snapshots");
+      await recordCaptureFailure(sheet.id, err);
     }
   }
 

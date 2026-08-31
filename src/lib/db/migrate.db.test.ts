@@ -26,8 +26,11 @@ function legacyFixture(name: string): string {
   const dir = fs.mkdtempSync(path.join(tmpRoot, `${name}-`)); // own dir → own backups/
   const dbPath = path.join(dir, `${name}.db`);
   const db = new Database(dbPath);
-  db.exec("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT)");
-  db.exec("INSERT INTO users VALUES ('legacy-1', 'legacy@x.com')");
+  // a v0.2 push-created DB carries the full 0000-era schema (drizzle-kit push
+  // materializes every table), NOT a bare users table
+  const sql0000 = fs.readFileSync(path.join(repoRoot, "drizzle", "0000_equal_darkstar.sql"), "utf8");
+  db.exec(sql0000.split("--> statement-breakpoint").join(""));
+  db.prepare("INSERT INTO users (id, google_sub, email, name, tokens_enc, created_at) VALUES ('legacy-1', 'sub-x', 'legacy@x.com', 'L', 't', 1)").run();
   db.close();
   return dbPath;
 }
@@ -149,5 +152,24 @@ describe("hash-divergent journal (re-authored migrations)", () => {
     expect(out).toContain("already recorded"); // no re-execution, no crash
     expect(stateOf(dbPath)).toEqual({ applied: journalCount, users: 1 }); // data intact
     expect(backupsIn(dbPath).length).toBe(2); // safety net fired again
+  });
+});
+
+describe("legacy v0.2 upgrade with 0001 present (fleet-13 blocker)", () => {
+  it("applies 0001's columns on a v0.2 DB — the stamp must not skip them", async () => {
+    const dbPath = legacyFixture("v2-upgrade.db");
+    await bootMigrate(dbPath);
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const cols = db.prepare("PRAGMA table_info(spreadsheets)").all().map((c) => (c as { name: string }).name);
+      expect(cols).toContain("capture_fail_streak");
+      expect(cols).toContain("last_capture_error");
+      expect(cols).toContain("last_capture_error_at");
+      const applied = (db.prepare("SELECT count(*) c FROM __drizzle_migrations").get() as { c: number }).c;
+      expect(applied).toBe(journalCount);
+      expect((db.prepare("SELECT count(*) c FROM users").get() as { c: number }).c).toBe(1);
+    } finally {
+      db.close();
+    }
   });
 });

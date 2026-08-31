@@ -147,6 +147,8 @@ export async function snapshotNow(fd: FormData): Promise<void> {
     await captureSnapshot(id, "manual");
   } catch (err) {
     console.error("[snapshot] manual capture failed:", err instanceof Error ? err.message : err);
+    const { recordCaptureFailure } = await import("./snapshots");
+    await recordCaptureFailure(id, err);
     redirect(`/sheets/${id}?error=snapshot-failed`);
   }
   revalidatePath(`/sheets/${id}`);

@@ -231,3 +231,28 @@ export async function getTabDiff(
     toWhen: to.createdAt,
   });
 }
+
+/** Record a capture failure for the health signal — best-effort, never throws
+ *  (a health write must not compound a capture failure). Stores the first
+ *  line of the error, ~300 chars — never the raw error object (gaxios errors
+ *  embed token-exchange bodies). */
+export async function recordCaptureFailure(spreadsheetId: string, err: unknown): Promise<void> {
+  try {
+    const { db } = await import("./db");
+    const { spreadsheets: sp } = await import("./db/schema");
+    const { eq, sql } = await import("drizzle-orm");
+    const msg = String(err instanceof Error ? err.message : err)
+      .split("\n")[0]
+      .slice(0, 300);
+    await db
+      .update(sp)
+      .set({
+        captureFailStreak: sql`${sp.captureFailStreak} + 1`,
+        lastCaptureError: msg,
+        lastCaptureErrorAt: Date.now(),
+      })
+      .where(eq(sp.id, spreadsheetId));
+  } catch {
+    // health writes are best-effort
+  }
+}

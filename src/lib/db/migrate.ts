@@ -72,15 +72,37 @@ export function ensureMigrated(): void {
     }
 
     if (hasUsers && appliedHashes.size === 0) {
-      // legacy push-created DB (or self-heal of an empty migrations table):
-      // stamp every journal entry as applied
+      // Legacy push-created DB (or self-heal of an empty migrations table).
+      // CRITICAL: stamp only the entries ALREADY REFLECTED IN THE SCHEMA — a
+      // v0.2 DB has 0000's tables but NOT 0001's columns; stamping 0001 too
+      // would skip its ALTERs and every new-column read would crash ("no such
+      // column"). The marker: does the LAST column added by each migration
+      // exist? We check the newest table the migration introduces.
+      const columnExists = (table: string, col: string): boolean => {
+        try {
+          sqlite.prepare(`SELECT ${col} FROM ${table} LIMIT 1`).get();
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      // what each migration's presence looks like in the schema
+      const migrationMarkers: Record<string, { table: string; col: string }> = {
+        "0000_equal_darkstar": { table: "change_acks", col: "row_key" },
+        "0001_glorious_infant_terrible": { table: "spreadsheets", col: "capture_fail_streak" },
+      };
+      const alreadyApplied = journalEntries.filter((e) => {
+        const marker = migrationMarkers[e.tag];
+        if (!marker) return false; // unknown migration: never stamp, let it run
+        return columnExists(marker.table, marker.col);
+      });
       const ins = sqlite.prepare(
         'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
       );
-      for (const e of journalEntries) {
+      for (const e of alreadyApplied) {
         ins.run(e.hash, e.when);
       }
-      console.log(`[migrate] stamped ${journalEntries.length} baseline migration(s) on legacy DB`);
+      console.log(`[migrate] stamped ${alreadyApplied.length}/${journalEntries.length} migration(s) already reflected in the legacy schema — the rest will apply normally`);
     }
 
     migrate(drizzle(sqlite), { migrationsFolder: folder });
