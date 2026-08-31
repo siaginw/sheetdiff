@@ -167,7 +167,10 @@ async function captureSnapshotInner(
     tx.insert(snapshots).values(inserts).run();
     tx
       .update(spreadsheets)
-      .set({ lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
+      .set({
+          captureFailStreak: 0,
+          lastCaptureError: null,
+          lastCaptureErrorAt: null, lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
       .where(eq(spreadsheets.id, sheet.id))
       .run();
   });

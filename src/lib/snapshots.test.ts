@@ -30,6 +30,9 @@ const sheet = (s: Sched): Spreadsheet => ({
   scheduleDay: null,
   nextRunAt: null,
   lastSnapshotAt: null,
+  captureFailStreak: 0,
+  lastCaptureError: null,
+  lastCaptureErrorAt: null,
   createdAt: 0,
   ...s,
 });

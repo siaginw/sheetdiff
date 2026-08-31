@@ -147,7 +147,7 @@ floor of 2) plus verified SQLite backups to `data/backups/` (keep 14). If
 
 Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export` (worklist CSV), `/sheets/[id]/export/queue` (entry-queue CSV), `/sheets/[id]/export/billing` (billing packet CSV)
 (worklist CSV), `/sheets/[id]/export/billing` (billing packet CSV),
-`/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/api/health`.
+`/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/sheets/[id]/billing` (billing day dashboard), `/api/health`.
 
 `src/lib/access.ts`: owners control their sheets; `members` (matched by
 lowercased Google email) get viewer access to everything the owner shares —
@@ -173,7 +173,7 @@ role via `getSheetAccess`.
 | `src/instrumentation.ts` | Boot: fail-closed migrations, scheduler start |
 | `src/lib/db/{index,schema,migrate}.ts` | SQLite (WAL), schema, boot migrations |
 | `src/lib/diff/{engine,normalize,worddiff,widths}.ts` | Pure diff engine + normalization + layout math |
-| `src/lib/snapshots.ts` | Capture, gzip storage, schedule math, stats materialization |
+| `src/lib/snapshots.ts`, `snapshot-cache.ts` | Capture, gzip storage, schedule math, stats materialization, decode LRU |
 | `src/lib/pending.ts` | Baseline→pending resolver with quiet-day short-circuit |
 | `src/lib/sync.ts` | Ack resolution + introduction walk |
 | `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts` | Pure analytics |

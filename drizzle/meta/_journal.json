@@ -8,6 +8,13 @@
       "when": 1788105004984,
       "tag": "0000_equal_darkstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788205717362,
+      "tag": "0001_glorious_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

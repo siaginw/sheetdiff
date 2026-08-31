@@ -110,6 +110,21 @@ clean/empty states account for it; billing route decodes each tab's blob once
 (was 4x); Dependabot PRs triaged (TS 5.9 stays for this release — TS 7 breaks
 next build on 16.3); social-preview image composed; suite 282.
 
+Fleet 12.5 (roadmap #1+#2 + the dashboard): BILLING DAY DASHBOARD at
+/sheets/[id]/billing — the packet as a one-screen triage page (headline
+cards: placed-since / billable-now / open-hole ft / to-enter; sections
+ordered blockers-first: do-not-invoice → billable → missed runs → office
+backlog → late entries) with print and CSV from the same data. SNAPSHOT
+DECODE LRU — decoded grids cached by immutable snapshot id (64MB default,
+SHEETDIFF_SNAPSHOT_CACHE_MB=0 disables, dev builds deep-freeze to catch
+mutation), adopted in the pending resolver so all seven call sites inherit
+(measured 609ms→1ms warm on tracker scale). CAPTURE-HEALTH PAIR —
+capture_fail_streak / last_capture_error columns (migration 0001), success
+resets inside the capture transaction, failures recorded best-effort,
+/api/health gains failingCaptures, the sheet header shows an amber line with
+the error. Component tests live: jsdom + RTL + user-event installed, the
+note-dialog prefill/reset contract is the first .test.tsx. Suite 287.
+
 Pass 10 (deep dive): crews canonicalize (the real tracker's 36 hand-spellings
 of ~10 crews defragmented, most-typed spelling shown); over-placement guard
 (TOTALS Placed vs Designed per package — do-not-invoice rows; the real file

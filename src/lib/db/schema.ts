@@ -36,6 +36,12 @@ export const spreadsheets = sqliteTable("spreadsheets", {
   scheduleDay: integer("schedule_day"), // 0=Sun..6=Sat, for weekly
   nextRunAt: integer("next_run_at", { mode: "number" }),
   lastSnapshotAt: integer("last_snapshot_at", { mode: "number" }),
+  /** consecutive scheduled-capture failures (0 = healthy) — the fast
+   *  failure signal /api/health and the sheet header read */
+  captureFailStreak: integer("capture_fail_streak").notNull().default(0),
+  /** first line of the last capture error, ~300 chars */
+  lastCaptureError: text("last_capture_error"),
+  lastCaptureErrorAt: integer("last_capture_error_at", { mode: "number" }),
   createdAt: integer("created_at", { mode: "number" }).notNull(),
 });
 

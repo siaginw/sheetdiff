@@ -3,6 +3,7 @@ import { db } from "./db";
 import { snapshots, snapshotStats, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
 import { decodeSnapshot } from "./snapshots";
+import { peekSnapshot, rememberSnapshot } from "./snapshot-cache";
 import { getAckMap, isResolved, computeIntroductions, keySetsFor, type WalkSnapshot } from "./sync";
 
 /**
@@ -177,6 +178,16 @@ export async function getPendingChanges(
 
 async function fetchBlobs(ids: string[]): Promise<Map<string, SnapshotData>> {
   if (ids.length === 0) return new Map();
-  const rows: Snapshot[] = await db.select().from(snapshots).where(inArray(snapshots.id, ids));
-  return new Map(rows.map((r) => [r.id, decodeSnapshot(r.dataBlob)]));
+  const out = new Map<string, SnapshotData>();
+  const misses: string[] = [];
+  for (const id of ids) {
+    const hit = peekSnapshot(id);
+    if (hit) out.set(id, hit);
+    else misses.push(id);
+  }
+  if (misses.length > 0) {
+    const rows: Snapshot[] = await db.select().from(snapshots).where(inArray(snapshots.id, misses));
+    for (const r of rows) out.set(r.id, rememberSnapshot(r.id, r.dataBlob));
+  }
+  return out;
 }

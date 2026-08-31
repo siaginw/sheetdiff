@@ -23,9 +23,11 @@ export async function GET() {
     return NextResponse.json({ ok: false, db: false }, { status: 503 });
   }
   let staleCaptures = 0;
+  let failingCaptures = 0;
   try {
     const sheets = await db.select().from(spreadsheets);
     staleCaptures = sheets.filter((s) => captureIsStale(s)).length;
+    failingCaptures = sheets.filter((s) => (s.captureFailStreak ?? 0) > 0).length;
   } catch {
     // non-fatal: the probe's job is liveness
   }
@@ -36,5 +38,6 @@ export async function GET() {
     smtp: smtpConfigured(),
     demo: process.env.ENABLE_DEMO === "1",
     staleCaptures,
+    failingCaptures,
   });
 }

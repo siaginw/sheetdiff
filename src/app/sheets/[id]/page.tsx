@@ -397,6 +397,11 @@ export default async function SheetPage({
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
               {sheet.nextRunAt ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : ""}
+            {sheet.captureFailStreak > 0 ? (
+              <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>
+                · captures failing ({sheet.captureFailStreak}×)
+              </span>
+            ) : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
