@@ -10,6 +10,8 @@ import {
   officePipeline,
   weeklyProduction,
   aggregateWeekly,
+  invoiceStatus,
+  dedupeRollupRows,
 } from "./production";
 import type { WeekBucket } from "./production";
 import { computeGapReport } from "./gaps";
@@ -318,5 +320,59 @@ describe("aggregateWeekly (the report page's math)", () => {
 
   it("empty tabs aggregate to nothing", () => {
     expect(aggregateWeekly([])).toEqual({ weeks: [], placedFt: 0 });
+  });
+});
+
+describe("invoiceStatus (the office's own billing ledger)", () => {
+  const H = ["Activity", "Start STA", "End STA", "Date Complete", "Entered in InEight", "Invoice #", "Bore log in GIS"];
+  const NOW = new Date("2026-08-30T12:00:00").getTime();
+  const mk = (a: string, s: string, e: string, c: string, ent: string, inv: string, gis: string) =>
+    [a, s, e, c, ent, inv, gis];
+
+  it("billable-now: completed + in-GIS + never entered, aged by Date Complete", () => {
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2026-08-29", "", "", "Yes"), // 1d — billable
+      mk("Bore", "500", "14800", "2026-07-01", "", "", "Yes"), // 60d — oldest
+      mk("Plow", "14800", "15743", "2026-08-20", "", "", ""), // GIS not done — excluded
+      mk("Plow", "20000", "20500", "2026-08-25", "2026-08-26", "", "Yes"), // entered — excluded
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billableNow).toHaveLength(2);
+    expect(st.oldestAgeDays).toBeGreaterThanOrEqual(59);
+    expect(st.billableFt).toBe(500 + 14300);
+    expect(st.enteredColumn).toBe("Entered in InEight");
+    expect(st.invoiceColumn).toBe("Invoice #");
+  });
+
+  it("billed ledger + missed runs: numeric invoice numbers counted, past-month markers flagged", () => {
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2026-08-01", "3103", "", "Yes"),
+      mk("Bore", "500", "1000", "2026-08-02", "3103", "", "Yes"),
+      mk("Plow", "1000", "1500", "2026-07-20", "August", "", "Yes"), // queued for August
+      mk("Plow", "1500", "2000", "2026-06-15", "July", "", "Yes"), // July run already happened
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billedByInvoice.find((x) => x.invoice === "3103")?.rows).toBe(2);
+    expect(st.billedByInvoice.find((x) => x.invoice === "queued: August")?.rows).toBe(1);
+    expect(st.missedRun).toEqual([{ invoice: "July", rows: 1 }]);
+    expect(st.billableNow).toHaveLength(0);
+  });
+
+  it("no-ops without the entered column", () => {
+    const data = snap(["Activity", "Start STA", "End STA"], [["Plow", "0", "500"]]);
+    expect(invoiceStatus(data, NOW).enteredColumn).toBeNull();
+  });
+});
+
+describe("dedupeRollupRows (compilation tabs copy working tabs)", () => {
+  it("counts each identical row once across tabs; blank padding ignored", () => {
+    const row = ["Plow", "0", "500", "CREW A"];
+    const out = dedupeRollupRows([
+      { title: "PE-4", data: snap(["Activity", "Start STA", "End STA", "Crew"], [row, ["", "", "", ""]]) },
+      { title: "Line List", data: snap(["Activity", "Start STA", "End STA", "Crew"], [row, row, ["Bore", "500", "14800", "CREW B"]]) },
+    ]);
+    expect(out.rows).toHaveLength(2); // the plow once + the bore
+    expect(out.duplicatesDropped).toBe(2);
+    expect(out.rows[0]!.tab).toBe("PE-4"); // first tab wins
   });
 });

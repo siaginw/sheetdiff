@@ -1,0 +1,4 @@
+contact_links:
+  - name: Questions & how-to
+    url: https://github.com/siaginw/sheetdiff/discussions
+    about: Ask here before opening a bug

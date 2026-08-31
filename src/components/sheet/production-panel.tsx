@@ -1,5 +1,5 @@
 import { CalendarClock, ClipboardCheck, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
-import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline } from "@/lib/production";
+import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline, InvoiceStatus } from "@/lib/production";
 import { absoluteTime } from "@/lib/format";
 
 const ft = (n: number) => n.toLocaleString("en-US");
@@ -51,6 +51,8 @@ export function ProductionPanel({
   crewBoard,
   agedGaps,
   office,
+
+  invoices,
 }: {
   tabTitle: string;
   hygiene: DateHygieneFinding[];
@@ -60,6 +62,8 @@ export function ProductionPanel({
   crewBoard: CrewBoard | null;
   agedGaps: AgingGap[];
   office: OfficePipeline | null;
+
+  invoices: InvoiceStatus | null;
 }) {
   const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
@@ -98,6 +102,14 @@ export function ProductionPanel({
               {overplacements.length} over-placed (+
               {ft(overplacements.reduce((n, o) => n + o.overBy, 0))} ft)
             </span>
+          )}
+          {invoices && invoices.billableNow.length > 0 && (
+            <span className="text-diff-move-fg">
+              {invoices.billableNow.length} billable now (oldest {invoices.oldestAgeDays}d)
+            </span>
+          )}
+          {invoices && invoices.missedRun.length > 0 && (
+            <span className="text-diff-del-fg">{invoices.missedRun.reduce((n, m) => n + m.rows, 0)} missed invoice run</span>
           )}
           {office && office.stuck.length > 0 && (
             <span className="text-diff-del-fg">

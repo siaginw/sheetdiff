@@ -1,4 +1,4 @@
-import type { LateEntry, AgingGap, OverplacementFinding, OfficePipeline } from "./production";
+import type { LateEntry, AgingGap, OverplacementFinding, OfficePipeline, InvoiceStatus } from "./production";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
 export interface BillingUnresolvedRow {
@@ -41,6 +41,8 @@ export function buildBillingPacket(input: {
   overplacement?: OverplacementFinding[];
   /** per-tab office-entry backlog from the sheets' own "entered" columns */
   office?: { tab: string; pipeline: OfficePipeline }[];
+  /** per-tab invoice ledger rollup (billable-now aging, missed runs) */
+  invoices?: { tab: string; status: InvoiceStatus }[];
   snapshotLabel: string;
   now?: number;
 }): BillingPacket {
@@ -76,6 +78,24 @@ export function buildBillingPacket(input: {
           ? `DELETED row: ${r.values.slice(0, 4).filter(Boolean).join(" | ")}`
           : r.cells.map((c) => `${c.header}: ${c.from} -> ${c.to}`).join("; ");
     rows.push({ kind: "to-enter", detail: what, meta: `enter in office system${(r as { tab?: string }).tab ? ` (${(r as { tab?: string }).tab})` : ""}` });
+  }
+  for (const o of input.invoices ?? []) {
+    // the A/R backlog: completed, GIS-checked, never entered — aged by
+    // completion date; the oldest rows are the billing-day conversation
+    for (const row of o.status.billableNow.slice(0, 20)) {
+      rows.push({
+        kind: "to-enter",
+        detail: `Row ${row.row} (${row.activity}) completed ${row.completedOn} — BILLABLE ${row.daysSinceCompletion}d unentered (${row.ft.toLocaleString("en-US")} ft)`,
+        meta: `invoice when entered (${o.tab})`,
+      });
+    }
+    for (const m of o.status.missedRun) {
+      rows.push({
+        kind: "late",
+        detail: `${m.rows} row${m.rows === 1 ? "" : "s"} marked for the "${m.invoice}" invoice run — that run already happened`,
+        meta: `chase the office (${o.tab})`,
+      });
+    }
   }
   for (const o of input.office ?? []) {
     // the sheet's own record of completed-but-unentered work — stuck rows

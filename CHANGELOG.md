@@ -87,6 +87,17 @@ TabSettings is keyed per tab (cross-tab settings corruption); export stamps name
 the true latest snapshot; report aggregation extracted and pinned; CI runs
 Node 22+24; Dependabot configured; suite 262.
 
+Fleet-11.5 (the invoice plan ships): INVOICE-LEDGER rollup — reads the
+sheet's own "Entered in InEight" + "Invoice #" columns and classifies every
+completed shot: billable-now (in GIS, never entered — aged by completion date,
+with total ft, median and oldest age), billed-by-invoice-number, queued-for-a
+named-run, and missed-run (a month marker whose run already happened); shown
+in the production panel and as billing-packet rows. CROSS-TAB ROLLUP DEDUP —
+compilation tabs (Line List copies the working tabs) no longer double-count
+the weekly report: tabs whose rows are all duplicates of already-aggregated
+tabs are skipped. SECURITY.md, bug-issue template, Discussions pointer;
+suite 266.
+
 Pass 10 (deep dive): crews canonicalize (the real tracker's 36 hand-spellings
 of ~10 crews defragmented, most-typed spelling shown); over-placement guard
 (TOTALS Placed vs Designed per package — do-not-invoice rows; the real file

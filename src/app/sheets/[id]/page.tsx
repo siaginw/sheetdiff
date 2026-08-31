@@ -44,6 +44,7 @@ import {
   reconcileTotals,
   detectOverplacement,
   officePipeline,
+  invoiceStatus,
   computeCrewBoard,
   agingGaps,
 } from "@/lib/production";
@@ -315,8 +316,11 @@ export default async function SheetPage({
   let totalsMismatches: ReturnType<typeof reconcileTotals> = [];
   let overplacements: ReturnType<typeof detectOverplacement> = [];
   let office: ReturnType<typeof officePipeline> | null = null;
+  let invoices: ReturnType<typeof invoiceStatus> | null = null;
   if (latestData) {
     office = officePipeline(latestData);
+    invoices = invoiceStatus(latestData);
+    invoices = invoiceStatus(latestData);
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
     if (recent.length > 1) {
@@ -612,6 +616,7 @@ export default async function SheetPage({
             {timeline.length > 0 && latestData ? (
               <ProductionPanel
                 office={office}
+                invoices={invoices}
                 tabTitle={activeTab.title}
                 hygiene={hygiene}
                 lateEntries={lateEntries}

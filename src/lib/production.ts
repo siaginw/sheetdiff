@@ -544,3 +544,141 @@ export function aggregateWeekly(tabs: { weeks: WeekBucket[]; placedFt: number }[
   }
   return { weeks: [...byWeek.values()].sort((a, b) => a.weekStart - b.weekStart), placedFt };
 }
+
+/* ------------------------------------------------------------------ */
+/* invoice ledger — what's billable, what's billed, what's stuck       */
+/* ------------------------------------------------------------------ */
+
+const INVOICE_NUM_RE = /invoice\s*#|invoice\s*no|inv\s*#/i;
+const MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$/i;
+const GIS_COL_RE = /bore\s*log.*gis|in\s*gis/i;
+
+export interface InvoiceRow {
+  row: number;
+  activity: string;
+  completedOn: string;
+  daysSinceCompletion: number;
+  ft: number;
+}
+
+export interface InvoiceStatus {
+  /** column headers the rollup keyed on — null pair means the tab doesn't
+   *  track an office ledger and the whole feature no-ops silently */
+  enteredColumn: string | null;
+  invoiceColumn: string | null;
+  /** completed, in GIS, never entered downstream — the A/R backlog */
+  billableNow: InvoiceRow[];
+  billableFt: number;
+  medianAgeDays: number | null;
+  oldestAgeDays: number | null;
+  /** invoice numbers seen with row counts (the billed ledger) */
+  billedByInvoice: { invoice: string; rows: number }[];
+  /** month-named markers for a run that has already happened */
+  missedRun: { invoice: string; rows: number }[];
+}
+
+/** Read the office's own billing ledger: "Entered in InEight" (dates once
+ *  keyed, invoice numbers, or month names for a queued run) plus "Invoice #".
+ *  The A/R backlog — completed, GIS-checked, never entered — ages by Date
+ *  Complete because that's the clock the office actually owes on. */
+export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStatus {
+  const out: InvoiceStatus = {
+    enteredColumn: null,
+    invoiceColumn: null,
+    billableNow: [],
+    billableFt: 0,
+    medianAgeDays: null,
+    oldestAgeDays: null,
+    billedByInvoice: [],
+    missedRun: [],
+  };
+  let enteredCol: number | null = null;
+  for (let i = 0; i < data.headers.length; i++) {
+    if (OFFICE_ENTERED_RE.test(norm(data.headers[i]))) { enteredCol = i; out.enteredColumn = norm(data.headers[i]); break; }
+  }
+  for (let i = 0; i < data.headers.length; i++) {
+    if (INVOICE_NUM_RE.test(norm(data.headers[i]))) { out.invoiceColumn = norm(data.headers[i]); break; }
+  }
+  if (enteredCol === null) return out;
+  const dateCol = detectDateColumn(data);
+  if (dateCol === null) return out;
+  const activityCol = detectActivityColumn(data);
+  const stations = detectStationColumns(data);
+  let gisCol: number | null = null;
+  for (let i = 0; i < data.headers.length; i++) {
+    if (GIS_COL_RE.test(norm(data.headers[i]))) { gisCol = i; break; }
+  }
+  const nowMonth = new Date(now).getMonth();
+
+  const invCounts = new Map<string, number>();
+  const missed = new Map<string, number>();
+  data.rows.forEach((r, i) => {
+    const entered = norm(r[enteredCol!]);
+    const invoice = out.invoiceColumn !== null ? norm(r[data.headers.indexOf(out.invoiceColumn)]) : "";
+    if (!isFootageChainRow(r, activityCol) || isGapRow(r, activityCol)) return;
+    const d = parseCompletedDate(r[dateCol]);
+    if (d === null) return;
+    const days = Math.floor((now - d.getTime()) / 86_400_000);
+    if (entered !== "") {
+      // keyed downstream: a date, an invoice number, or a month-name run
+      if (MONTH_RE.test(entered) || MONTH_RE.test(invoice)) {
+        const marker = MONTH_RE.test(entered) ? entered : invoice;
+        const m = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.exec(marker);
+        if (m) {
+          const monthIdx = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(m[1]!.toLowerCase());
+          if (monthIdx < nowMonth) missed.set(marker, (missed.get(marker) ?? 0) + 1);
+          else invCounts.set(`queued: ${marker}`, (invCounts.get(`queued: ${marker}`) ?? 0) + 1);
+        }
+      } else if (/^\d{3,6}$/.test(entered) || /^\d{3,6}$/.test(invoice)) {
+        const inv = /^\d{3,6}$/.test(entered) ? entered : invoice;
+        invCounts.set(inv, (invCounts.get(inv) ?? 0) + 1);
+      }
+      return;
+    }
+    // not entered: billable NOW when the sub's log is in GIS (or no GIS
+    // column exists at all — absence of the check can't block billing)
+    const gisOk = gisCol === null || norm(r[gisCol]) !== "";
+    if (!gisOk) return;
+    const ft = stations ? Math.max(parseStation(r[stations.end])! - parseStation(r[stations.start])!, 0) : 0;
+    out.billableNow.push({
+      row: i + 1,
+      activity: activityCol !== null ? norm(r[activityCol]) : "",
+      completedOn: norm(r[dateCol]),
+      daysSinceCompletion: days,
+      ft,
+    });
+  });
+  out.billableNow.sort((a, b) => b.daysSinceCompletion - a.daysSinceCompletion);
+  out.billableFt = out.billableNow.reduce((n, x) => n + x.ft, 0);
+  if (out.billableNow.length > 0) {
+    const ages = out.billableNow.map((x) => x.daysSinceCompletion);
+    out.medianAgeDays = ages[Math.floor(ages.length / 2)] ?? null;
+    out.oldestAgeDays = ages[0] ?? null;
+  }
+  out.billedByInvoice = [...invCounts.entries()].map(([invoice, rows]) => ({ invoice, rows })).sort((a, b) => b.rows - a.rows);
+  out.missedRun = [...missed.entries()].map(([invoice, rows]) => ({ invoice, rows }));
+  return out;
+}
+
+/** Cross-tab rollup dedup: compilation tabs (Line List) copy the working
+ *  tabs' rows by design — sheet-wide sums must count each shot once. Keys on
+ *  the composite identity (Activity + stations + row content), first tab
+ *  wins. Returns the deduped rows plus how many copies were dropped. */
+export function dedupeRollupRows(tabs: { title: string; data: SnapshotData }[]): {
+  rows: { tab: string; row: string[] }[];
+  duplicatesDropped: number;
+} {
+  const seen = new Set<string>();
+  const rows: { tab: string; row: string[] }[] = [];
+  let dropped = 0;
+  for (const t of tabs) {
+    for (const r of t.data.rows) {
+      const k = r.map(norm).join("\u0000");
+      if (k === "" || /^\u0000+$/.test(k)) continue; // blank padding
+      if (seen.has(k)) { dropped++; continue; }
+      seen.add(k);
+      rows.push({ tab: t.title, row: r });
+    }
+  }
+  return { rows, duplicatesDropped: dropped };
+}
