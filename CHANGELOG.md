@@ -69,8 +69,23 @@ list covers every public .env.example value (whitespace-trimmed). The migrate
 CLI applies positionally like the boot path (a hash-divergent journal is a
 warn + no-op, not a crash). engine-strict enforces the Node floor at install;
 CI pins TZ for the local-calendar stamp test; check messages pin en-US
-grouping; notes can be deleted; backwards-row findings collapse; collapsed
-cross-tab findings only reference their own tab's rows; suite 233.
+grouping; notes can be deleted (and the Delete button actually deletes — it previously
+re-saved unless the textarea was emptied first); backwards-row findings
+collapse; collapsed cross-tab findings only reference their own tab's rows;
+suite grew to 244.
+
+Pass 10 (deep dive): crews canonicalize (the real tracker's 36 hand-spellings
+of ~10 crews defragmented, most-typed spelling shown); over-placement guard
+(TOTALS Placed vs Designed per package — do-not-invoice rows; the real file
+has five packages over-placed, one by 953 ft); bulk "mark all entered"; grid
+diff mode gains the per-row ack/note actions; multi-member identical-content
+families date individually by rank (an ack can no longer swallow the second
+of two rows that converged one window apart); keySets bail on ANY header
+drift (duplicate-header inserts read the wrong column); digest-save toast and
+dialog state resets; shared DB-test harness; note-delete and
+backwards-collapse pinned; README OAuth guidance fixed — publish to
+production-unverified, because Testing-mode refresh tokens EXPIRE AFTER 7
+DAYS and an always-on snapshotter silently dies a week in.
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,

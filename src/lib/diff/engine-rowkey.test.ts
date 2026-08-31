@@ -19,6 +19,12 @@
  * behavioral tests below can, and survive any refactor of the expression.
  */
 import { describe, it, expect } from "vitest";
+// sync.ts transitively imports ./db — point it at a temp file BEFORE import
+// or parallel workers race on the developer's REAL data/sheetdiff.db
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+process.env.DATABASE_PATH ??= path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "rowkeytest" + "-")), "unused.db");
 import { diffSnapshots, rowContentKey, type SnapshotData } from "./engine";
 import { isResolved } from "../sync";
 

@@ -15,7 +15,6 @@
 
 import { norm, normalizeKey, compositeKey } from "./diff/normalize";
 import type { SnapshotData } from "./diff/engine";
-import { detectCompositeKey } from "./diff/engine";
 import { computeGapReport } from "./gaps";
 import {
   parseStation,

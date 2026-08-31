@@ -1,5 +1,5 @@
-import { CalendarClock, HardHat, Scale, TriangleAlert, Users } from "lucide-react";
-import type { DateHygieneFinding, LateEntry, TotalsMismatch, CrewBoard, AgingGap } from "@/lib/production";
+import { CalendarClock, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
+import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap } from "@/lib/production";
 import { absoluteTime } from "@/lib/format";
 
 const ft = (n: number) => n.toLocaleString();
@@ -44,6 +44,7 @@ export function ProductionPanel({
   hygiene,
   lateEntries,
   totalsMismatches,
+  overplacements,
   crewBoard,
   agedGaps,
 }: {
@@ -51,10 +52,11 @@ export function ProductionPanel({
   hygiene: DateHygieneFinding[];
   lateEntries: LateEntry[];
   totalsMismatches: TotalsMismatch[];
+  overplacements: OverplacementFinding[];
   crewBoard: CrewBoard | null;
   agedGaps: AgingGap[];
 }) {
-  const problems = hygiene.length + lateEntries.length + totalsMismatches.length;
+  const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
 
   return (
@@ -85,6 +87,12 @@ export function ProductionPanel({
           {totalsMismatches.length > 0 && (
             <span className="text-diff-del-fg">{totalsMismatches.length} TOTALS mismatch{totalsMismatches.length === 1 ? "" : "es"}</span>
           )}
+          {overplacements.length > 0 && (
+            <span className="text-diff-del-fg">
+              {overplacements.length} over-placed (+
+              {ft(overplacements.reduce((n, o) => n + o.overBy, 0))} ft)
+            </span>
+          )}
           {problems === 0 && oldHoles.length === 0 && <span className="text-diff-add-fg">clean</span>}
         </span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground group-open:hidden">expand</span>
@@ -96,6 +104,11 @@ export function ProductionPanel({
           {crewBoard.crews.slice(0, 6).map((c) => (
             <Line key={c.crew}>
               {c.crew}: {ft(c.ft)} ft · {c.shots} shot{c.shots === 1 ? "" : "s"} · {c.days} day{c.days === 1 ? "" : "s"}
+              {c.spellings && c.spellings > 1 ? (
+                <span className="text-muted-foreground" title="Hand-spellings collapsed into this crew — the name shown is the one typed most">
+                  {" "}· {c.spellings} spellings merged
+                </span>
+              ) : null}
             </Line>
           ))}
           {crewBoard.uncategorizedFt > 0 && (
@@ -134,6 +147,18 @@ export function ProductionPanel({
               {ft(Math.abs(m.delta))}) — stale formula range?
             </Line>
           ))}
+        </Section>
+      ) : null}
+
+      {overplacements.length > 0 ? (
+        <Section icon={<Ruler className="size-3.5" />} title="Placed more than designed">
+          {overplacements.slice(0, 5).map((o, i) => (
+            <Line key={i} tone="danger">
+              {o.tabTitle}: placed {ft(o.placed)} ft of {ft(o.designed)} ft designed — {ft(o.overBy)} ft nobody
+              designed (double-counted rows?)
+            </Line>
+          ))}
+          {overplacements.length > 5 && <Line tone="muted">+{overplacements.length - 5} more…</Line>}
         </Section>
       ) : null}
 

@@ -65,6 +65,9 @@ export function computeIntroductions(
     done: boolean;
     hash: string;
     key: string | null;
+    // row position (newIndex for present rows, oldIndex for removed) — the
+    // ordering heuristic for ranking members of a shared-content family
+    rank: number | null;
     // added/changed: keep walking while the NEW content is present;
     // removed: keep walking while the ROW is still gone
     mode: "present" | "absent";
@@ -79,6 +82,7 @@ export function computeIntroductions(
         done: false,
         hash: rowContentKey(oldRowValues(row)),
         key: row.key,
+        rank: row.oldIndex,
         mode: "absent",
       });
     } else {
@@ -87,8 +91,31 @@ export function computeIntroductions(
         done: false,
         hash: rowContentKey(row.values),
         key: null,
+        rank: row.newIndex,
         mode: "present",
       });
+    }
+  }
+
+  // Multi-member families: when several pendings share one content hash, the
+  // k-th member (by row order) dates at the count reaching oldest + k — each
+  // member formed at its OWN moment. Without the ranking, two rows converging
+  // to identical content one window apart both date at the FIRST convergence
+  // and an ack in the gap swallows the second (fleet-10). Row order is a
+  // heuristic for formation order (insertions above can swap it); a swap
+  // mis-assigns WHICH member an ack covers, never the total.
+  const rankInFamily = new Map<string, number>();
+  for (const mode of ["present", "absent"] as const) {
+    const fam = [...pending.entries()].filter(([, p]) => p.mode === mode && p.key === null);
+    const byHash = new Map<string, { rowKey: string; rank: number | null }[]>();
+    for (const [rowKey, p] of fam) {
+      const list = byHash.get(p.hash) ?? [];
+      list.push({ rowKey, rank: p.rank });
+      byHash.set(p.hash, list);
+    }
+    for (const list of byHash.values()) {
+      list.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+      list.forEach((m, i) => rankInFamily.set(m.rowKey, i));
     }
   }
 
@@ -105,11 +132,11 @@ export function computeIntroductions(
   const snapshotCounts = walk.map(countsOf);
   // family size at the walk's oldest edge (the bounding snapshot when the
   // caller followed the contract): removals are dated when the count DROPPED
-  // below it, and additions/changes when the count first EXCEEDED it — a
-  // blank-key addition whose content matches existing family members would
-  // otherwise be "present" all the way back to the anchor and a stale ack
-  // could swallow it (fleet-9: the family shrank and regrew, the regrowth
-  // went undated, the resolver went quiet on real unentered work).
+  // below their slot, and additions/changes when the count first EXCEEDED
+  // theirs — a blank-key addition whose content matches existing family
+  // members would otherwise be "present" all the way back to the anchor and a
+  // stale ack could swallow it (fleet-9: the family shrank and regrew, the
+  // regrowth went undated, the resolver went quiet on real unentered work).
   const oldest = snapshotCounts[snapshotCounts.length - 1]!;
 
   for (let i = 0; i < walk.length; i++) {
@@ -117,14 +144,15 @@ export function computeIntroductions(
     const snap = walk[i]!;
     const cnt = snapshotCounts[i]!;
     const keys = opts.keySets?.[i];
-    for (const p of pending.values()) {
+    for (const [rowKey, p] of pending) {
       if (p.done) continue;
+      const k = rankInFamily.get(rowKey) ?? 0;
       const isPresent =
         p.mode === "present"
-          ? (cnt.get(p.hash) ?? 0) > (oldest.get(p.hash) ?? 0)
+          ? (cnt.get(p.hash) ?? 0) > (oldest.get(p.hash) ?? 0) + k
           : p.key !== null && keys
             ? keys.has(p.key)
-            : (cnt.get(p.hash) ?? 0) >= Math.max(oldest.get(p.hash) ?? 0, 1);
+            : (cnt.get(p.hash) ?? 0) >= Math.max((oldest.get(p.hash) ?? 0) - k, 1);
       if ((p.mode === "present") === isPresent) {
         p.introduced = snap.createdAt;
       } else {
@@ -174,11 +202,14 @@ export function keySetsFor(
 ): Set<string>[] | undefined {
   const cols = diff.identityColumns;
   if (!cols || walk.length === 0) return undefined;
-  const latestHeaders = walk[0]!.data.headers;
+  // Compare the ENTIRE header row (normalized), not just the identity indices:
+  // a duplicate-header insert at an identity index leaves the header TEXT at
+  // that index unchanged while shifting the real column right — index-based
+  // comparison misses it and keys would be read from the junk column.
+  const headersOf = (w: WalkSnapshot) => norm(w.data.headers.join("\u0000"));
+  const latestHeaders = headersOf(walk[0]!);
   for (const w of walk) {
-    for (const c of cols) {
-      if (norm(w.data.headers[c]) !== norm(latestHeaders[c])) return undefined;
-    }
+    if (headersOf(w) !== latestHeaders) return undefined;
   }
   return walk.map((w) =>
     new Set(

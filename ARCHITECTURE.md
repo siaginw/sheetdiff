@@ -107,7 +107,7 @@ CSV worklist export, and the digest, so the three can never disagree.
   create holes, and a hole means "unknown", never "no changes": it falls
   through to the full diff.
 - Acks resolve against the snapshot that *introduced* a change (bounded
-  newest-first walk, ≤30 snapshots), so an ack survives unrelated later
+  newest-first walk, ≤120 snapshots), so an ack survives unrelated later
   snapshots and re-flags the moment the row changes again.
 
 ## Derived analytics (all pure logic over snapshots)
@@ -117,15 +117,18 @@ CSV worklist export, and the digest, so the three can never disagree.
 - **Gap report** (`gaps.ts`) — reconstructs the bore/plow/trench/gap chain and
   reconciles `placed + known gaps − overlaps = designed span`.
 - **Production** (`production.ts`) — date hygiene (rollover is never silent),
-  backdated late-entry detection, TOTALS-tab reconciliation, per-crew/day
-  board, aging ledger of unaccounted holes.
+  backdated late-entry detection, TOTALS-tab reconciliation plus an
+  over-placement guard (TOTALS rows where Placed exceeds Designed), per-crew/day
+  board (hand-spellings of one crew collapse to an alphanumeric key, displayed
+  as the most-typed spelling), aging ledger of unaccounted holes.
 - **Trace** (`trace.ts`) — one row's history across snapshots by station
   number, free text, or key.
 - **GIS import** (`import.ts`) — CSV/XLSX diffed against the latest snapshot;
-  zip central-directory sizes are summed *before* decompression (bomb guard;
-  data-descriptor entries from streamed exports are skipped).
-- **Billing packet** (`billing.ts` + route) — placed footage since collection,
-  open holes flagged *do not invoice*, the to-enter worklist, late entries —
+  the zip guard is three-layered: declared-size sum, per-entry trial-inflation
+  of EVERY central-directory entry (descriptors included) against a shared
+  budget, and EOCD entry-count-lie rejection).
+  open holes flagged *do not invoice*, over-placed packages (Placed beyond
+  Designed) flagged the same way, the to-enter worklist, late entries —
   one CSV stamped with snapshot provenance, formula-injection-guarded, aggregated
   across every tracked tab.
 

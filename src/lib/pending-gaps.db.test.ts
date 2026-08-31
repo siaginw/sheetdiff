@@ -59,23 +59,10 @@ vi.mock("./snapshots", async (importOriginal) => {
   return { ...actual, captureSnapshot: vi.fn() };
 });
 
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "pending-gaps-db-test-secret-0123456789";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-pending-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+setupMigratedTempDb("pending");
 
 const { and, eq, inArray } = await import("drizzle-orm");
 const { db } = await import("./db");
@@ -203,10 +190,6 @@ beforeAll(async () => {
   //       tp3's is older than S3's introduction (3000) -> does NOT resolve
   await db.insert(changeAcks).values({ id: crypto.randomUUID(), tabId: "tp2", rowKey: "s2", ackedAt: 2500 });
   await db.insert(changeAcks).values({ id: crypto.randomUUID(), tabId: "tp3", rowKey: "s3", ackedAt: 2500 });
-});
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* WAL held open on Windows */ }
 });
 
 describe("temp-db harness", () => {

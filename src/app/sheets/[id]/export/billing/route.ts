@@ -7,7 +7,7 @@ import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { computeGapReport } from "@/lib/gaps";
-import { agingGaps, detectLateEntries, type LateEntry, type AgingGap } from "@/lib/production";
+import { agingGaps, detectLateEntries, detectOverplacement, type LateEntry, type AgingGap, type OverplacementFinding } from "@/lib/production";
 import { buildBillingPacket, billingPacketCsv } from "@/lib/billing";
 import { absoluteTime } from "@/lib/format";
 
@@ -27,13 +27,23 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!access) return NextResponse.json({ error: "not found" }, { status: 404 });
   const sheet = access.sheet;
 
-  const trackedTabs = (await db.select().from(tabs).where(eq(tabs.spreadsheetId, id))).filter((t) => t.tracked);
+  const allSheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, id));
+  const trackedTabs = allSheetTabs.filter((t) => t.tracked);
   if (trackedTabs.length === 0) {
     return NextResponse.json({ error: "no tracked tabs" }, { status: 400 });
   }
 
   // ONE query for latest non-import snapshots of ALL tracked tabs
   const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
+
+  // over-placement guard: TOTALS rows claiming more placed than designed are
+  // do-not-invoice bait — same totals-like tab the sheet page reconciles against
+  let overplacement: OverplacementFinding[] = [];
+  const totalsTab = allSheetTabs.find((t) => /totals?|summary/i.test(t.title));
+  if (totalsTab) {
+    const totalsSnap = (await latestNonImportSnapshots([totalsTab.id])).get(totalsTab.id);
+    if (totalsSnap) overplacement = detectOverplacement(decodeSnapshot(totalsSnap.dataBlob));
+  }
 
   // aggregate across EVERY tracked tab
   const unresolvedRows: { tab: string; status: string; key: string | null; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
@@ -100,6 +110,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     holes: allAgedGaps,
     unresolved: unresolvedRows,
     lateEntries: allLateEntries,
+    overplacement,
     snapshotLabel: latestLabel,
   });
 

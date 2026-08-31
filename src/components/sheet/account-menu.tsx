@@ -30,7 +30,6 @@ export function AccountMenu({
   digestEmail,
   digestTime,
   digestDay,
-  smtpReady,
   members,
 }: {
   name: string | null;
@@ -39,7 +38,6 @@ export function AccountMenu({
   digestEmail: string | null;
   digestTime: string;
   digestDay: number | null;
-  smtpReady: boolean;
   members: { id: string; email: string }[];
 }) {
   const [digestOpen, setDigestOpen] = useState(false);
@@ -92,7 +90,6 @@ export function AccountMenu({
         digestEmail={digestEmail}
         digestTime={digestTime}
         digestDay={digestDay}
-        smtpReady={smtpReady}
       />
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} members={members} />
     </>

@@ -4,23 +4,10 @@
  * production-izing would otherwise expose a LAN-reachable login).
  * Standard temp-DATABASE_PATH harness; schema via the repo's own migrator.
  */
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "demo-route-test-secret-0123456789";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-demo-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+setupMigratedTempDb("demo");
 
 const { db } = await import("@/lib/db");
 const { users } = await import("@/lib/db/schema");
@@ -31,10 +18,6 @@ const seedDemoUser = () =>
     id: "demo-1", googleSub: "smoke-fake-sub", email: "smoke@test.local", name: "Smoke",
     tokensEnc: "x", createdAt: 1,
   });
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL */ }
-});
 
 beforeEach(async () => {
   process.env.ENABLE_DEMO = "1";

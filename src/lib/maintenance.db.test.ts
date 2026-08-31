@@ -1,6 +1,6 @@
 /**
  * Maintenance + digest-due DB tests against a temp SQLite database.
- * Same harness contract as actions.db.test.ts.
+ * Same harness contract as actions.db.test.ts (src/test/db-harness.ts).
  */
 import { vi } from "vitest";
 
@@ -8,24 +8,13 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: () => ({ sendMail: async () => {} }) },
 }));
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "maintenance-test-secret-0123456789";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-maint-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+const { tmpDir } = setupMigratedTempDb("maint");
 
 const { eq } = await import("drizzle-orm");
 const { db } = await import("./db");
@@ -52,10 +41,6 @@ beforeAll(async () => {
     rows.push({ id: `snap-${i}`, tabId: "t2", runId: `r${i}`, trigger: "manual", isBaseline: false, rowCount: 0, colCount: 0, dataBlob: snapBlob([["h"]]), createdAt: i });
   }
   await db.insert(snapshots).values(rows);
-});
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL */ }
 });
 
 const idsFor = async (tabId: string) =>

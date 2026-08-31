@@ -116,8 +116,15 @@ SheetDiff needs its own OAuth client so it can read sheets with *your* account.
 3. **APIs & Services → OAuth consent screen**:
    - User type: **External**, create.
    - App name: anything (e.g. "SheetDiff"), add your email where asked.
-   - You can skip scopes/branding; add yourself as a **test user** on the last step.
-   - "Testing" mode is fine for a team — up to 100 test users, free.
+   - You can skip scopes/branding.
+   - **Publish the app to production (leave it unverified).** Do NOT leave the
+     consent screen in "Testing": refresh tokens from Testing apps **expire
+     after 7 days**, and an always-on snapshotter silently stops working a week
+     in. A sensitive-but-not-restricted scope like `spreadsheets.readonly` runs
+     fine unverified — your users click through the "app not verified" warning
+     once. (Google Workspace *internal* user type skips the warning entirely if
+     all your users share your Workspace.) Each SheetDiff install uses its own
+     project, so the 100-user cap never binds.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - Application type: **Web application**
    - Authorized redirect URIs: add exactly `http://localhost:3000/auth/callback`
@@ -203,7 +210,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (233 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (244 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

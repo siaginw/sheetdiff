@@ -86,6 +86,25 @@ describe("buildBillingPacket", () => {
     expect(fields(holeLine)[3]!).toBe("do not invoice — unbooked footage (Bore Log,=2+5)");
     expect(fields(enterLine)[1]!).toBe("NEW row: plain,=SUM(1+1)");
   });
+
+  it("flags over-placed packages as do-not-invoice rows in the packet and CSV", () => {
+    const p = buildBillingPacket({
+      sinceFt: 100,
+      holes: [],
+      unresolved: [],
+      lateEntries: [],
+      overplacement: [{ tabTitle: "US2-PE-002", designed: 52041, placed: 52994, overBy: 953 }],
+      snapshotLabel: "Aug 29 4:00 PM",
+      now: 1,
+    });
+    const over = p.rows.find((r) => r.kind === "over")!;
+    expect(over.detail).toContain("US2-PE-002");
+    expect(over.ft).toBe(953); // the excess is the number the office needs
+    expect(over.meta).toMatch(/do not invoice/i);
+    const csv = billingPacketCsv(p);
+    // detail carries a thousands-separator comma, so it ships as ONE quoted field
+    expect(csv).toContain('over,"US2-PE-002: placed 52,994 ft vs 52,041 ft designed",953,');
+  });
 });
 
 describe("quietTabs", () => {

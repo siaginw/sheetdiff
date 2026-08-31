@@ -31,8 +31,15 @@ export function ShareDialog({
   const [emails, setEmails] = useState("");
   const [rejected, setRejected] = useState<string[]>([]);
 
+  // state must not survive close/reopen (fleet-10: a stale "Couldn't add…"
+  // banner greeted the next open)
+  const handleOpenChange = (next: boolean) => {
+    if (next) setRejected([]);
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Share access</DialogTitle>

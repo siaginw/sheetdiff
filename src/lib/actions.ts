@@ -11,6 +11,7 @@ import { getSessionUserId, SESSION_COOKIE } from "./session";
 import { parseSpreadsheetId, fetchSpreadsheetMeta } from "./google";
 import { captureSnapshot, computeNextRun, toSnapshotData, encodeSnapshot } from "./snapshots";
 import { setAck } from "./sync";
+import { getPendingChanges } from "./pending";
 import { parseImportFile } from "./import";
 import { getSheetAccess } from "./access";
 import { notes as notesTable, users, members } from "./db/schema";
@@ -292,7 +293,8 @@ export async function addNote(fd: FormData): Promise<void> {
   const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const body = str(fd, "body").trim();
-  if (!body && str(fd, "delete") !== "1") return;
+  const del = str(fd, "delete") === "1";
+  if (!body && !del) return;
   await requireSharedSpreadsheet(spreadsheetId, user);
   const tabId = str(fd, "tabId") || null;
   const runId = str(fd, "runId") || null;
@@ -314,9 +316,11 @@ export async function addNote(fd: FormData): Promise<void> {
     .filter((n) => n.authorUserId === user.id)
     .sort((a, b) => b.createdAt - a.createdAt)[0];
   if (existing) {
-    // an explicit delete (or an emptied body while editing) removes the note —
-    // notes were otherwise permanent unless overwritten
-    if (!body) {
+    // an explicit delete always wins — the dialog's Delete button submits with
+    // the note text still in the textarea, and an "empty body deletes" rule
+    // alone turned that click into a silent re-save. An emptied body while
+    // editing still removes the note (notes were otherwise permanent).
+    if (del || !body) {
       await db.delete(notesTable).where(eq(notesTable.id, existing.id));
     } else {
       await db
@@ -324,7 +328,8 @@ export async function addNote(fd: FormData): Promise<void> {
         .set({ body: body.slice(0, 2000), createdAt: Date.now() })
         .where(eq(notesTable.id, existing.id));
     }
-  } else {
+  } else if (!del) {
+    // a delete with nothing to delete is a no-op — never an empty-body insert
     await db.insert(notesTable).values({
       id: crypto.randomUUID(),
       spreadsheetId,
@@ -356,6 +361,27 @@ export async function toggleAck(fd: FormData): Promise<void> {
   revalidatePath("/");
 }
 
+/**
+ * Ack every still-unresolved change on one tab in one shot — "entered the
+ * whole batch downstream". The pending set is recomputed SERVER-side: the
+ * rowKeys never round-trip through the client, so a tampered form cannot ack
+ * rows the shared pending resolver (badge/CSV/digest) doesn't consider open.
+ */
+export async function ackAllUnentered(fd: FormData): Promise<void> {
+  const user = await requireUser();
+  const spreadsheetId = str(fd, "spreadsheetId");
+  const tabId = str(fd, "tabId");
+  const { tab } = await requireSharedTab(tabId, user);
+  const pending = await getPendingChanges(tab);
+  if (pending) {
+    for (const row of pending.unresolved) {
+      await setAck(tabId, row.rowKey, true);
+    }
+  }
+  revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/");
+}
+
 /* ------------------------------------------------------------------ */
 /* digest settings                                                     */
 /* ------------------------------------------------------------------ */
@@ -366,7 +392,9 @@ export async function saveDigestSettings(fd: FormData): Promise<void> {
   // same shape rule as addMembers — a hostile string here becomes a nodemailer
   // recipient, and while header injection is blocked there, address-group
   // reinterpretation is not
-  const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : "";
+  // strict shape: nodemailer reinterprets anything angle-bracket-ish as an
+  // address group, delivering somewhere other than what was typed
+  const email = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(raw) ? raw : "";
   // strict shapes: "99:99" would roll over inside usersDueForDigest, and a
   // non-numeric day would NaN-clamp to null (daily) — silently changing the
   // cadence the user asked for

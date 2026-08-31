@@ -1,6 +1,6 @@
 import { rowContentKey, type SnapshotData } from "./diff/engine";
 import { compositeKey } from "./diff/normalize";
-import { norm, normalizeKey } from "./diff/normalize";
+import { norm } from "./diff/normalize";
 import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
 
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
@@ -223,6 +223,45 @@ export function reconcileTotals(
   return out;
 }
 
+export interface OverplacementFinding {
+  tabTitle: string;
+  designed: number;
+  placed: number;
+  overBy: number;
+}
+
+/**
+ * Over-placement guard: TOTALS rows where Placed exceeds Designed. Footage
+ * nobody designed is invoice bait (double-counted rows, stale formulas) — the
+ * real tracker carries packages hundreds of feet "over". Both numbers come
+ * from the TOTALS tab's own Designed/Placed columns, header-guided like
+ * reconcileTotals; with no Designed column there is nothing to judge and the
+ * guard stays silent rather than guessing.
+ */
+export function detectOverplacement(totalsData: SnapshotData, toleranceFt = 1): OverplacementFinding[] {
+  const designedCol = totalsData.headers.findIndex((h) => /designed/i.test(norm(h)));
+  if (designedCol === -1) return [];
+  // same placed-column rule as reconcileTotals, minus the Designed column
+  // itself ("Total Conduit Designed" also contains "Total Conduit")
+  const placedCol = totalsData.headers.findIndex(
+    (h, i) => i !== designedCol && /total.*(placed|conduit)|placed/i.test(norm(h)),
+  );
+  if (placedCol === -1) return [];
+  const out: OverplacementFinding[] = [];
+  for (const row of totalsData.rows) {
+    const designedRaw = norm(row[designedCol]);
+    const placedRaw = norm(row[placedCol]);
+    if (designedRaw === "" || placedRaw === "") continue; // not designed / not started — nothing to judge
+    const designed = Number(designedRaw.replace(/,/g, ""));
+    const placed = Number(placedRaw.replace(/,/g, ""));
+    if (!Number.isFinite(designed) || !Number.isFinite(placed)) continue;
+    if (placed <= designed + toleranceFt) continue;
+    const nameCell = row.find((v, i) => i !== designedCol && i !== placedCol && norm(v) !== "");
+    out.push({ tabTitle: norm(nameCell ?? ""), designed, placed, overBy: placed - designed });
+  }
+  return out.sort((a, b) => b.overBy - a.overBy);
+}
+
 export interface CrewDay {
   crew: string;
   date: string;
@@ -232,8 +271,18 @@ export interface CrewDay {
 
 export interface CrewBoard {
   days: CrewDay[];
-  crews: { crew: string; ft: number; shots: number; days: number }[];
+  /** `spellings` = how many hand-typed variants collapsed into this crew
+   *  ("BIG M DRILL 1" / "BIGM DRILL1" / "big m drill 1" are one crew). */
+  crews: { crew: string; ft: number; shots: number; days: number; spellings?: number }[];
   uncategorizedFt: number;
+}
+
+/** Crew identity: the alphanumeric collapse. Crews are hand-typed dozens of
+ *  ways — case, spacing and punctuation are spelling, not identity — so
+ *  "BIG M DRILL 1", "BIGM DRILL1" and "big m drill 1" all key to "bigmdrill1"
+ *  while "HAIDER 1" and "HAIDER 2" stay apart. */
+function crewKey(display: string): string {
+  return display.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 /** Per-crew per-day placed footage (the daily report, generated). */
@@ -245,42 +294,69 @@ export function computeCrewBoard(data: SnapshotData): CrewBoard {
   const board: CrewBoard = { days: [], crews: [], uncategorizedFt: 0 };
   if (!stations || crewCol === null) return board;
 
-  const dayMap = new Map<string, CrewDay>();
-  const crewDisplayFor = new Map<string, string>(); // normalized key -> first-seen casing
-  const crewMap = new Map<string, { ft: number; shots: number; days: Set<string>; display: string }>();
+  type DayAcc = { crewKey: string; date: string; ft: number; shots: number };
+  const dayMap = new Map<string, DayAcc>();
+  const crewMap = new Map<string, { ft: number; shots: number; days: Set<string> }>();
+  const spellCounts = new Map<string, Map<string, number>>(); // crew key -> spelling -> times typed
   for (const row of data.rows) {
     if (!isFootageChainRow(row, activityCol)) continue;
     const s = parseStation(row[stations.start]);
     const e = parseStation(row[stations.end]);
     if (s === null || e === null || e <= s) continue;
     const ft = e - s;
-    // crews are hand-typed: "PPC PLOW" / "PPC Plow" / "BigM P1" are one crew
     const crewDisplay = norm(row[crewCol]);
-    const crew = crewDisplay === "" ? "(no crew)" : normalizeKey(crewDisplay);
-    if (crew === "(no crew)") board.uncategorizedFt += ft;
-    const shown = crewDisplayFor.get(crew) ?? crewDisplay;
-    crewDisplayFor.set(crew, shown);
+    if (crewDisplay === "") {
+      // no crew named: counted once as uncategorized, never a phantom "" crew
+      board.uncategorizedFt += ft;
+      continue;
+    }
+    const key = crewKey(crewDisplay);
+    const counts = spellCounts.get(key) ?? new Map<string, number>();
+    counts.set(crewDisplay, (counts.get(crewDisplay) ?? 0) + 1);
+    spellCounts.set(key, counts);
     const dateRaw = dateCol !== null ? parseCompletedDate(row[dateCol]) : null;
     const dateKey = dateRaw ? localDayKey(dateRaw) : "";
-    const day = dayMap.get(`${crew}|${dateKey}`);
+    const day = dayMap.get(`${key}|${dateKey}`);
     if (day) {
       day.ft += ft;
       day.shots++;
     } else {
-      dayMap.set(`${crew}|${dateKey}`, { crew: shown, date: dateKey, ft, shots: 1 });
+      dayMap.set(`${key}|${dateKey}`, { crewKey: key, date: dateKey, ft, shots: 1 });
     }
-    const c = crewMap.get(crew);
+    const c = crewMap.get(key);
     if (c) {
       c.ft += ft;
       c.shots++;
       if (dateKey) c.days.add(dateKey);
     } else {
-      crewMap.set(crew, { ft, shots: 1, days: new Set(dateKey ? [dateKey] : []), display: shown });
+      crewMap.set(key, { ft, shots: 1, days: new Set(dateKey ? [dateKey] : []) });
     }
   }
-  board.days = [...dayMap.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.crew.localeCompare(b.crew)));
-  board.crews = [...crewMap.values()]
-    .map((c) => ({ crew: c.display, ft: c.ft, shots: c.shots, days: c.days.size }))
+  // display the spelling the crew actually types most (ties: first seen) —
+  // the board reads like the sheet, not like a hash
+  const displayFor = new Map<string, { crew: string; spellings: number }>();
+  for (const [key, counts] of spellCounts) {
+    let best = "";
+    let bestN = -1;
+    for (const [spelling, n] of counts) {
+      if (n > bestN) {
+        best = spelling;
+        bestN = n;
+      }
+    }
+    displayFor.set(key, { crew: best, spellings: counts.size });
+  }
+  board.days = [...dayMap.values()]
+    .map(({ crewKey, ...d }) => ({ crew: displayFor.get(crewKey)?.crew ?? crewKey, ...d }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.crew.localeCompare(b.crew)));
+  board.crews = [...crewMap.entries()]
+    .map(([key, c]) => ({
+      crew: displayFor.get(key)?.crew ?? key,
+      ft: c.ft,
+      shots: c.shots,
+      days: c.days.size,
+      spellings: displayFor.get(key)?.spellings ?? 1,
+    }))
     .sort((a, b) => b.ft - a.ft);
   return board;
 }

@@ -24,7 +24,7 @@ export function TracePanel({
       </div>
       {events.length === 0 ? (
         <p className="px-4 py-5 text-sm text-muted-foreground">
-          No changes recorded for this shot across the recent snapshots.
+          No changes recorded for this search across the recent snapshots.
         </p>
       ) : (
         <ul className="divide-y">

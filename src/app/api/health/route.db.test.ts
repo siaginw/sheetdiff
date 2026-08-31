@@ -3,23 +3,10 @@
  * non-zero staleCaptures must be visible while pages still render fine from
  * old data. DB harness, standard temp DATABASE_PATH pattern.
  */
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "health-test-secret-0123456789";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-health-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+setupMigratedTempDb("health");
 
 const { db } = await import("@/lib/db");
 const { spreadsheets, users } = await import("@/lib/db/schema");
@@ -41,10 +28,6 @@ beforeAll(async () => {
   await sheet("d-fresh", "daily", NOW - DAY);
   await sheet("paused-old", "off", NOW - 30 * DAY); // paused forever — exempt by choice
   await sheet("never", "daily", null); // never captured — nothing to be stale about
-});
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL */ }
 });
 
 describe("GET /api/health", () => {

@@ -44,16 +44,22 @@ export function DigestSettingsDialog({
   digestEmail,
   digestTime,
   digestDay,
-  smtpReady,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   digestEmail: string | null;
   digestTime: string;
   digestDay: number | null;
-  smtpReady: boolean;
 }) {
   const [email, setEmail] = useState(digestEmail ?? "");
+  const [saved, setSaved] = useState(false);
+
+  // server state can change between opens — re-sync rather than show a stale
+  // address that looks configured
+  const handleOpenChange = (next: boolean) => {
+    if (next) setEmail(digestEmail ?? "");
+    onOpenChange(next);
+  };
   const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
   const [testing, setTesting] = useState(false);
 
@@ -67,10 +73,23 @@ export function DigestSettingsDialog({
       .finally(() => setTesting(false));
   };
 
+  if (saved) {
+    toast.success(
+      email.trim() ? `Digest saved — ${email.trim()} will get ${day === "daily" ? "daily" : "weekly"} emails.` : "Digest turned off.",
+    );
+    setSaved(false);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <form action={saveDigestSettings} onSubmit={() => onOpenChange(false)}>
+        <form
+          action={saveDigestSettings}
+          onSubmit={() => {
+            setSaved(true);
+            onOpenChange(false);
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Digest email</DialogTitle>
             <DialogDescription>

@@ -42,8 +42,6 @@ export function SnapshotSelect({
     router.push(`/sheets/${spreadsheetId}?${params.toString()}`);
   };
 
-  const items = options.map((o) => ({ value: o.id, label: o.label }));
-
   const trigger = (
     value: string,
     triggerOptions: { value: string; label: string }[],

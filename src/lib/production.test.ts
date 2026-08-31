@@ -4,6 +4,7 @@ import {
   dateHygiene,
   detectLateEntries,
   reconcileTotals,
+  detectOverplacement,
   computeCrewBoard,
   agingGaps,
 } from "./production";
@@ -136,6 +137,63 @@ describe("computeCrewBoard", () => {
     expect(b.crews.find((c) => c.crew === "HAIDER 1")!.ft).toBe(300);
     expect(b.uncategorizedFt).toBe(100);
     expect(b.days.find((d) => d.crew === "BIG M P1" && d.date === "2026-08-28")!.ft).toBe(900);
+  });
+
+  it("collapses hand-spellings of one crew; displays the most-typed spelling + how many variants merged", () => {
+    const rows = [
+      ["Plow", "0", "100", "8/28/2026", "BIG M DRILL 1"],
+      ["Plow", "100", "250", "8/28/2026", "BIGM DRILL1"],
+      ["Plow", "250", "400", "8/28/2026", "BIG M DRILL 1"], // the spelling they actually type most
+      ["Plow", "400", "450", "8/28/2026", "big m drill 1"],
+    ];
+    const b = computeCrewBoard(snap(H, rows));
+    expect(b.crews).toHaveLength(1);
+    const bigm = b.crews[0]!;
+    expect(bigm.crew).toBe("BIG M DRILL 1"); // most frequent, not first-seen
+    expect(bigm.ft).toBe(450); // all four fragments sum into one crew
+    expect(bigm.spellings).toBe(3);
+    expect(bigm.days).toBe(1);
+    expect(b.days.every((d) => d.crew === "BIG M DRILL 1")).toBe(true);
+  });
+
+  it("keeps genuinely different crews apart; blank crew is uncategorized, not a phantom crew", () => {
+    const rows = [
+      ["Plow", "0", "100", "8/28/2026", "HAIDER 1"],
+      ["Plow", "100", "200", "8/28/2026", "HAIDER 2"],
+      ["Plow", "200", "300", "8/28/2026", ""],
+    ];
+    const b = computeCrewBoard(snap(H, rows));
+    expect(b.crews.map((c) => c.crew).sort()).toEqual(["HAIDER 1", "HAIDER 2"]);
+    expect(b.uncategorizedFt).toBe(100);
+  });
+});
+
+describe("detectOverplacement", () => {
+  const totals = snap(
+    ["Permit Package", "Total Conduit Designed", "Plow/ Trench", "Total Conduit Placed"],
+    [
+      ["US2-PE-001", "25662", "23044", "25662"], // placed == designed — fine
+      ["US2-PE-002", "52041", "38358", "52994"], // 953 ft nobody designed (real-tracker case)
+      ["US2-PE-003", "", "0", ""],               // not started — nothing to judge
+      ["US2-PE-004", "52698", "12000", "52698"], // exact — fine
+    ],
+  );
+
+  it("flags packages where TOTALS says Placed exceeds Designed", () => {
+    const o = detectOverplacement(totals);
+    expect(o).toHaveLength(1);
+    expect(o[0]).toMatchObject({ tabTitle: "US2-PE-002", designed: 52041, placed: 52994, overBy: 953 });
+  });
+
+  it("never guesses: a missing Designed (or Placed) column means no findings", () => {
+    expect(detectOverplacement(snap(["PE", "Total Conduit Placed"], [["US2-PE-001", "100"]]))).toEqual([]);
+    expect(detectOverplacement(snap(["PE", "Total Conduit Designed"], [["US2-PE-001", "100"]]))).toEqual([]);
+  });
+
+  it("tolerance absorbs rounding noise but not real over-placement", () => {
+    const t = snap(["PE", "Designed", "Placed"], [["US2-PE-005", "1000", "1000.5"]]);
+    expect(detectOverplacement(t)).toEqual([]);
+    expect(detectOverplacement(t, 0)).toHaveLength(1);
   });
 });
 

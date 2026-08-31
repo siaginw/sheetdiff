@@ -17,27 +17,14 @@ vi.mock("nodemailer", () => ({
   },
 }));
 
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "digest-test-secret-0123456789";
 process.env.SMTP_HOST ??= "smtp.test";
 process.env.SMTP_USER ??= "user";
 process.env.SMTP_PASS ??= "pass";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-digest-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+setupMigratedTempDb("digest");
 
 const { db } = await import("./db");
 const { snapshots, snapshotStats, spreadsheets, tabs, users } = await import("./db/schema");
@@ -84,10 +71,6 @@ beforeAll(async () => {
     { snapshotId: "sa1", tabId: "ta", added: 1, removed: 0, changed: 0, createdAt: 2000 },
     { snapshotId: "sb1", tabId: "tb", added: 0, removed: 0, changed: 1, createdAt: 2000 },
   ]);
-});
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* Windows WAL */ }
 });
 
 const resolverRows = async () => {

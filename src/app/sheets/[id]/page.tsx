@@ -30,7 +30,7 @@ import { getPendingChanges } from "@/lib/pending";
 import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
 import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
-import { snapshotNow, setBaseline } from "@/lib/actions";
+import { snapshotNow } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
 import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
@@ -42,6 +42,7 @@ import {
   dateHygiene,
   detectLateEntries,
   reconcileTotals,
+  detectOverplacement,
   computeCrewBoard,
   agingGaps,
 } from "@/lib/production";
@@ -311,6 +312,7 @@ export default async function SheetPage({
   let agedGaps: ReturnType<typeof agingGaps> = [];
   let crewBoard: ReturnType<typeof computeCrewBoard> | null = null;
   let totalsMismatches: ReturnType<typeof reconcileTotals> = [];
+  let overplacements: ReturnType<typeof detectOverplacement> = [];
   if (latestData) {
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
@@ -319,7 +321,7 @@ export default async function SheetPage({
       lateEntries = detectLateEntries(walk);
       agedGaps = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })));
     }
-    // TOTALS reconciliation when a TOTALS-like tab exists
+    // TOTALS reconciliation + over-placement guard when a TOTALS-like tab exists
     const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title));
     if (totalsTab) {
       const totalsSnaps = await latestNonImportSnapshots([totalsTab.id]);
@@ -333,6 +335,7 @@ export default async function SheetPage({
           }
         }
         totalsMismatches = reconcileTotals(decodeSnapshot(totalsSnap.dataBlob), perTab);
+        overplacements = detectOverplacement(decodeSnapshot(totalsSnap.dataBlob));
       }
     }
   }
@@ -609,6 +612,7 @@ export default async function SheetPage({
                 hygiene={hygiene}
                 lateEntries={lateEntries}
                 totalsMismatches={totalsMismatches}
+                overplacements={overplacements}
                 crewBoard={crewBoard}
                 agedGaps={agedGaps}
               />

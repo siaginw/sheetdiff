@@ -3,9 +3,9 @@
  * boundary, exercised against a real (temp) SQLite database.
  *
  * Harness notes (load-bearing):
- *  - vitest hoists static imports above module-body statements, so the temp
- *    DATABASE_PATH must be set BEFORE any ./db-dependent import — hence every
- *    such module is imported dynamically below. The first test asserts the
+ *  - the shared harness (src/test/db-harness.ts) sets the temp DATABASE_PATH
+ *    at module scope, before any ./db-dependent import — hence every such
+ *    module is imported dynamically below. The first test asserts the
  *    connection really points at the temp file.
  *  - next/headers, next/cache, next/navigation and ./google are mocked. The
  *    session cookie is genuinely signed+verified (crypto.ts runs for real),
@@ -47,30 +47,18 @@ vi.mock("./google", () => ({
   fetchTabValues: async () => state.tabValues,
 }));
 
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setupMigratedTempDb } from "@/test/db-harness";
 
-process.env.APP_SECRET ??= "actions-db-test-secret-0123456789";
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-actions-"));
-process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
-fs.writeFileSync(process.env.DATABASE_PATH, "");
-const repoRoot = process.cwd();
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
-  cwd: repoRoot,
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
-  stdio: "pipe",
-  timeout: 120_000,
-});
+setupMigratedTempDb("actions");
 
 const { eq, inArray } = await import("drizzle-orm");
 const { db } = await import("./db");
 const { changeAcks, members, notes, snapshots, spreadsheets, tabs, users } = await import("./db/schema");
 const { encodeSnapshot, toSnapshotData } = await import("./snapshots");
 const { getSheetAccess } = await import("./access");
-const { addMembers, addNote, removeMember, setBaseline, snapshotNow, toggleAck } = await import("./actions");
+const { getPendingChanges } = await import("./pending");
+const { addMembers, addNote, ackAllUnentered, removeMember, setBaseline, snapshotNow, toggleAck } = await import("./actions");
 
 const fd = (entries: Record<string, string>) => {
   const f = new FormData();
@@ -122,10 +110,6 @@ beforeAll(async () => {
     await seedSnapshot(tabId, "run-manual", "manual", false, 1000, [["Shot", "Qty"], ["S1", "1"]]);
     await seedSnapshot(tabId, "run-import", "import", false, 2000, [["Shot", "Qty"], ["S1", "2"]]);
   }
-});
-
-afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* WAL held open on Windows */ }
 });
 
 describe("temp-db harness", () => {
@@ -265,8 +249,59 @@ describe("setBaseline cross-run scoping (fleet-9)", () => {
     expect(rows.find((r) => r.tabId === "tab-late")!.isBaseline).toBe(true);
     // its pending resolver still has a baseline to resolve against
     const lateTab = (await db.select().from(tabs).where(eq(tabs.id, "tab-late")))[0]!;
-    const { getPendingChanges } = await import("./pending");
     const p = await getPendingChanges(lateTab);
     expect(p).toBeNull(); // quiet (baseline == latest) — NOT the no-baseline null path
+  });
+});
+
+describe("addNote delete semantics (fleet-8)", () => {
+  it("delete=1 removes the note even when the body still holds the old text", async () => {
+    signIn("owner-1");
+    await addNote(fd({ spreadsheetId: "sheet-1", tabId: "tab-2", body: "typed once" }));
+    // the dialog's Delete button submits with the textarea still full — the
+    // old "empty body deletes" rule turned that click into a silent re-save
+    await addNote(fd({ spreadsheetId: "sheet-1", tabId: "tab-2", body: "typed once", delete: "1" }));
+    expect(await db.select().from(notes).where(eq(notes.tabId, "tab-2"))).toHaveLength(0);
+  });
+
+  it("delete with no existing note is a no-op — never an empty-body insert", async () => {
+    await addNote(fd({ spreadsheetId: "sheet-1", tabId: "tab-2", body: "", delete: "1" }));
+    expect(await db.select().from(notes).where(eq(notes.tabId, "tab-2"))).toHaveLength(0);
+  });
+
+  it("save (no delete flag) still upserts normally", async () => {
+    await addNote(fd({ spreadsheetId: "sheet-1", tabId: "tab-2", body: "kept" }));
+    const rows = await db.select().from(notes).where(eq(notes.tabId, "tab-2"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.body).toBe("kept");
+  });
+});
+
+describe("ackAllUnentered bulk ack (fleet-8)", () => {
+  it("acks the tab's whole unresolved batch — viewer allowed, stranger rejected, server-side rowKeys only", async () => {
+    await seedSheet("sheet-bulk", "owner-1", "Bulk");
+    await seedTab("tab-bulk", "sheet-bulk");
+    await seedSnapshot("tab-bulk", "run-b-base", "manual", true, 100, [["ID", "Note"], ["1", "a"], ["2", "b"], ["3", "c"]]);
+    await seedSnapshot("tab-bulk", "run-b-new", "manual", false, 200, [["ID", "Note"], ["1", "a"], ["2", "b-fixed"], ["3", "c"], ["4", "new"]]);
+
+    const tabRow = (await db.select().from(tabs).where(eq(tabs.id, "tab-bulk")))[0]!;
+    const before = await getPendingChanges(tabRow);
+    expect(before!.counts.unresolved).toBe(2); // row 2's note edited + row 4 added
+
+    // the action gates before any write: a stranger gets nothing acked
+    signIn("stranger-1");
+    await expect(ackAllUnentered(fd({ spreadsheetId: "sheet-bulk", tabId: "tab-bulk" }))).rejects.toThrow(/No access/);
+    expect(await db.select().from(changeAcks).where(eq(changeAcks.tabId, "tab-bulk"))).toHaveLength(0);
+
+    // members may tick acks — the bulk button is the same permission
+    signIn("viewer-1");
+    await ackAllUnentered(fd({ spreadsheetId: "sheet-bulk", tabId: "tab-bulk" }));
+    const after = await getPendingChanges(tabRow);
+    expect(after!.counts.unresolved).toBe(0);
+    expect(await db.select().from(changeAcks).where(eq(changeAcks.tabId, "tab-bulk"))).toHaveLength(2);
+
+    // idempotent: re-running with nothing unresolved acks nothing new
+    await ackAllUnentered(fd({ spreadsheetId: "sheet-bulk", tabId: "tab-bulk" }));
+    expect(await db.select().from(changeAcks).where(eq(changeAcks.tabId, "tab-bulk"))).toHaveLength(2);
   });
 });

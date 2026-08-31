@@ -77,9 +77,6 @@ export function isGapRow(row: string[], activityCol: number | null): boolean {
 }
 
 /** True for structure rows (handholes) — they sit ON a station, not footage. */
-export function isHandholeRow(row: string[], activityCol: number | null): boolean {
-  return activityCol !== null && /handhole|\bhh\b/i.test(norm(row[activityCol]));
-}
 
 /** True for rows that make up the footage chain: bore/plow/trench/gap, never adders. */
 export function isFootageChainRow(row: string[], activityCol: number | null): boolean {

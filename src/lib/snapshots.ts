@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { promisify } from "node:util";
-import { and, desc, eq, inArray, max, ne } from "drizzle-orm";
+import {and, eq, inArray, max, ne} from "drizzle-orm";
 import { db } from "./db";
 import { spreadsheets, tabs, snapshots, snapshotStats, type Spreadsheet, type Snapshot } from "./db/schema";
 import { getUserClient, fetchTabValues } from "./google";

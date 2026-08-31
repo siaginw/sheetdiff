@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { NoteDialog } from "@/components/sheet/note-dialog";
-import { toggleAck } from "@/lib/actions";
+import { toggleAck, ackAllUnentered } from "@/lib/actions";
 import { wordDiff, shouldWordDiff } from "@/lib/diff/worddiff";
 import { columnWidths } from "@/lib/diff/widths";
 import { oldRowValues, type DiffResult, DiffRow } from "@/lib/diff/engine";
@@ -417,6 +417,16 @@ export function DiffView({
     [matching, changesOnly, result.rows],
   );
 
+  // whole-tab unresolved count (search/filters don't shrink the batch): what
+  // the "mark all entered" bulk action will actually ack
+  const unackCount = useMemo(
+    () =>
+      result.rows.filter(
+        (r) => r.status !== "unchanged" && r.status !== "moved" && resolvedRows[r.rowKey] !== true,
+      ).length,
+    [result.rows, resolvedRows],
+  );
+
   const hasChanges =
     result.summary.addedRows + result.summary.removedRows + result.summary.changedRows > 0 ||
     result.summary.columnsAdded.length + result.summary.columnsRemoved.length > 0;
@@ -449,7 +459,9 @@ export function DiffView({
     getItemKey: (i) => `${visibleRows[i].status}-${visibleRows[i].oldIndex}-${visibleRows[i].newIndex}-${i}`,
   });
 
-  const tableTemplate = `34px 56px repeat(${result.columns.length}, minmax(150px, 1fr))`;
+  // trailing actions column: grid mode must offer the same per-row
+  // "mark entered"/note workflow as lines mode — wide-sheet users lost it
+  const tableTemplate = `34px 56px repeat(${result.columns.length}, minmax(150px, 1fr)) 92px`;
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
@@ -460,6 +472,20 @@ export function DiffView({
           <span className="truncate">{tabTitle}</span>
         </span>
         <DiffStat s={result.summary} />
+        {unackCount > 0 ? (
+          <form action={ackAllUnentered}>
+            <input type="hidden" name="spreadsheetId" value={spreadsheetId} />
+            <input type="hidden" name="tabId" value={tabId} />
+            <button
+              type="submit"
+              title={`Mark all ${unackCount} unresolved ${unackCount === 1 ? "change" : "changes"} on this tab as entered in the office system (the pending set is recomputed server-side)`}
+              className="flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <CheckCircle2 className="size-3.5" />
+              Mark all entered ({unackCount})
+            </button>
+          </form>
+        ) : null}
         <div className="ml-auto flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -617,6 +643,7 @@ export function DiffView({
                   {c.status === "added" ? " +" : ""}
                 </div>
               ))}
+              <div className="py-2 text-center font-mono text-[10px] font-medium text-muted-foreground" title="Mark as entered / add a note">act</div>
             </div>
             <div style={{ height: tableVirtualizer.getTotalSize(), position: "relative" }}>
               {tableVirtualizer.getVirtualItems().map((vr) => {
@@ -635,7 +662,7 @@ export function DiffView({
                       transform: `translateY(${vr.start}px)`,
                       gridTemplateColumns: tableTemplate,
                     }}
-                    className={`grid items-stretch border-b border-border/50 text-sm ${ROW_STYLE[r.status]}`}
+                    className={`group/grid grid items-stretch border-b border-border/50 text-sm ${ROW_STYLE[r.status]}`}
                   >
                     <div className="flex items-center justify-center">{ROW_ICON[r.status]}</div>
                     <div className="flex flex-col items-end justify-center gap-0.5 px-2 py-1 font-mono text-[10px] leading-3.5 text-muted-foreground/70">
@@ -659,6 +686,19 @@ export function DiffView({
                         </div>
                       );
                     })}
+                    <div
+                      className={`flex items-center justify-end px-1 ${resolvedRows[r.rowKey] === true ? "opacity-100" : "opacity-0 group-hover/grid:opacity-100 max-md:opacity-100"}`}
+                    >
+                      {r.status === "unchanged" || r.status === "moved" ? null : (
+                        <RowActions
+                          row={r}
+                          spreadsheetId={spreadsheetId}
+                          tabId={tabId}
+                          acked={resolvedRows[r.rowKey] === true}
+                          note={rowNotes[r.rowKey]}
+                        />
+                      )}
+                    </div>
                   </div>
                 );
               })}

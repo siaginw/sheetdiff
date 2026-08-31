@@ -63,7 +63,16 @@ export function NoteDialog({
         }
       />
       <DialogContent className="sm:max-w-md">
-        <form action={addNote} onSubmit={() => setOpen(false)}>
+        <form
+          action={addNote}
+          onSubmit={(e) => {
+            // Delete submits with the old text still in the textarea — drop the
+            // stale body so reopening the dialog doesn't resurrect the note
+            const submitter = (e.nativeEvent as SubmitEvent).submitter;
+            if (submitter instanceof HTMLButtonElement && submitter.name === "delete") setBody("");
+            setOpen(false);
+          }}
+        >
           <input type="hidden" name="spreadsheetId" value={spreadsheetId} />
           {runId ? <input type="hidden" name="runId" value={runId} /> : null}
           {tabId ? <input type="hidden" name="tabId" value={tabId} /> : null}

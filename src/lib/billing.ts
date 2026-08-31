@@ -1,4 +1,4 @@
-import type { LateEntry, AgingGap } from "./production";
+import type { LateEntry, AgingGap, OverplacementFinding } from "./production";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
 export interface BillingUnresolvedRow {
@@ -11,11 +11,12 @@ export interface BillingUnresolvedRow {
  * The Billing-Day Packet: everything the office needs on invoice day, from
  * data the app already holds — placed footage since the last collection,
  * open unaccounted holes, unresolved changes (their to-enter worklist),
- * and late entries that landed after the last pull.
+ * late entries that landed after the last pull, and packages TOTALS claims
+ * are placed beyond their designed footage.
  */
 
 export interface BillingRow {
-  kind: "footage" | "hole" | "to-enter" | "late";
+  kind: "footage" | "hole" | "to-enter" | "late" | "over";
   detail: string;
   ft?: number;
   meta?: string;
@@ -36,6 +37,8 @@ export function buildBillingPacket(input: {
   holes: (AgingGap & { tab?: string })[];
   unresolved: BillingUnresolvedRow[];
   lateEntries: LateEntry[];
+  /** TOTALS packages where Placed exceeds Designed — do-not-invoice bait */
+  overplacement?: OverplacementFinding[];
   snapshotLabel: string;
   now?: number;
 }): BillingPacket {
@@ -46,10 +49,18 @@ export function buildBillingPacket(input: {
     detail: `Placed footage since last collection`,
     ft: input.sinceFt,
   });
+  for (const o of input.overplacement ?? []) {
+    rows.push({
+      kind: "over",
+      detail: `${o.tabTitle}: placed ${o.placed.toLocaleString("en-US")} ft vs ${o.designed.toLocaleString("en-US")} ft designed`,
+      ft: o.overBy,
+      meta: "do not invoice the excess — TOTALS claims more placed than designed",
+    });
+  }
   for (const h of input.holes) {
     rows.push({
       kind: "hole",
-      detail: `Unaccounted ${Math.round(h.from).toLocaleString()}-${Math.round(h.to).toLocaleString()} (open ${h.daysOpen}d)`,
+      detail: `Unaccounted ${Math.round(h.from).toLocaleString("en-US")}-${Math.round(h.to).toLocaleString("en-US")} (open ${h.daysOpen}d)`,
       ft: h.ft,
       // with 3+ tracked spreads the office must know WHICH tab a hole is on
       meta: `do not invoice — unbooked footage${h.tab ? ` (${h.tab})` : ""}`,
@@ -87,7 +98,7 @@ export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boole
   const lines: string[] = [
     `# SheetDiff billing packet — generated ${new Date(p.generatedAt).toISOString()}`,
     `# Snapshot: ${p.snapshotLabel}`,
-    `# Placed since collection: ${opts?.sinceFtKnown === false ? "COULD NOT DETERMINE — verify collection marker" : p.placedSinceFt.toLocaleString() + " ft"} | Open holes: ${p.openHoleFt.toLocaleString()} ft | To enter: ${p.toEnterCount} | Late entries: ${p.lateCount}`,
+    `# Placed since collection: ${opts?.sinceFtKnown === false ? "COULD NOT DETERMINE — verify collection marker" : p.placedSinceFt.toLocaleString("en-US") + " ft"} | Open holes: ${p.openHoleFt.toLocaleString("en-US")} ft | To enter: ${p.toEnterCount} | Late entries: ${p.lateCount}`,
     `Kind,Detail,Ft,Note`,
   ];
   for (const r of p.rows) {

@@ -72,11 +72,15 @@ Two kinds of tests, both vitest, colocated as `*.test.ts`.
 
 **Pure logic** — no mocks, no I/O. Just describe/it over the module.
 
-**DB-backed** (`*.db.test.ts`): set `DATABASE_PATH` to a temp file BEFORE
-dynamically importing `./db`, create the schema with `node scripts/migrate.mjs` (the production boot path),
-mock `next/*` and `./google`, then seed with `encodeSnapshot(toSnapshotData(grid))`
-blobs. See `actions.db.test.ts` for the canonical contract. The first test
-asserts the connection really points at the temp file.
+**DB-backed** (`*.db.test.ts`): call `setupMigratedTempDb("<prefix>")` from
+`src/test/db-harness.ts` at module scope — it creates a temp file, points
+`DATABASE_PATH` at it, applies the schema via `node scripts/migrate.mjs` (the
+production migrator, in a clean subprocess), and registers cleanup. The call
+must come BEFORE any dynamic import of `./db` (vitest hoists static imports;
+the harness module explains the ordering contract). Then mock `next/*` and
+`./google`, and seed with `encodeSnapshot(toSnapshotData(grid))` blobs. See
+`actions.db.test.ts` for the canonical contract. The first test asserts the
+connection really points at the temp file.
 
 Throwaway probes are fine locally but must be deleted before committing.
 

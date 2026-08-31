@@ -54,7 +54,7 @@ async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<Sh
   // quiet-day short-circuit and latest===baseline both return null, but the
   // baseline still exists (the dashboard's "up to date" state)
   if (tracked.length > 0) {
-    const { and, eq: eqOp, ne: neOp, max } = await import("drizzle-orm");
+    const { and, eq: eqOp, ne: neOp } = await import("drizzle-orm");
     const { snapshots } = await import("@/lib/db/schema");
     const baselines = await db
       .select({ tabId: snapshots.tabId, createdAt: snapshots.createdAt })
@@ -365,7 +365,6 @@ export default async function Home({
                         <span className="truncate">
                           {scheduleLabel(sheet).toLowerCase()} · snapshot {relativeTime(sheet.lastSnapshotAt)}
                           {!st.baselineAt && " · no baseline yet"}
-                          {sheet.scheduleKind === "off" && sheet.lastSnapshotAt ? " · paused" : ""}
                         </span>
                         {captureIsStale(sheet) ? (
                           <span

@@ -1,4 +1,10 @@
 import { describe, it, expect } from "vitest";
+// sync.ts transitively imports ./db — point it at a temp file BEFORE import
+// or parallel workers race on the developer's REAL data/sheetdiff.db
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+process.env.DATABASE_PATH ??= path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "synctest" + "-")), "unused.db");
 import { computeIntroductions, isResolved, keySetsFor } from "./sync";
 import { diffSnapshots, type SnapshotData } from "./diff/engine";
 
@@ -260,5 +266,33 @@ describe("keySetsFor (identity column hardening)", () => {
     const drifted = { createdAt: 2000, data: snap(["Note", "Activity", "Start STA", "End STA", "Crew"], [["n", "Plow", "0", "500", "A"]]) };
     const walk = [{ createdAt: 3000, data: latest }, drifted];
     expect(keySetsFor(diff, walk)).toBeUndefined();
+  });
+});
+
+describe("multi-member shared-content families date at their own formation (fleet-10)", () => {
+  it("two rows converging to identical content one window apart: an ack in the gap resolves only the first", () => {
+    // baseline: two distinct rows; row A converges to Z-content at 2000,
+    // row B converges at 3000. Without per-member ranking both date at 2000
+    // and an ack at 2500 (taken against row A only) swallows row B's change.
+    const NH = ["Name", "Qty"];
+    const baseline = snap(NH, [["a", "1"], ["b", "2"]]);
+    const chain = [
+      { at: 2000, data: snap(NH, [["a", "9"], ["b", "2"]]) }, // row a -> 9
+      { at: 3000, data: snap(NH, [["b", "9"], ["a", "9"]]) }, // row b -> 9 too
+      { at: 4000, data: snap(NH, [["a", "9"], ["b", "9"]]) },
+    ];
+    const latest = chain[chain.length - 1];
+    const diff = diffSnapshots(baseline, latest.data);
+    const changed = diff.rows.filter((r) => r.status === "changed");
+    expect(changed).toHaveLength(2);
+    const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
+    const intro = computeIntroductions([...walk, { createdAt: 1000, data: baseline }], diff.rows);
+    const dates = changed.map((r) => intro.get(r.rowKey)).sort();
+    // one dates at the first convergence, one at the second
+    expect(dates).toEqual([2000, 3000]);
+    // the ack in the gap resolves exactly the first
+    const acks = new Map([[changed.find((r) => intro.get(r.rowKey) === 2000)!.rowKey, 2500]]);
+    const unresolved = changed.filter((r) => !isResolved(acks, r.rowKey, intro.get(r.rowKey)!));
+    expect(unresolved).toHaveLength(1); // the 3000 convergence stays pending
   });
 });
