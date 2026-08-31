@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     "Snapshots of your team's Google Sheets with GitHub-style diffs. See exactly what changed, when, and since the last time data was collected.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
