@@ -68,13 +68,13 @@ export function DigestEmail({
             {totalUnresolved > 0
               ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} across ${sheets.length} sheet${sheets.length === 1 ? "" : "s"} since the last collection.`
               : "Every tracked sheet is up to date since its last collection."}
-            {totalChecks > 0 ? ` ${totalChecks} check finding${totalChecks === 1 ? "" : "s"} need a look.` : ""}
+            {totalChecks > 0 ? ` ${totalChecks} check finding${totalChecks === 1 ? "" : "s"} need${totalChecks === 1 ? "s" : ""} a look.` : ""}
           </Text>
 
           {staleSheets.length > 0 ? (
             <div style={{ background: "#fff8c5", border: "1px solid #d4a72c", borderRadius: 8, padding: "10px 14px", margin: "0 0 16px" }}>
               <Text style={{ fontSize: 13, margin: 0, color: "#4d3800", fontWeight: 600 }}>
-                ⚠ {staleSheets.length} sheet{staleSheets.length === 1 ? "" : "s"} haven&rsquo;t synced recently — the numbers below may be out of date.
+                ⚠ {staleSheets.length} sheet{staleSheets.length === 1 ? "" : "s"} hasn&rsquo;t synced recently — the numbers below may be out of date.
               </Text>
               <Text style={{ fontSize: 12, margin: "4px 0 0", color: "#4d3800" }}>
                 Last snapshot{staleSheets.length === 1 ? "" : "s"}: {staleSheets.map((s) => `${s.title} (${s.lastSnapshotAgo})`).join(", ")}. Check that SheetDiff is running and connected to Google.

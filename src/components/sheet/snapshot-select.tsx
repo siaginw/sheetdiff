@@ -80,11 +80,15 @@ export function SnapshotSelect({
     // wraps on phones: two fixed 13rem triggers + labels measured 539px inside
     // a 390px viewport and panned the whole page sideways
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
-      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">before</span>
-      {trigger(from, fromItems, (v) => navigate(v, to), "Compare from snapshot", "from")}
+      <span className="flex items-center gap-1.5">
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">before</span>
+        {trigger(from, fromItems, (v) => navigate(v, to), "Compare from snapshot", "from")}
+      </span>
       <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-      {trigger(to, toItems, (v) => navigate(from, v), "Compare to snapshot", "to")}
-      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">after</span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        {trigger(to, toItems, (v) => navigate(from, v), "Compare to snapshot", "to")}
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">after</span>
+      </span>
     </div>
   );
 }

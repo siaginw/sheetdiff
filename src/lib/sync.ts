@@ -1,7 +1,8 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "./db";
 import { changeAcks } from "./db/schema";
-import { rowContentKey, oldRowValues, type DiffRow, type SnapshotData } from "./diff/engine";
+import { rowContentKey, oldRowValues, type DiffRow, type SnapshotData, type DiffResult } from "./diff/engine";
+import { normalizeKey, compositeKey } from "./diff/normalize";
 
 
 /**
@@ -42,12 +43,19 @@ export interface WalkSnapshot {
  * worse). The bounding snapshot makes every introduction exact.
  *
  * For added/changed rows the introduction is the oldest walked snapshot still
- * containing the row's NEW content hash; for removed rows, the oldest
- * snapshot in which the OLD content hash is gone.
+ * containing the row's NEW content hash. For removed rows, presence means the
+ * ROW still existing — not the old content hash: a row that changed (v0→v1)
+ * and was deleted later must date its REMOVAL, or the ack for the change
+ * (same rowKey) silently swallows the deletion. Keyed removals track the key
+ * (`opts.keySets`, parallel to `walk`, built from the diff's identity
+ * columns); blank-keyed removals track the identical-content family COUNT
+ * against the oldest walked snapshot — "2 of the 146 padding rows went away"
+ * is dated when the count dropped, and stays dated while the survivors live.
  */
 export function computeIntroductions(
   walk: WalkSnapshot[],
   rows: DiffRow[],
+  opts: { keySets?: Set<string>[] } = {},
 ): Map<string, number> {
   const out = new Map<string, number>();
   if (walk.length === 0) return out;
@@ -56,8 +64,9 @@ export function computeIntroductions(
     introduced: number;
     done: boolean;
     hash: string;
+    key: string | null;
     // added/changed: keep walking while the NEW content is present;
-    // removed: keep walking while the OLD content is absent
+    // removed: keep walking while the ROW is still gone
     mode: "present" | "absent";
   };
   const pending = new Map<string, Pending>();
@@ -69,6 +78,7 @@ export function computeIntroductions(
         introduced: 0,
         done: false,
         hash: rowContentKey(oldRowValues(row)),
+        key: row.key,
         mode: "absent",
       });
     } else {
@@ -76,17 +86,40 @@ export function computeIntroductions(
         introduced: 0,
         done: false,
         hash: rowContentKey(row.values),
+        key: null,
         mode: "present",
       });
     }
   }
 
-  for (const snap of walk) {
+  // per-snapshot content-hash COUNTS (not a set): identical-row families are
+  // distinguished by how many of them exist, not whether one does
+  const countsOf = (snap: WalkSnapshot) => {
+    const m = new Map<string, number>();
+    for (const r of snap.data.rows) {
+      const h = rowContentKey(r);
+      m.set(h, (m.get(h) ?? 0) + 1);
+    }
+    return m;
+  };
+  const snapshotCounts = walk.map(countsOf);
+  // family size at the walk's oldest edge (the bounding snapshot when the
+  // caller followed the contract) — the level whose drop IS the removal
+  const oldest = snapshotCounts[snapshotCounts.length - 1]!;
+
+  for (let i = 0; i < walk.length; i++) {
     if ([...pending.values()].every((p) => p.done)) break;
-    const hashes = new Set(snap.data.rows.map(rowContentKey));
+    const snap = walk[i]!;
+    const cnt = snapshotCounts[i]!;
+    const keys = opts.keySets?.[i];
     for (const p of pending.values()) {
       if (p.done) continue;
-      const isPresent = hashes.has(p.hash);
+      const isPresent =
+        p.mode === "present"
+          ? (cnt.get(p.hash) ?? 0) > 0
+          : p.key !== null && keys
+            ? keys.has(p.key)
+            : (cnt.get(p.hash) ?? 0) >= Math.max(oldest.get(p.hash) ?? 0, 1);
       if ((p.mode === "present") === isPresent) {
         p.introduced = snap.createdAt;
       } else {
@@ -118,4 +151,22 @@ export async function setAck(tabId: string, rowKey: string, on: boolean): Promis
       .delete(changeAcks)
       .where(and(eq(changeAcks.tabId, tabId), eq(changeAcks.rowKey, rowKey)));
   }
+}
+
+/** Per-walk-snapshot sets of row identities (single key or composite), using
+ *  the diff's OWN resolution — lets removed rows be dated by when the ROW
+ *  (its key) disappeared instead of when the old content value did. */
+export function keySetsFor(
+  diff: Pick<DiffResult, "identityColumns">,
+  walk: WalkSnapshot[],
+): Set<string>[] | undefined {
+  const cols = diff.identityColumns;
+  if (!cols) return undefined;
+  return walk.map((w) =>
+    new Set(
+      w.data.rows.map((r) =>
+        cols.length === 1 ? normalizeKey(r[cols[0]!]) : compositeKey(r, cols),
+      ),
+    ),
+  );
 }

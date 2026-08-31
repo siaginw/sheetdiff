@@ -51,7 +51,7 @@ export async function pruneSnapshots(): Promise<number> {
 /** Online-backup the SQLite file to data/backups/, keeping the newest N.
  *  better-sqlite3's .backup() is ASYNC (paged transfer on the event loop) —
  *  it must be awaited before the connection closes. */
-export async function backupDatabase(): Promise<string | null> {
+export async function backupDatabase(now = new Date()): Promise<string | null> {
   const keep = Number(process.env.SHEETDIFF_BACKUPS ?? 14);
   if (!Number.isFinite(keep) || keep <= 0) return null;
 
@@ -62,7 +62,6 @@ export async function backupDatabase(): Promise<string | null> {
   // local-calendar stamp (maintenanceDue itself is local-clock): a UTC stamp
   // near local midnight names tomorrow's date and confuses the once-a-day
   // dedup + the "newest backup" restore runbook
-  const now = new Date();
   const p2 = (n: number) => String(n).padStart(2, "0");
   const stamp = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
   const dest = path.join(dir, `sheetdiff-${stamp}.db`);

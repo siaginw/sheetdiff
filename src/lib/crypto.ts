@@ -8,11 +8,22 @@ import crypto from "node:crypto";
  * sessions carry an expiry that verifySigned enforces.
  */
 
+/** Values that must never act as the signing/encryption secret — they ship
+ *  verbatim in the public repo's .env.example, so accepting one means anyone
+ *  holding the public repo can forge session cookies and decrypt the stored
+ *  Google tokens at rest. */
+const PLACEHOLDER_SECRETS = new Set([
+  "change-me-to-a-long-random-string",
+  "your-app-secret",
+  "replace-me",
+]);
+
 function deriveKey(purpose: "enc" | "sig"): Buffer {
   const secret = process.env.APP_SECRET;
-  if (!secret || secret.length < 16) {
+  if (!secret || secret.length < 16 || PLACEHOLDER_SECRETS.has(secret)) {
     throw new Error(
-      "APP_SECRET is missing or too short. Run `npm run setup` to generate a .env file, " +
+      "APP_SECRET is missing, too short, or a known placeholder (the .env.example value is public — " +
+        "anyone could forge sessions with it). Run `npm run setup` to generate a .env file, " +
         "or set APP_SECRET to a random string (e.g. `openssl rand -hex 32`).",
     );
   }

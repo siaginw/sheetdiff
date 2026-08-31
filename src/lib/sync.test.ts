@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeIntroductions, isResolved } from "./sync";
+import { computeIntroductions, isResolved, keySetsFor } from "./sync";
 import { diffSnapshots, type SnapshotData } from "./diff/engine";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
@@ -13,7 +13,7 @@ function introductionsBetween(baseline: SnapshotData, chain: { at: number; data:
   // spans, so every introduction comes out exact
   const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
   walk.push({ createdAt: 1000, data: baseline });
-  return { diff, intro: computeIntroductions(walk, diff.rows) };
+  return { diff, intro: computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) }) };
 }
 
 describe("computeIntroductions", () => {
@@ -111,5 +111,69 @@ describe("computeIntroductions", () => {
     expect(intro.get("1")).toBe(2000); // bounded by the baseline anchor, not the walk's edge
     const acks = new Map([["1", 2500]]);
     expect(isResolved(acks, "1", intro.get("1")!)).toBe(true);
+  });
+
+  it("a DELETION after a change is NOT swallowed by the change's ack (fleet-8: the removed row tracks ROW existence)", () => {
+    // baseline k=40 → changed to 55 → ACKED → row deleted. The removal is new
+    // work (remove it downstream too); dating it at when "40" left the sheet
+    // (the change) let the change's ack swallow the deletion — a silent miss.
+    const baseline = snap(H, [["1", "40"]]);
+    const chain = [
+      { at: 2000, data: snap(H, [["1", "55"]]) }, // change
+      { at: 3000, data: snap(H, [["1", "55"]]) },
+      { at: 4000, data: snap(H, []) }, // DELETED here
+      { at: 5000, data: snap(H, []) },
+    ];
+    const { diff, intro } = introductionsBetween(baseline, chain);
+    expect(diff.rows.find((r) => r.status === "removed")).toBeDefined();
+    expect(intro.get("1")).toBe(4000); // the deletion, not the 2000 change
+    const acks = new Map([["1", 2500]]); // acked the change only
+    expect(isResolved(acks, "1", intro.get("1")!)).toBe(false); // deletion still to enter
+    // ...and an ack taken AFTER the deletion resolves it
+    expect(isResolved(new Map([["1", 4500]]), "1", intro.get("1")!)).toBe(true);
+  });
+
+  it("identical-blank-key removals stay dated at the family's count drop (the padding whack-a-mole)", () => {
+    // 3 identical padding rows at baseline; 2 go away at 2000; quiet tail.
+    // The old content-hash walk saw the survivor and re-flagged the removal
+    // after EVERY capture; the count-based walk dates the drop once, so an
+    // ack after it holds forever.
+    const P = ["", "", "", "", "ZONE 2"];
+    const baseline = snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P, P, P]);
+    const chain = [
+      { at: 2000, data: snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P]) },
+      ...Array.from({ length: 20 }, (_, i) => ({ at: 3000 + i * 1000, data: snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P]) })),
+    ];
+    const { diff, intro } = introductionsBetween(baseline, chain);
+    const removed = diff.rows.filter((r) => r.status === "removed");
+    expect(removed).toHaveLength(2);
+    for (const r of removed) {
+      expect(intro.get(r.rowKey)).toBe(2000); // dated at the count drop — stable
+      expect(isResolved(new Map([[r.rowKey, 2500]]), r.rowKey, intro.get(r.rowKey)!)).toBe(true);
+    }
+  });
+
+  it("the baseline anchor is load-bearing: without it, a change whose content pre-exists in the baseline re-flags forever", () => {
+    // blank-key twins: the changed row's NEW content hash already exists in
+    // the baseline as its sibling (padded trackers have hundreds of these).
+    // Anchored, the row is introduced AT the baseline and an ack after it
+    // resolves; unanchored, the walk's oldest edge postdates the ack and it
+    // re-flags on every capture.
+    const NH = ["Name", "Qty"];
+    const baseline = snap(NH, [["x", "40"], ["x", "55"]]);
+    const chain = [
+      { at: 2000, data: snap(NH, [["x", "55"], ["x", "55"]]) }, // row 0 became a twin of row 1
+      ...Array.from({ length: 5 }, (_, i) => ({ at: 3000 + i * 1000, data: snap(NH, [["x", "55"], ["x", "55"]]) })),
+    ];
+    const latest = chain[chain.length - 1];
+    const diff = diffSnapshots(baseline, latest.data); // no key column — content matching
+    const changed = diff.rows.find((r) => r.status === "changed");
+    expect(changed).toBeDefined();
+    const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
+    const anchored = computeIntroductions([...walk, { createdAt: 1000, data: baseline }], diff.rows);
+    const unanchored = computeIntroductions(walk, diff.rows);
+    const acks = new Map([[changed!.rowKey, 1500]]); // ack between baseline and the walk's oldest edge
+    expect(isResolved(acks, changed!.rowKey, anchored.get(changed!.rowKey)!)).toBe(true); // 1000 <= 1500
+    expect(isResolved(acks, changed!.rowKey, unanchored.get(changed!.rowKey)!)).toBe(false); // 2000 > 1500 — the nag
   });
 });

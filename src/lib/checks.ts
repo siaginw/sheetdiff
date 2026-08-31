@@ -31,6 +31,9 @@ export { parseStation, detectStationColumns, detectActivityColumn } from "./dete
 
 export type CheckSeverity = "error" | "warning";
 
+/** Over this many findings of one kind on one tab, collapse to a summary. */
+const COLLAPSE_AT = 10;
+
 export interface CheckFinding {
   kind: "gap" | "overlap" | "dupe-key" | "cross-tab";
   severity: CheckSeverity;
@@ -137,7 +140,6 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
       // ~950) drowns every other signal in the checks panel AND the digest.
       // Collapse oversized lists into one honest summary; the gap report
       // panel keeps the itemized, aged view.
-      const COLLAPSE_AT = 10;
       if (report.unaccounted.length > COLLAPSE_AT) {
         const ft = report.unaccounted.reduce((n, g) => n + g.ft, 0);
         const first = report.unaccounted[0]!;
@@ -168,7 +170,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
           kind: "overlap",
           severity: "error",
           tabTitle,
-          message: `${report.overlaps.length} overlaps totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — the chain double-counts repeatedly; check for duplicated or double-entered rows`,
+          message: `${report.overlaps.length} overlaps totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — the chain double-counts repeatedly; check for duplicated or double-entered rows (see the gap report for the itemized list)`,
           rows: [first.afterRow],
         });
       } else {
@@ -237,16 +239,44 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
       keyOwners.set(k, list);
     });
   }
+  type CrossEntry = { k: string; owners: { tab: string; row: number }[] };
+  const crossEntries: CrossEntry[] = [];
   for (const [k, owners] of keyOwners) {
     const uniqueTabs = new Set(owners.map((o) => o.tab));
-    if (uniqueTabs.size > 1) {
+    if (uniqueTabs.size > 1) crossEntries.push({ k, owners });
+  }
+  // group by the tab the finding is reported under, then collapse oversized
+  // groups: a compilation tab (the real tracker's Line List) shares identities
+  // with EVERY working tab by design and otherwise floods the panel with
+  // 1000+ findings that each name the same two tabs
+  const crossByTab = new Map<string, CrossEntry[]>();
+  for (const e of crossEntries) {
+    const list = crossByTab.get(e.owners[0]!.tab) ?? [];
+    list.push(e);
+    crossByTab.set(e.owners[0]!.tab, list);
+  }
+  for (const [tabTitle, entries] of crossByTab) {
+    if (entries.length > COLLAPSE_AT) {
+      const otherTabs = new Set<string>();
+      for (const e of entries) for (const o of e.owners) if (o.tab !== tabTitle) otherTabs.add(o.tab);
       findings.push({
         kind: "cross-tab",
         severity: "error",
-        tabTitle: owners[0].tab,
-        message: `“${k.replace(/·/g, " ")}” appears in ${[...uniqueTabs].join(" and ")} — should be in only one`,
-        rows: owners.map((o) => o.row),
+        tabTitle,
+        message: `${entries.length} identities also appear in ${[...otherTabs].length} other tab${[...otherTabs].length === 1 ? "" : "s"} (e.g. “${entries[0]!.k.replace(/·/g, " ")}”) — a compilation tab, or shots entered in two places?`,
+        rows: entries[0]!.owners.map((o) => o.row),
       });
+    } else {
+      for (const e of entries) {
+        const uniqueTabs = new Set(e.owners.map((o) => o.tab));
+        findings.push({
+          kind: "cross-tab",
+          severity: "error",
+          tabTitle: e.owners[0]!.tab,
+          message: `“${e.k.replace(/·/g, " ")}” appears in ${[...uniqueTabs].join(" and ")} — should be in only one`,
+          rows: e.owners.map((o) => o.row),
+        });
+      }
     }
   }
 

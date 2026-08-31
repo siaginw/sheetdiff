@@ -30,9 +30,25 @@ tokenizes multi-word headers ("EMP NO", "PO Number"); the fresh-import
 timeline explains itself; digest subjects lead with staleness when data is
 stale; the README quick start no longer crashes on fresh clones (`npm run
 setup`); oversized check lists collapse to honest summaries (the real
-43-tab tracker made ~950 overlap findings, drowning the checks panel and
-digest); the sheet page no longer pans sideways on phones; suite grew to
-207 tests.
+43-tab tracker made ~950 overlap findings AND 1,325 cross-tab strays from
+its compilation tab — both collapse now, panel 1342 → double digits); the
+sheet page no longer pans sideways on phones; suite grew to 218 tests.
+
+Pass 8: the account menu no longer crashes every page when opened (a bare
+Base UI GroupLabel took the page down — sign-out/share/digest settings were
+unreachable); "Stop tracking…" opens its dialog again; the lockfile is back
+in sync (CI had never been green — 29/29 failures — and Docker builds
+failed at npm ci; esbuild now pinned at root); a deletion that follows a
+change is no longer swallowed by the change’s ack (removed rows date by ROW
+existence: key for keyed rows, identical-family count for padding rows —
+which also ends the removed-padding whack-a-mole); “Mark as collected” is
+now ONE atomic statement scoped to the tabs the run covers (no mid-flight
+zero-baseline window, no cross-tab wipe, no racing double baselines); the
+APP_SECRET placeholder from .env.example is rejected at key derivation; the
+xlsx zip guard trial-inflates data-descriptor entries via the central
+directory (a 522 KB crafted file previously materialized 512 MB in heap);
+wide diffs scroll horizontally in lines mode; the demo login refuses real
+databases; digest day/time inputs are strictly validated.
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,

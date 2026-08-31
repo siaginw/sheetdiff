@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import crypto from "node:crypto";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "./db";
 import { spreadsheets, tabs, snapshots, type ScheduleKind } from "./db/schema";
 import { getSessionUserId, SESSION_COOKIE } from "./session";
@@ -170,7 +170,7 @@ export async function setBaseline(fd: FormData): Promise<void> {
     runId && tabIds.length > 0
       ? (
           await db
-            .select({ id: snapshots.id })
+            .select({ tabId: snapshots.tabId })
             .from(snapshots)
             .where(
               and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")),
@@ -178,18 +178,23 @@ export async function setBaseline(fd: FormData): Promise<void> {
             .limit(1)
         ).length > 0
       : false;
-  if (tabIds.length > 0 && runExists) {
-    await db.update(snapshots).set({ isBaseline: false }).where(inArray(snapshots.tabId, tabIds));
-    // GIS imports can never be the "collected" baseline — that would blind
-    // the pending-changes resolver (baselines are sheet snapshots only)
+  if (runExists) {
+    // ONE atomic statement, scoped to the tabs the marked run actually covers:
+    // a wipe-then-set pair is not a transaction (a mid-flight reader sees zero
+    // baselines and reports "up to date" on unentered work), two racing calls
+    // can interleave into two baselines, and a global wipe strips baselines
+    // from tabs the run predates. The CASE handles "GIS imports can never be
+    // the collected baseline" in the same breath.
     await db
       .update(snapshots)
-      .set({ isBaseline: true })
+      .set({ isBaseline: sql`(run_id = ${runId} AND trigger <> 'import')` })
       .where(
-        and(
-          inArray(snapshots.tabId, tabIds),
-          eq(snapshots.runId, runId),
-          ne(snapshots.trigger, "import"),
+        inArray(
+          snapshots.tabId,
+          db
+            .selectDistinct({ tabId: snapshots.tabId })
+            .from(snapshots)
+            .where(and(eq(snapshots.runId, runId), ne(snapshots.trigger, "import"))),
         ),
       );
   }
@@ -356,9 +361,13 @@ export async function saveDigestSettings(fd: FormData): Promise<void> {
   // recipient, and while header injection is blocked there, address-group
   // reinterpretation is not
   const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : "";
-  const time = /^\d{1,2}:\d{2}$/.test(str(fd, "digestTime")) ? str(fd, "digestTime") : "07:00";
+  // strict shapes: "99:99" would roll over inside usersDueForDigest, and a
+  // non-numeric day would NaN-clamp to null (daily) — silently changing the
+  // cadence the user asked for
+  const timeRaw = str(fd, "digestTime");
+  const time = /^([01]?\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : "07:00";
   const dayRaw = str(fd, "digestDay"); // "daily" | "0".."6"
-  const day = dayRaw === "daily" || dayRaw === "" ? null : Math.max(0, Math.min(6, Number(dayRaw)));
+  const day = /^(daily|[0-6])$/.test(dayRaw) && dayRaw !== "daily" ? Number(dayRaw) : null;
   await db
     .update(users)
     .set({ digestEmail: email || null, digestTime: time, digestDay: day })

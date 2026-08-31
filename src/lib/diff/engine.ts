@@ -84,6 +84,10 @@ export interface DiffResult {
   summary: DiffSummary;
   columns: ColumnInfo[];
   rows: DiffRow[];
+  /** resolved identity columns (B space): [keyColumn] or the composite trio;
+   *  null when rows are content-matched. Lets ack walks track ROW existence
+   *  (a deleted row's key) instead of old-content hashes. */
+  identityColumns: number[] | null;
 }
 
 export interface DiffOptions {
@@ -518,5 +522,10 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     status: cols.added.includes(c) ? "added" : "same",
   }));
 
-  return { summary, columns, rows: diffRows };
+  return {
+    summary,
+    columns,
+    rows: diffRows,
+    identityColumns: keyCol !== null ? [keyCol] : compositeUsable && compositeCols ? compositeCols : null,
+  };
 }

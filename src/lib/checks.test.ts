@@ -191,3 +191,31 @@ describe("runChecks: oversized chain lists collapse (digest saturation)", () => 
     expect(findings.filter((f) => f.kind === "overlap").length).toBe(7); // one per boundary
   });
 });
+
+describe("runChecks: cross-tab collapse (compilation tabs)", () => {
+  const H = ["Activity", "Start STA", "End STA", "Crew"];
+  // 12 identities shared between the compilation tab and one working tab:
+  // itemized would be 12 identical-shape findings naming the same two tabs
+  const shared = Array.from({ length: 12 }, (_, i) => ["Plow", String(i * 100), String(i * 100 + 50), "C"]);
+  const working = { tabTitle: "PE-6", data: snap(H, shared), keyColumn: null };
+  const compilation = { tabTitle: "Line List", data: snap(H, shared), keyColumn: null };
+
+  it("more than 10 shared identities collapse to one summary naming the pattern", () => {
+    const findings = runChecks([working, compilation]);
+    const cross = findings.filter((f) => f.kind === "cross-tab");
+    expect(cross).toHaveLength(1);
+    expect(cross[0]!.message).toContain("12 identities also appear in 1 other tab");
+    expect(cross[0]!.message).toContain("compilation tab, or shots entered in two places");
+  });
+
+  it("a handful of shared identities stays itemized (the actionable case)", () => {
+    const few = shared.slice(0, 2);
+    const findings = runChecks([
+      { tabTitle: "PE-6", data: snap(H, few), keyColumn: null },
+      { tabTitle: "PE-7", data: snap(H, few), keyColumn: null },
+    ]);
+    const cross = findings.filter((f) => f.kind === "cross-tab");
+    expect(cross).toHaveLength(2);
+    expect(cross[0]!.message).toContain("should be in only one");
+  });
+});

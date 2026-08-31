@@ -422,3 +422,28 @@ describe("startTracking", () => {
     expect(captureMock).toHaveBeenCalledWith(sheetRows[0]!.id, "manual");
   });
 });
+
+describe("INTRO_WALK_LIMIT cap (retention-fueled windows)", () => {
+  it("a row changed deeper than the 120-snapshot walk re-flags (never silently resolves)", async () => {
+    // 125 in-window snapshots; the row changed at snapshot 3 — older than the
+    // newest-120 the walk loads. The capped walk dates the row at its own
+    // oldest edge, so an ack taken between the true change and the edge stays
+    // UNRESOLVED: the safe direction (a false nag beats a false miss).
+    await seedTab("tcap", "s-pend", 0);
+    await db.update(tabs).set({ title: "tcap-tab" }).where(eq(tabs.id, "tcap"));
+    await seedSnapshot("cap-base", "tcap", "cap0", "manual", true, 0, [["Shot", "Qty"], ["S1", "10"]]);
+    for (let i = 1; i <= 125; i++) {
+      await seedSnapshot(
+        `cap-${i}`, "tcap", `cap${i}`, "manual", false, i * 1000,
+        i >= 3 ? [["Shot", "Qty"], ["S1", "55"]] : [["Shot", "Qty"], ["S1", "10"]],
+      );
+      await seedStats(`cap-${i}`, "tcap", i * 1000, 0, 0, i === 3 ? 1 : 0);
+    }
+    // ack sits between the true introduction (3000) and the walk's oldest edge
+    await db.insert(changeAcks).values({ id: crypto.randomUUID(), tabId: "tcap", rowKey: "s1", ackedAt: 3500 });
+    const p = await getPendingChanges(await tabRow("tcap"));
+    expect(p).not.toBeNull();
+    expect(p!.counts.unresolved).toBe(1); // re-flag: the ack predates the dated introduction
+    expect(p!.introducedAt.get("s1")).toBe(6000); // the walk's oldest loaded edge (snapshot 6)
+  });
+});

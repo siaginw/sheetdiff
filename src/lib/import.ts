@@ -38,31 +38,55 @@ function zipUncompressedSize(buf: Buffer): number | null {
  * Always resolve to the DISPLAYED text — the computed result for formulas.
  */
 /** Trial-inflate every DEFLATE entry with a hard cap — the only guard that
- *  can't be bypassed by lying in the central directory. */
+ *  can't be bypassed by lying in the central directory.
+ *
+ *  Walks the CENTRAL DIRECTORY, not the local headers: streamed entries (flag
+ *  bit 3, all of Google's exports) carry 0-size placeholders in their local
+ *  headers, and skipping them (the old behavior) left descriptor-flagged
+ *  bombs un-inflated — a 522 KB file was observed materializing 512 MB in
+ *  heap after both guards passed. The central directory carries the true
+ *  compressed sizes even for descriptor entries, and its offsets let each
+ *  entry's data be located and trial-inflated against a SHARED budget. */
 function verifyActualZipSize(buf: Buffer, limit: number): void {
-  let ptr = 0;
-  while (ptr + 4 <= buf.length) {
-    if (buf.readUInt32LE(ptr) !== 0x04034b50) break; // local file header
-    const flags = buf.readUInt16LE(ptr + 6);
-    const method = buf.readUInt16LE(ptr + 8);
-    const compSize = buf.readUInt32LE(ptr + 18);
-    const nameLen = buf.readUInt16LE(ptr + 26);
-    const extraLen = buf.readUInt16LE(ptr + 28);
-    const dataStart = ptr + 30 + nameLen + extraLen;
-    // Google/Sheets exports write streamed entries with data descriptors
-    // (flag bit 3): local headers carry 0-size placeholders and the real
-    // sizes live after the data. We can't trial-inflate those (compSize=0),
-    // but the central-directory declared-size check already bounded the
-    // total — skip descriptor entries rather than rejecting the file.
-    if (flags & 0x8) break;
-    if (compSize === 0) break;
-    if (dataStart + compSize > buf.length) break;
-    if (method === 8) {
-      zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
-        maxOutputLength: limit,
-      });
+  // locate End Of Central Directory (scan back over the record + comment)
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65_536); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
     }
-    ptr = dataStart + compSize;
+  }
+  if (eocd < 0) throw new Error("[zip] no end-of-central-directory");
+  const count = buf.readUInt16LE(eocd + 10);
+  let ptr = buf.readUInt32LE(eocd + 16);
+  let budget = limit;
+  for (let n = 0; n < count; n++) {
+    if (ptr + 46 > buf.length || buf.readUInt32LE(ptr) !== 0x02014b50) {
+      throw new Error("[zip] unreadable central directory");
+    }
+    const method = buf.readUInt16LE(ptr + 10);
+    const compSize = buf.readUInt32LE(ptr + 20);
+    const nameLen = buf.readUInt16LE(ptr + 28);
+    const extraLen = buf.readUInt16LE(ptr + 30);
+    const commentLen = buf.readUInt16LE(ptr + 32);
+    const localOffset = buf.readUInt32LE(ptr + 42);
+    ptr += 46 + nameLen + extraLen + commentLen;
+    if (localOffset + 30 > buf.length) throw new Error("[zip] entry offset out of range");
+    // the local header's own name/extra lengths locate the data (they can
+    // legitimately differ from the central directory's)
+    const dataStart =
+      localOffset + 30 + buf.readUInt16LE(localOffset + 26) + buf.readUInt16LE(localOffset + 28);
+    if (compSize === 0) continue; // directories / truly empty entries
+    if (dataStart + compSize > buf.length) throw new Error("[zip] entry data out of range");
+    if (method === 8) {
+      const out = zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
+        maxOutputLength: budget,
+      });
+      budget -= out.length;
+    } else {
+      budget -= compSize; // stored (uncompressed) entry
+    }
+    if (budget <= 0) throw new Error("[zip] expands over the limit");
   }
 }
 

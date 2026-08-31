@@ -298,9 +298,12 @@ function Cells({
   changed: Set<number>;
 }) {
   // GitHub convention: line text stays near-black on the tinted background —
-  // only the changed token gets a saturated fill + text color.
+  // only the changed token gets a saturated fill + text color. No
+  // overflow-hidden here: clipping the flex children prevents the content's
+  // width from reaching the scroll container, and wide sheets (40+ columns)
+  // would silently lose their right-hand columns instead of scrolling.
   return (
-    <span className="flex min-w-0 flex-1 items-center overflow-hidden">
+    <span className="flex min-w-0 flex-1 items-center">
       {columns.map((c, i) => {
         const v = values[c.col] ?? "";
         const isChanged = changed.has(c.col) && tone !== "ctx";
@@ -553,7 +556,7 @@ export function DiffView({
                   >
                     {c.header || "\u00A0"}
                   </span>
-                  {i < result.columns.length - 1 && <span className="text-muted-foreground/40">│</span>}
+                  {i < result.columns.length - 1 && <span className="text-xs text-muted-foreground/40">│</span>}
                 </span>
               ))}
             </span>

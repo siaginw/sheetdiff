@@ -3,7 +3,7 @@ import { db } from "./db";
 import { snapshots, snapshotStats, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
 import { decodeSnapshot } from "./snapshots";
-import { getAckMap, isResolved, computeIntroductions, type WalkSnapshot } from "./sync";
+import { getAckMap, isResolved, computeIntroductions, keySetsFor, type WalkSnapshot } from "./sync";
 
 /**
  * The pending-change set for one tab: the diff from the latest baseline to
@@ -24,6 +24,9 @@ export interface PendingChanges {
   /** changed/added/removed rows still to enter downstream */
   unresolved: DiffRow[];
   counts: { added: number; removed: number; changed: number; unresolved: number };
+  /** rowKey -> introduction time (only meaningful when acks exist); shared so
+   *  the sheet page can resolve acks EXACTLY like the badge/CSV/digest do */
+  introducedAt: Map<string, number>;
 }
 
 export async function getPendingChanges(
@@ -95,7 +98,14 @@ export async function getPendingChanges(
   // no acks at all → everything pending, skip the walk entirely
   const ackMap = await getAckMap(tab.id);
   if (ackMap.size === 0) {
-    return { diff, latestAt: latest.createdAt, baselineAt: baseline.createdAt, unresolved: changeRows, counts };
+    return {
+      diff,
+      latestAt: latest.createdAt,
+      baselineAt: baseline.createdAt,
+      unresolved: changeRows,
+      counts,
+      introducedAt: new Map(),
+    };
   }
 
   // Introduction walk: the full window from baseline (exclusive) to latest,
@@ -114,15 +124,23 @@ export async function getPendingChanges(
     const walk: WalkSnapshot[] = walkSnaps
       .map((s) => ({ createdAt: s.createdAt, data: walkBlobs.get(s.id) }))
       .filter((w): w is WalkSnapshot => Boolean(w.data));
-    introducedAt = computeIntroductions(walk, diff.rows);
+    introducedAt = computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) });
   }
 
   const unresolved = changeRows.filter(
     (r) => !isResolved(ackMap, r.rowKey, introducedAt.get(r.rowKey) ?? latest.createdAt),
   );
   counts.unresolved = unresolved.length;
-  return { diff, latestAt: latest.createdAt, baselineAt: baseline.createdAt, unresolved, counts };
+  return {
+    diff,
+    latestAt: latest.createdAt,
+    baselineAt: baseline.createdAt,
+    unresolved,
+    counts,
+    introducedAt,
+  };
 }
+
 
 async function fetchBlobs(ids: string[]): Promise<Map<string, SnapshotData>> {
   if (ids.length === 0) return new Map();

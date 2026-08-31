@@ -47,6 +47,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "shadcn": "^4.19.0",
@@ -56,5 +57,8 @@
   },
   "license": "MIT",
   "keywords": "google-sheets version-control diff audit snapshots construction utilities spreadsheet",
-  "description": "GitHub-style version tracking for Google Sheets — snapshots, diffs, gap linting, and audit workflows for teams whose data gets collected downstream"
+  "description": "GitHub-style version tracking for Google Sheets — snapshots, diffs, gap linting, and audit workflows for teams whose data gets collected downstream",
+  "engines": {
+    "node": ">=20"
+  }
 }

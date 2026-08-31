@@ -41,7 +41,9 @@ export function MarkCollectedButton({
   ) : (
     <>
       <Star className="size-4" /> Mark as collected
-      {unenteredCount > 0 ? ` (${unenteredCount} to enter)` : ""}
+      {/* "since collection" anchors the number: it counts the pending window
+          (last collection -> latest), not whatever pair the diff view shows */}
+      {unenteredCount > 0 ? ` (${unenteredCount} to enter since collection)` : ""}
     </>
   );
 

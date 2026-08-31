@@ -169,3 +169,31 @@ describe("usersDueForDigest", () => {
     expect(due.map((u) => u.id).sort()).toEqual(["d-due", "d-weekly"]);
   });
 });
+
+describe("backupDatabase local-calendar stamp", () => {
+  it("names the file by LOCAL date even when the UTC date has rolled over", async () => {
+    // find an instant where UTC and local dates differ (impossible only on
+    // exactly UTC±0 — where the bug cannot happen either); the clock is
+    // injected (backupDatabase(now)), fake timers freeze better-sqlite3's
+    // async paged backup
+    let t = new Date(2026, 7, 20, 12, 0, 0).getTime();
+    let guard = 0;
+    while (new Date(t).getUTCDate() === new Date(t).getDate() && guard++ < 48) t += 3_600_000;
+    if (new Date(t).getUTCDate() === new Date(t).getDate()) return; // UTC+0 host
+    const prev = process.env.DATABASE_PATH;
+    const sub = path.join(tmpDir, `midnight-${guard}`);
+    fs.mkdirSync(sub, { recursive: true });
+    fs.copyFileSync(prev!, path.join(sub, "test.db"));
+    process.env.DATABASE_PATH = path.join(sub, "test.db");
+    try {
+      const dest = await backupDatabase(new Date(t));
+      const local = new Date(t);
+      const p2 = (n: number) => String(n).padStart(2, "0");
+      const expected = `sheetdiff-${local.getFullYear()}-${p2(local.getMonth() + 1)}-${p2(local.getDate())}.db`;
+      expect(path.basename(dest!)).toBe(expected);
+      expect(dest && fs.existsSync(dest)).toBe(true);
+    } finally {
+      process.env.DATABASE_PATH = prev;
+    }
+  });
+});

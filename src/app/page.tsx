@@ -251,7 +251,14 @@ function Landing({ error }: { error: string | null }) {
               </div>
             )}
             <span className="font-mono text-xs text-muted-foreground">
-              or try the demo: <code className="rounded bg-muted px-1.5 py-0.5">npm run seed-demo</code>
+              or try the demo:{" "}
+              {process.env.ENABLE_DEMO === "1" ? (
+                <a href="/auth/demo" className="underline underline-offset-2 hover:text-foreground">
+                  open the demo login
+                </a>
+              ) : (
+                <code className="rounded bg-muted px-1.5 py-0.5">npm run seed-demo</code>
+              )}
             </span>          </div>
         </section>
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { SESSION_COOKIE, signSession, SESSION_TTL_MS } from "@/lib/session";
@@ -14,6 +14,17 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const url = new URL(req.url);
   if (process.env.ENABLE_DEMO !== "1") {
+    return NextResponse.redirect(new URL("/?error=demo-disabled", url.origin));
+  }
+  // Same rule seed-demo applies, mirrored here: if this database ever became
+  // a real deployment (real users exist), the flag being left on must not
+  // expose a no-credential login to the network. Demo data only.
+  const realUsers = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(notInArray(users.googleSub, ["smoke-fake-sub", "viewer-fake-sub"]))
+    .limit(1);
+  if (realUsers.length > 0) {
     return NextResponse.redirect(new URL("/?error=demo-disabled", url.origin));
   }
   const asViewer = url.searchParams.get("as") === "viewer";

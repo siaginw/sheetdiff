@@ -26,6 +26,10 @@ export function DeleteSheetDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
+        // the trigger renders a DropdownMenuItem (not a native <button>), so
+        // Base UI's native-button assumptions must be off or the click never
+        // opens the dialog
+        nativeButton={false}
         render={
           <DropdownMenuItem
             variant="destructive"

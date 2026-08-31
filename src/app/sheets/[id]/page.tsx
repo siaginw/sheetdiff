@@ -34,7 +34,7 @@ import { getSessionUser } from "@/lib/session";
 import { getTabDiff, decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
-import { computeIntroductions, isResolved } from "@/lib/sync";
+import { computeIntroductions, isResolved, keySetsFor } from "@/lib/sync";
 import { getPendingChanges } from "@/lib/pending";
 import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
 import { getSheetAccess } from "@/lib/access";
@@ -224,27 +224,43 @@ export default async function SheetPage({
   const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, activeTab.id));
   const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
 
-  // resolve acks against per-row introduction times (walk between baseline and "to")
+  // The pending resolver for every tracked tab — computed ONCE, reused for the
+  // ack resolution below (exact introductions for the default view) and for
+  // the sheet-wide "Mark as collected" count, so every surface agrees.
+  const pendingByTab = new Map<string, Awaited<ReturnType<typeof getPendingChanges>>>();
+  for (const t of trackedTabs) {
+    pendingByTab.set(t.id, await getPendingChanges(t));
+  }
+
+  // resolve acks against per-row introduction times. For the DEFAULT view
+  // (baseline -> latest) reuse the pending resolver's own introductions so the
+  // page's dimming can never disagree with the badge/CSV/digest; for arbitrary
+  // viewed pairs, walk between the pair with the "from" snapshot as anchor.
   const resolvedRows: Record<string, boolean> = {};
   if (diff && fromSnap && toSnap && ackMap.size > 0) {
-    const between = recent.filter(
-      (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
-    );
-    // anchor the walk with the "from" snapshot when its blob is loaded (it is,
-      // for the default baseline -> latest view) so introductions are exact and
-      // the page's ack dimming agrees with the pending resolver everywhere
-    const fromBlob = blobById.get(fromSnap.id)?.dataBlob;
-    const walkSnaps = between.filter((s) => s.dataBlob);
-    const introduced =
-      walkSnaps.length + (fromBlob ? 1 : 0) > 1
-        ? computeIntroductions(
-            [
+    const activePending = pendingByTab.get(activeTab.id) ?? null;
+    const exact =
+      activePending !== null &&
+      fromSnap.createdAt === activePending.baselineAt &&
+      toSnap.createdAt === activePending.latestAt;
+    let introduced: Map<string, number>;
+    if (exact && activePending) {
+      introduced = activePending.introducedAt;
+    } else {
+      const between = recent.filter(
+        (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
+      );
+      const fromBlob = blobById.get(fromSnap.id)?.dataBlob;
+      const walkSnaps = between.filter((s) => s.dataBlob);
+      const walk =
+        walkSnaps.length + (fromBlob ? 1 : 0) > 1
+          ? [
               ...walkSnaps.map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
               ...(fromBlob ? [{ createdAt: fromSnap.createdAt, data: decodeSnapshot(fromBlob) }] : []),
-            ],
-            diff.rows,
-          )
-        : new Map<string, number>();
+            ]
+          : [];
+      introduced = walk.length > 1 ? computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) }) : new Map();
+    }
     for (const r of diff.rows) {
       if (r.status === "unchanged" || r.status === "moved") continue;
       resolvedRows[r.rowKey] = isResolved(ackMap, r.rowKey, introduced.get(r.rowKey) ?? toSnap.createdAt);
@@ -333,13 +349,12 @@ export default async function SheetPage({
   const trackedCount = trackedTabs.length;
   // "Mark as collected" re-baselines EVERY tracked tab in the run, so the
   // warning count must be sheet-wide and ack-aware — the same pending resolver
-  // the CSV export and dashboard use, never the viewed tab's raw diff rows
-  // (which would ignore acks and other tabs' unentered work)
-  let unenteredCount = 0;
-  for (const t of trackedTabs) {
-    const pending = await getPendingChanges(t);
-    if (pending) unenteredCount += pending.counts.unresolved;
-  }
+  // the CSV export and dashboard use (pendingByTab, computed above), never the
+  // viewed tab's raw diff rows
+  const unenteredCount = [...pendingByTab.values()].reduce(
+    (n, p) => n + (p?.counts.unresolved ?? 0),
+    0,
+  );
 
   const IMPORT_ERRORS: Record<string, string> = {
     "snapshot-failed": "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
