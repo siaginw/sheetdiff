@@ -59,8 +59,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sd-billing-"));
 process.env.DATABASE_PATH = path.join(tmpDir, "test.db");
 fs.writeFileSync(process.env.DATABASE_PATH, "");
 const repoRoot = process.cwd();
-const drizzleKit = path.join(repoRoot, "node_modules", "drizzle-kit", "bin.cjs");
-execFileSync(process.execPath, [drizzleKit, "push", "--force"], {
+execFileSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
   cwd: repoRoot,
   env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH },
   stdio: "pipe",
