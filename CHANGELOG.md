@@ -98,6 +98,18 @@ the weekly report: tabs whose rows are all duplicates of already-aggregated
 tabs are skipped. SECURITY.md, bug-issue template, Discussions pointer;
 suite 266.
 
+Fleet 12: the weekly report no longer blanks when a tracked tab copies another
+(the dedup used `return` where it meant `continue` — the stock demo triggered
+it); the report uses the TESTED dedup helper and computes placed-footage from
+deduped rows (copies no longer double-count); month-name invoice markers are
+year-aware ("December" viewed in January is now correctly a missed run);
+invoice-ledger ft no longer inflates on unparseable stations; a row keyed via
+Invoice # alone is billed, not billable; the panel renders a full invoice
+section (billable rows, billed-by-invoice ledger, missed runs) and its
+clean/empty states account for it; billing route decodes each tab's blob once
+(was 4x); Dependabot PRs triaged (TS 5.9 stays for this release — TS 7 breaks
+next build on 16.3); social-preview image composed; suite 282.
+
 Pass 10 (deep dive): crews canonicalize (the real tracker's 36 hand-spellings
 of ~10 crews defragmented, most-typed spelling shown); over-placement guard
 (TOTALS Placed vs Designed per package — do-not-invoice rows; the real file

@@ -362,6 +362,76 @@ describe("invoiceStatus (the office's own billing ledger)", () => {
     const data = snap(["Activity", "Start STA", "End STA"], [["Plow", "0", "500"]]);
     expect(invoiceStatus(data, NOW).enteredColumn).toBeNull();
   });
+
+  it("month markers are year-aware: December viewed in January is a MISSED run (bare month indices read it queued)", () => {
+    const jan = new Date("2026-01-15T12:00:00").getTime();
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2025-12-01", "December", "", "Yes"), // run passed last month — missed
+      mk("Bore", "500", "1000", "2025-11-15", "November", "", "Yes"), // 2 months back — missed
+      mk("Plow", "1000", "1500", "2025-12-28", "February", "", "Yes"), // next month pre-queued — queued
+      mk("Plow", "1500", "2000", "2026-01-02", "January", "", "Yes"), // current month's run — queued
+    ]);
+    const st = invoiceStatus(data, jan);
+    expect(st.missedRun.map((m) => m.invoice).sort()).toEqual(["December", "November"]);
+    expect(st.billedByInvoice.find((x) => x.invoice === "queued: February")?.rows).toBe(1);
+    expect(st.billedByInvoice.find((x) => x.invoice === "queued: January")?.rows).toBe(1);
+    expect(st.billableNow).toHaveLength(0);
+  });
+
+  it("a January marker typed in December is next year's queued run, not a forgotten one", () => {
+    const dec = new Date("2026-12-15T12:00:00").getTime();
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2026-11-20", "January", "", "Yes"), // 11 months back = next month's run — queued
+      mk("Bore", "500", "1000", "2026-12-01", "October", "", "Yes"), // 2 months back — missed
+    ]);
+    const st = invoiceStatus(data, dec);
+    expect(st.missedRun).toEqual([{ invoice: "October", rows: 1 }]);
+    expect(st.billedByInvoice.find((x) => x.invoice === "queued: January")?.rows).toBe(1);
+  });
+
+  it("unparseable stations are skipped, not null-coerced (a junk start used to report the whole end station as billable ft)", () => {
+    const data = snap(H, [
+      mk("Bore", "\t-CR led bore", "2200", "2026-08-01", "", "", "Yes"), // start doesn't parse — NOT 2,200 ft
+      mk("Plow", "0", "500", "2026-08-02", "", "", "Yes"), // measurable — 500 ft
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billableNow).toHaveLength(1);
+    expect(st.billableNow[0]!.ft).toBe(500);
+    expect(st.billableFt).toBe(500);
+  });
+
+  it("an Invoice # alone (entered blank) is definitionally billed — ledger, never billable-now", () => {
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2026-08-01", "", "3118", "Yes"), // invoice number only
+      mk("Bore", "500", "1000", "2026-08-02", "", "August", "Yes"), // month marker in Invoice #
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billableNow).toHaveLength(0);
+    expect(st.billableFt).toBe(0);
+    expect(st.billedByInvoice.find((x) => x.invoice === "3118")?.rows).toBe(1);
+    expect(st.billedByInvoice.find((x) => x.invoice === "queued: August")?.rows).toBe(1);
+  });
+
+  it("7-digit invoice numbers land in the billed ledger (3–6 digits used to let them silently vanish)", () => {
+    const data = snap(H, [mk("Plow", "0", "500", "2026-08-01", "1234567", "", "Yes")]);
+    expect(invoiceStatus(data, NOW).billedByInvoice).toEqual([{ invoice: "1234567", rows: 1 }]);
+  });
+
+  it("an explicit no/n-a in the GIS column blocks billing; other values and a missing column pass", () => {
+    const data = snap(H, [
+      mk("Plow", "0", "100", "2026-08-01", "", "", "NO"), // explicitly not in GIS — blocked
+      mk("Bore", "100", "200", "2026-08-01", "", "", "n/a"), // blocked
+      mk("Plow", "200", "300", "2026-08-01", "", "", "not yet"), // blocked
+      mk("Plow", "300", "400", "2026-08-01", "", "", "8/28/26"), // a date stamp means done — billable
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billableNow).toHaveLength(1);
+    expect(st.billableFt).toBe(100);
+    // no GIS column at all: absence of the check can't block billing
+    const H2 = ["Activity", "Start STA", "End STA", "Date Complete", "Entered in InEight"];
+    const st2 = invoiceStatus(snap(H2, [["Plow", "0", "100", "2026-08-01", ""]]), NOW);
+    expect(st2.billableNow).toHaveLength(1);
+  });
 });
 
 describe("dedupeRollupRows (compilation tabs copy working tabs)", () => {

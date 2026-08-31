@@ -552,6 +552,28 @@ export function aggregateWeekly(tabs: { weeks: WeekBucket[]; placedFt: number }[
 const INVOICE_NUM_RE = /invoice\s*#|invoice\s*no|inv\s*#/i;
 const MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$/i;
 const GIS_COL_RE = /bore\s*log.*gis|in\s*gis/i;
+/** invoice numbers: 3–8 digits (the office's own numbering is 4–5 today, but a
+ *  7-digit number must land in the billed ledger, not silently vanish) */
+const INVOICE_DIGITS_RE = /^\d{3,8}$/;
+const MONTH_PREFIX_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+/** Values in a GIS column that explicitly say the sub's log is NOT in yet.
+ *  Anything else non-blank counts as in-GIS (kept permissive — date stamps,
+ *  initials, "y", file names all mean done); blank still blocks because the
+ *  check hasn't been done and absence of a check can't wave work through. */
+const GIS_NEGATIVE_RE = /^(no|n\/?a|not yet|pending)$/i;
+
+/** Has the run named by a month marker ("July", "January"…) already happened?
+ *  Month markers carry no year, so assume the marker names the most recent
+ *  occurrence of that month: the marker's upcoming run — the CURRENT month, or
+ *  next month pre-queued early ("January" typed in December is next year's
+ *  run, not a forgotten one) — is still queued; 1–10 months back the run has
+ *  passed and the rows are a missed run to chase. Comparing bare month INDICES
+ *  got exactly the December/January boundaries wrong both ways. */
+function monthRunPassed(monthIdx: number, now: number): boolean {
+  const monthsAgo = (new Date(now).getMonth() - monthIdx + 12) % 12;
+  return monthsAgo >= 1 && monthsAgo <= 10;
+}
 
 export interface InvoiceRow {
   row: number;
@@ -596,8 +618,9 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   for (let i = 0; i < data.headers.length; i++) {
     if (OFFICE_ENTERED_RE.test(norm(data.headers[i]))) { enteredCol = i; out.enteredColumn = norm(data.headers[i]); break; }
   }
+  let invCol = -1;
   for (let i = 0; i < data.headers.length; i++) {
-    if (INVOICE_NUM_RE.test(norm(data.headers[i]))) { out.invoiceColumn = norm(data.headers[i]); break; }
+    if (INVOICE_NUM_RE.test(norm(data.headers[i]))) { invCol = i; out.invoiceColumn = norm(data.headers[i]); break; }
   }
   if (enteredCol === null) return out;
   const dateCol = detectDateColumn(data);
@@ -608,38 +631,51 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   for (let i = 0; i < data.headers.length; i++) {
     if (GIS_COL_RE.test(norm(data.headers[i]))) { gisCol = i; break; }
   }
-  const nowMonth = new Date(now).getMonth();
 
   const invCounts = new Map<string, number>();
   const missed = new Map<string, number>();
   data.rows.forEach((r, i) => {
     const entered = norm(r[enteredCol!]);
-    const invoice = out.invoiceColumn !== null ? norm(r[data.headers.indexOf(out.invoiceColumn)]) : "";
+    const invoice = invCol >= 0 ? norm(r[invCol]) : "";
     if (!isFootageChainRow(r, activityCol) || isGapRow(r, activityCol)) return;
     const d = parseCompletedDate(r[dateCol]);
     if (d === null) return;
     const days = Math.floor((now - d.getTime()) / 86_400_000);
-    if (entered !== "") {
-      // keyed downstream: a date, an invoice number, or a month-name run
-      if (MONTH_RE.test(entered) || MONTH_RE.test(invoice)) {
-        const marker = MONTH_RE.test(entered) ? entered : invoice;
-        const m = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.exec(marker);
+    // keyed downstream when EITHER ledger column carries a marker — an Invoice
+    // # with the entered column still blank is definitionally billed and must
+    // never fall through to billable-now
+    if (entered !== "" || invoice !== "") {
+      const marker = MONTH_RE.test(entered) ? entered : MONTH_RE.test(invoice) ? invoice : "";
+      if (marker !== "") {
+        const m = MONTH_PREFIX_RE.exec(marker);
         if (m) {
-          const monthIdx = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(m[1]!.toLowerCase());
-          if (monthIdx < nowMonth) missed.set(marker, (missed.get(marker) ?? 0) + 1);
+          const monthIdx = MONTHS.indexOf(m[1]!.toLowerCase());
+          if (monthRunPassed(monthIdx, now)) missed.set(marker, (missed.get(marker) ?? 0) + 1);
           else invCounts.set(`queued: ${marker}`, (invCounts.get(`queued: ${marker}`) ?? 0) + 1);
         }
-      } else if (/^\d{3,6}$/.test(entered) || /^\d{3,6}$/.test(invoice)) {
-        const inv = /^\d{3,6}$/.test(entered) ? entered : invoice;
-        invCounts.set(inv, (invCounts.get(inv) ?? 0) + 1);
+      } else {
+        const numeric = INVOICE_DIGITS_RE.test(entered) ? entered : INVOICE_DIGITS_RE.test(invoice) ? invoice : "";
+        if (numeric !== "") invCounts.set(numeric, (invCounts.get(numeric) ?? 0) + 1);
       }
       return;
     }
-    // not entered: billable NOW when the sub's log is in GIS (or no GIS
-    // column exists at all — absence of the check can't block billing)
-    const gisOk = gisCol === null || norm(r[gisCol]) !== "";
-    if (!gisOk) return;
-    const ft = stations ? Math.max(parseStation(r[stations.end])! - parseStation(r[stations.start])!, 0) : 0;
+    // not entered: billable NOW when the sub's log is in GIS (or no GIS column
+    // exists at all — absence of the check can't block billing; an explicit
+    // "no"/"n/a" DOES block)
+    if (gisCol !== null) {
+      const gisVal = norm(r[gisCol]);
+      if (gisVal === "" || GIS_NEGATIVE_RE.test(gisVal)) return;
+    }
+    // stations that don't parse are not billable footage: a null-coerced 0
+    // start would inflate billableFt by the whole end station (guarded the
+    // same way weeklyProduction guards its chain)
+    let ft = 0;
+    if (stations) {
+      const s = parseStation(r[stations.start]);
+      const e = parseStation(r[stations.end]);
+      if (s === null || e === null) return;
+      ft = Math.max(e - s, 0);
+    }
     out.billableNow.push({
       row: i + 1,
       activity: activityCol !== null ? norm(r[activityCol]) : "",

@@ -192,8 +192,7 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 For deliverability on your own domain, consider signing with DKIM — nodemailer
 supports it via `dkim: { domainName, keySelector, privateKey }` transport options
 (see nodemailer.com/dkim).
-  see the commented block). Sent while the app is running.
-- **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take.
+- **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take. The **invoice ledger** reads your sheet's own "Entered in InEight" + "Invoice #" columns: what's billable right now (aged, with footage), what's billed under which invoice number, and runs already missed.
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice),
   over-placement warnings (TOTALS Placed beyond Designed), the office-entry backlog per the
   sheet's own "entered" column, the to-enter worklist, and late entries in one CSV.
@@ -227,7 +226,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (266 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (282 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

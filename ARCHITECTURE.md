@@ -127,6 +127,7 @@ CSV worklist export, and the digest, so the three can never disagree.
   the zip guard is three-layered: declared-size sum, per-entry trial-inflation
   of EVERY central-directory entry (descriptors included) against a shared
   budget, and EOCD entry-count-lie rejection).
+- **Billing packet** (`billing.ts` + route) — placed footage since collection, open holes flagged *do not invoice*, over-placement, office-entry backlog, invoice-ledger BILLABLE rows + missed-run chases, the to-enter worklist, and late entries in one CSV stamped with snapshot provenance.
   open holes flagged *do not invoice*, over-placed packages (Placed beyond
   Designed) flagged the same way, the to-enter worklist, late entries —
   one CSV stamped with snapshot provenance, formula-injection-guarded, aggregated
@@ -144,7 +145,7 @@ floor of 2) plus verified SQLite backups to `data/backups/` (keep 14). If
 
 ## HTTP surface & access control
 
-Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export`, `/export/queue` (entry-queue CSV), `/export/billing`
+Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export` (worklist CSV), `/sheets/[id]/export/queue` (entry-queue CSV), `/sheets/[id]/export/billing` (billing packet CSV)
 (worklist CSV), `/sheets/[id]/export/billing` (billing packet CSV),
 `/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/api/health`.
 

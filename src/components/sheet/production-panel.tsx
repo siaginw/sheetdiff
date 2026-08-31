@@ -1,4 +1,4 @@
-import { CalendarClock, ClipboardCheck, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
+import { CalendarClock, ClipboardCheck, HardHat, Receipt, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
 import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline, InvoiceStatus } from "@/lib/production";
 import { absoluteTime } from "@/lib/format";
 
@@ -68,6 +68,15 @@ export function ProductionPanel({
   const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
   const officeWaiting = office && office.enteredColumn ? office.stuck.length + office.aging.length + office.normal.length : 0;
+  // invoice findings count toward "clean"/empty-state the same as every other
+  // section — the chips above used to render while the summary still said clean
+  const invoiceChase =
+    invoices && invoices.enteredColumn
+      ? invoices.billableNow.length + invoices.missedRun.reduce((n, m) => n + m.rows, 0)
+      : 0;
+  const billableStuck = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion >= 15) : [];
+  const billableAging = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion >= 3 && r.daysSinceCompletion < 15) : [];
+  const billableFresh = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion < 3) : [];
 
   return (
     <details className="group mb-4 rounded-xl border bg-card">
@@ -119,7 +128,7 @@ export function ProductionPanel({
           {office && office.aging.length > 0 && (
             <span className="text-diff-move-fg">{office.aging.length} waiting on office entry</span>
           )}
-          {problems === 0 && oldHoles.length === 0 && !(office && (office.stuck.length > 0 || office.aging.length > 0)) && <span className="text-diff-add-fg">clean</span>}
+          {problems === 0 && oldHoles.length === 0 && !(office && (office.stuck.length > 0 || office.aging.length > 0)) && invoiceChase === 0 && <span className="text-diff-add-fg">clean</span>}
         </span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground group-open:hidden">expand</span>
         <span className="ml-auto hidden font-mono text-[10px] text-muted-foreground group-open:inline">collapse</span>
@@ -160,6 +169,39 @@ export function ProductionPanel({
           {office.normal.length > 0 && (
             <Line tone="muted">+{office.normal.length} completed within the last 2 days — normal keying lag</Line>
           )}
+        </Section>
+      ) : null}
+
+      {invoices && invoices.enteredColumn && (invoices.billableNow.length > 0 || invoices.billedByInvoice.length > 0 || invoices.missedRun.length > 0) ? (
+        <Section icon={<Receipt className="size-3.5" />} title={`Invoice ledger (per the sheet's “${invoices.enteredColumn}” column)`}>
+          {invoices.missedRun.map((m) => (
+            <Line key={`missed-${m.invoice}`} tone="danger">
+              {m.invoice} run already passed — {m.rows} row{m.rows === 1 ? "" : "s"} never invoiced (chase the office)
+            </Line>
+          ))}
+          {billableStuck.slice(0, 5).map((r) => (
+            <Line key={`bill-${r.row}`} tone="danger">
+              row {r.row} · {r.activity} · {ft(r.ft)} ft — completed {r.completedOn}, {r.daysSinceCompletion}d unentered
+            </Line>
+          ))}
+          {billableStuck.length > 5 && <Line tone="muted">+{billableStuck.length - 5} more billable 15d+…</Line>}
+          {billableAging.slice(0, 5).map((r) => (
+            <Line key={`aging-${r.row}`} tone="warn">
+              row {r.row} · {r.activity} · {ft(r.ft)} ft — completed {r.completedOn}, {r.daysSinceCompletion}d unentered
+            </Line>
+          ))}
+          {billableAging.length > 5 && <Line tone="muted">+{billableAging.length - 5} more aging…</Line>}
+          {billableFresh.length > 0 && (
+            <Line tone="muted">+{billableFresh.length} billable, completed within the last 2 days</Line>
+          )}
+          {invoices.billedByInvoice.slice(0, 5).map((b) => (
+            <Line key={`inv-${b.invoice}`} tone="muted">
+              {b.invoice.startsWith("queued: ")
+                ? `${b.invoice.slice(8)} run queued — ${b.rows} row${b.rows === 1 ? "" : "s"}`
+                : `Invoice ${b.invoice} — ${b.rows} row${b.rows === 1 ? "" : "s"}`}
+            </Line>
+          ))}
+          {invoices.billedByInvoice.length > 5 && <Line tone="muted">+{invoices.billedByInvoice.length - 5} more ledger lines…</Line>}
         </Section>
       ) : null}
 
@@ -218,7 +260,7 @@ export function ProductionPanel({
         </Section>
       ) : null}
 
-      {problems === 0 && agedGaps.length === 0 && officeWaiting === 0 && (!crewBoard || crewBoard.crews.length === 0) ? (
+      {problems === 0 && agedGaps.length === 0 && officeWaiting === 0 && invoiceChase === 0 && (!crewBoard || crewBoard.crews.length === 0) ? (
         <p className="border-t px-4 py-3 text-sm text-muted-foreground">No production analytics available for this tab.</p>
       ) : null}
     </details>

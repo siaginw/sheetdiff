@@ -28,10 +28,6 @@ export function ShareDialog({
   onOpenChange: (open: boolean) => void;
   members: { id: string; email: string }[];
 }) {
-  const [emails, setEmails] = useState("");
-  const [rejected, setRejected] = useState<string[]>([]);
-
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">

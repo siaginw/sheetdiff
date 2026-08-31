@@ -9,6 +9,11 @@ export default defineConfig({
       "@": path.resolve(process.cwd(), "src"),
     },
   },
+  // .tsx server components imported by tests (report page, production panel)
+  // need the automatic JSX runtime — files don't import React themselves
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],

@@ -59,7 +59,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
-    const latestReport = computeGapReport(decodeSnapshot(latestSnap.dataBlob));
+    // ONE decode of the latest blob per tab — the gap report, the window walk,
+    // the office pipeline, and the invoice ledger all read this same snapshot
+    // (gunzip + JSON.parse is synchronous event-loop work; the same blob was
+    // decoded four times per tab here before)
+    const latestData = decodeSnapshot(latestSnap.dataBlob);
+    const latestReport = computeGapReport(latestData);
     if (latestSnap.createdAt > latestAtMs) {
       latestAtMs = latestSnap.createdAt;
       latestLabel = absoluteTime(latestSnap.createdAt);
@@ -88,7 +93,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .orderBy(desc(snapshots.createdAt))
       .limit(15);
       if (window.length > 0) {
-        const walk = [...window].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) }));
+        // after reverse, window[0] IS the latest snapshot row (same
+        // non-import filter, same createdAt ordering) — reuse its decode
+        // rather than gunzipping the identical blob a second time
+        const walk = [...window].reverse().map((s) => ({
+          createdAt: s.createdAt,
+          data: s.id === latestSnap.id ? latestData : decodeSnapshot(s.dataBlob),
+        }));
         for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
           allAgedGaps.push({ ...g, tab: tab.title });
         }
@@ -98,8 +109,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       }
 
     // the office-entry backlog comes from the sheet's own entered-column
-    officeByTab.push({ tab: tab.title, pipeline: officePipeline(decodeSnapshot(latestSnap.dataBlob)) });
-    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(decodeSnapshot(latestSnap.dataBlob)) });
+    officeByTab.push({ tab: tab.title, pipeline: officePipeline(latestData) });
+    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(latestData) });
 
     const pending = await getPendingChanges(tab);
     if (pending) {

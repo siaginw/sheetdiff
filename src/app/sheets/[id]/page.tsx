@@ -320,7 +320,6 @@ export default async function SheetPage({
   if (latestData) {
     office = officePipeline(latestData);
     invoices = invoiceStatus(latestData);
-    invoices = invoiceStatus(latestData);
     hygiene = dateHygiene(latestData);
     crewBoard = computeCrewBoard(latestData);
     if (recent.length > 1) {
