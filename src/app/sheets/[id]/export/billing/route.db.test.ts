@@ -237,8 +237,10 @@ describe("billing route: packet assembly across every tracked tab", () => {
       "enter in office system (bill-b)",
     ]);
     // the late entry: row 3 of tab A's latest, dated 8/10/2026 (day count is
-    // timezone-adjacent — match, don't pin)
-    expect(body.some((l) => /^late,Row 3 \(Bore\) dated 8\/10\/2026, entered \d+d late,,verify office system has it$/.test(l))).toBe(true);
+    // timezone-adjacent — match, don't pin). The detail contains a comma, so
+    // it ships as ONE quoted field — this regex used to match the SPLIT
+    // output of the quoting bug itself.
+    expect(body.some((l) => /^late,"Row 3 \(Bore\) dated 8\/10\/2026, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
   });
 
   it("an ack on the tab-A change drops exactly that row from the worklist", async () => {

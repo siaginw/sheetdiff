@@ -230,15 +230,19 @@ export default async function SheetPage({
     const between = recent.filter(
       (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
     );
-    // in-window snapshots beyond the blob budget have no dataBlob — the walk
-    // can't see that far back, and rows predating it must not re-flag
-    const truncated = between.some((s) => !s.dataBlob);
+    // anchor the walk with the "from" snapshot when its blob is loaded (it is,
+      // for the default baseline -> latest view) so introductions are exact and
+      // the page's ack dimming agrees with the pending resolver everywhere
+    const fromBlob = blobById.get(fromSnap.id)?.dataBlob;
+    const walkSnaps = between.filter((s) => s.dataBlob);
     const introduced =
-      between.length > 1
+      walkSnaps.length + (fromBlob ? 1 : 0) > 1
         ? computeIntroductions(
-            between.filter((s) => s.dataBlob).map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
+            [
+              ...walkSnaps.map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
+              ...(fromBlob ? [{ createdAt: fromSnap.createdAt, data: decodeSnapshot(fromBlob) }] : []),
+            ],
             diff.rows,
-            { truncated },
           )
         : new Map<string, number>();
     for (const r of diff.rows) {
@@ -517,7 +521,7 @@ export default async function SheetPage({
                               className="text-muted-foreground/40"
                               title={isImport ? "GIS imports replace the tracked state — they don't record change counts" : "Change counts weren't recorded for snapshots this old"}
                             >
-                              {isImport ? "" : "—"}
+                              {isImport ? "n/a" : "—"}
                             </span>
                           ) : st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">

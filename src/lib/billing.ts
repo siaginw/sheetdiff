@@ -92,10 +92,12 @@ export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boole
   ];
   for (const r of p.rows) {
     const esc = (v: string) => {
-    // formula guard first (same rule as csvSafe — this CSV goes to Excel)
-    const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
-    return /["\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
+      // formula guard first (same rule as csvSafe — this CSV goes to Excel),
+      // then quote on comma/quote/newline/CR — an unquoted comma SPLITS the
+      // field and the unguarded remainder lands in another cell (fleet-7 HIGH)
+      const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+      return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+    };
     lines.push([r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(","));
   }
   return lines.join("\n");

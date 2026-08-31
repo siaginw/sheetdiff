@@ -15,7 +15,7 @@ import { getAckMap, isResolved, computeIntroductions, type WalkSnapshot } from "
  * (baseline + latest + a bounded walk window) — never the whole history.
  */
 
-const INTRO_WALK_LIMIT = 30;
+const INTRO_WALK_LIMIT = 120; // safety cap; the baseline anchor bounds the walk below
 
 export interface PendingChanges {
   diff: DiffResult;
@@ -98,21 +98,23 @@ export async function getPendingChanges(
     return { diff, latestAt: latest.createdAt, baselineAt: baseline.createdAt, unresolved: changeRows, counts };
   }
 
-  // bounded walk between baseline and latest (newest first, baseline excluded)
+  // Introduction walk: the full window from baseline (exclusive) to latest,
+  // WITH the baseline as the bounding anchor — its blob is already loaded, and
+  // with it every row's introduction is exact (a row can't predate the window
+  // the diff spans). Capped for pathological retention-fueled windows; a capped
+  // walk dates unbounded rows at its own oldest edge (re-flag direction, never
+  // a silent miss).
   const windowAll = sheetSnaps.filter(
     (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
   );
-  const between = windowAll.slice(0, INTRO_WALK_LIMIT);
-  // hourly sheets outrun the walk window within days; a truncated walk cannot
-  // date rows older than its oldest snapshot and must say so
-  const truncated = windowAll.length > between.length;
   let introducedAt = new Map<string, number>();
-  if (between.length > 1) {
-    const walkBlobs = await fetchBlobs(between.map((s) => s.id));
-    const walk: WalkSnapshot[] = between
+  if (windowAll.length > 0) {
+    const walkSnaps = windowAll.slice(0, INTRO_WALK_LIMIT).concat([baseline]);
+    const walkBlobs = await fetchBlobs(walkSnaps.map((s) => s.id));
+    const walk: WalkSnapshot[] = walkSnaps
       .map((s) => ({ createdAt: s.createdAt, data: walkBlobs.get(s.id) }))
       .filter((w): w is WalkSnapshot => Boolean(w.data));
-    introducedAt = computeIntroductions(walk, diff.rows, { truncated });
+    introducedAt = computeIntroductions(walk, diff.rows);
   }
 
   const unresolved = changeRows.filter(

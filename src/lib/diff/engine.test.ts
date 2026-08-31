@@ -23,6 +23,10 @@ describe("parseNumberLike", () => {
     expect(parseNumberLike("12 34")).toBeNull();
     expect(parseNumberLike("1.2.3")).toBeNull();
   });
+  it("cuts off at exactly 16 significant digits (15 parses, 16 does not)", () => {
+    expect(parseNumberLike("123456789012345")).toBe(123456789012345);
+    expect(parseNumberLike("1234567890123456")).toBeNull();
+  });
 });
 
 describe("sameValue", () => {
@@ -116,6 +120,14 @@ describe("detectKeyColumn", () => {
       ["s2", "Bore"],
     ]);
     expect(detectKeyColumn(s)).toBe(0);
+  });
+  it("tokenizes multi-word headers: 'EMP NO', 'PO Number', 'Drawing Number' are identifiers", () => {
+    // concatenation alone reads "empno"/"ponumber" — the WORDS carry the
+    // meaning, and these are real key columns on non-production tabs
+    const mk = (h: string) => snap([h, "Filler"], [["x1", "a"], ["x2", "b"]]);
+    expect(detectKeyColumn(mk("EMP NO"))).toBe(0);
+    expect(detectKeyColumn(mk("PO Number"))).toBe(0);
+    expect(detectKeyColumn(mk("Drawing Number"))).toBe(0);
   });
 });
 

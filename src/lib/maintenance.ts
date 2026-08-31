@@ -73,6 +73,15 @@ export async function backupDatabase(): Promise<string | null> {
       if (result !== "ok") console.error(`[maintenance] backup integrity_check: ${String(result)}`);
     } finally {
       check.close();
+      // the verify connection leaves -shm/-wal siblings that retention's
+      // *.db filter never evicts — two junk files per day, forever
+      for (const ext of ["-shm", "-wal"]) {
+        try {
+          fs.rmSync(`${dest}${ext}`);
+        } catch {
+          // absent on some filesystems — fine
+        }
+      }
     }
   } finally {
     sqlite.close();
@@ -90,8 +99,8 @@ export async function backupDatabase(): Promise<string | null> {
     .readdirSync(dir)
     .filter((f) => (f.startsWith("sheetdiff-") || f.startsWith("pre-migrate-")) && f.endsWith(".db"))
     .sort((a, b) => stampOf(a) - stampOf(b))
-    .slice(0, -keep)
-    .slice(-20); // never evict more than 20 files in one sweep, whatever the count
+    .slice(0, -keep) // drop the newest `keep`, evict the surplus oldest-first
+    .slice(0, 20); // never evict more than 20 files in one sweep, whatever the count
   for (const f of old) {
     try {
       fs.rmSync(path.join(dir, f));

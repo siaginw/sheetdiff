@@ -32,21 +32,22 @@ export interface WalkSnapshot {
 /**
  * Compute when each diff row's current state first appeared.
  *
- * `walk` must be the snapshots from baseline (exclusive) to latest (inclusive),
- * ordered NEWEST first, capped to a reasonable window (e.g. 30). For
- * added/changed rows the introduction is the oldest walked snapshot still
- * containing the row's NEW content hash; for removed rows, the oldest snapshot
- * in which the OLD content hash is gone.
+ * `walk` must be the snapshots from the bounding snapshot (the baseline, or
+ * the "from" of a viewed pair) to latest, ordered NEWEST first, WITH the
+ * bounding snapshot included as the last entry: a row still unbounded at the
+ * walk's oldest edge would otherwise get a "present/absent everywhere in the
+ * window" date that is really "predates the window" — and a timestamp that
+ * is too LATE turns a valid ack into a re-flag, while one that is too EARLY
+ * (an explicit 0) lets an ack silently swallow a re-change (a real miss —
+ * worse). The bounding snapshot makes every introduction exact.
  *
- * `truncated` must be true when older in-window snapshots exist but weren't
- * loaded: a row present in every walked snapshot then only PROVES it predates
- * the oldest one, so its introduction is unknown — reported as 0, which any
- * ack satisfies. A false nag (re-entering an acked row) beats a false miss.
+ * For added/changed rows the introduction is the oldest walked snapshot still
+ * containing the row's NEW content hash; for removed rows, the oldest
+ * snapshot in which the OLD content hash is gone.
  */
 export function computeIntroductions(
   walk: WalkSnapshot[],
   rows: DiffRow[],
-  opts: { truncated?: boolean } = {},
 ): Map<string, number> {
   const out = new Map<string, number>();
   if (walk.length === 0) return out;
@@ -98,14 +99,7 @@ export function computeIntroductions(
   // newest walked snapshot) must fall back to the caller's strict default,
   // never to a sentinel 0 that any ack would satisfy
   for (const [rowKey, p] of pending) {
-    if (p.introduced === 0) continue;
-    if (opts.truncated && !p.done) {
-      // never bounded within the walk + walk is truncated → the row predates
-      // the window; the true introduction is unknowable, so any ack counts
-      out.set(rowKey, 0);
-    } else {
-      out.set(rowKey, p.introduced);
-    }
+    if (p.introduced > 0) out.set(rowKey, p.introduced);
   }
   return out;
 }

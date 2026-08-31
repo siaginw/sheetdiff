@@ -125,11 +125,15 @@ export function detectKeyColumn(s: SnapshotData): number | null {
     // ...and be unique (a key that repeats can't identify a row)
     if (new Set(nonEmpty).size !== nonEmpty.length) continue;
 
-    // "Shot #" and "Emp #" are identifier headers too — judge the alphanumerics
-    const header = norm(headers[c]).toLowerCase().replace(/[^a-z0-9]/g, "");
+    // "Shot #", "EMP NO" and "PO Number" are identifier headers — judge the
+    // individual words, then the concatenated form for "EmployeeID"-style
+    // headers whose tokens alone don't match
+    const lowered = norm(headers[c]).toLowerCase();
+    const tokens = lowered.split(/[^a-z0-9]+/).filter(Boolean);
+    const joined = tokens.join("");
     const score =
-      (KEY_HEADER_RE.test(header) ? 2 : 0) +
-      (header.includes("id") || header.includes("key") || header.includes("date") || header.includes("name") ? 1 : 0);
+      (tokens.some((t) => KEY_HEADER_RE.test(t)) ? 2 : 0) +
+      (joined.includes("id") || joined.includes("key") || joined.includes("date") || joined.includes("name") ? 1 : 0);
     if (!best || score > best.score) best = { col: c, score };
   }
   return best && best.score > 0 ? best.col : null;
@@ -488,15 +492,23 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   // raw base (unique keys stay plain, existing acks keep matching); repeated
   // families get a positional suffix — A-side index for rows that existed in
   // A (stable across re-diffs of the same pair), B-side for added rows.
+  // Suffixes must also dodge RAW bases of other families ("Plow #2" as a key
+  // value looks exactly like a suffixed "Plow"), so single-member bases are
+  // reserved up front. Known tradeoff: identical added rows have no content
+  // discriminator, so their B-side suffixes shift when rows are inserted above
+  // — an ack can transfer between identical siblings across captures, but the
+  // pending COUNT stays correct (the sibling remains unresolved), which is the
+  // invariant every consumer relies on.
   const baseCount = new Map<string, number>();
   for (const r of diffRows) baseCount.set(r.rowKey, (baseCount.get(r.rowKey) ?? 0) + 1);
-  const handed = new Set<string>();
+  const taken = new Set<string>();
+  for (const r of diffRows) if ((baseCount.get(r.rowKey) ?? 0) < 2) taken.add(r.rowKey);
   for (const r of diffRows) {
     if ((baseCount.get(r.rowKey) ?? 0) < 2) continue;
     let n = r.oldIndex ?? r.newIndex ?? 0;
     let candidate = `${r.rowKey}#${n}`;
-    while (handed.has(candidate)) candidate = `${r.rowKey}#${++n}`;
-    handed.add(candidate);
+    while (taken.has(candidate)) candidate = `${r.rowKey}#${++n}`;
+    taken.add(candidate);
     r.rowKey = candidate;
   }
 

@@ -162,22 +162,36 @@ export async function setBaseline(fd: FormData): Promise<void> {
 
   const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, spreadsheetId));
   const tabIds = sheetTabs.map((t) => t.id);
-  if (tabIds.length > 0) {
+  // A runId that matches no non-import run of this sheet is a stale form or a
+  // tampered one — it must be a NO-OP. The wipe-then-set below with a bogus
+  // runId would clear every baseline and blind the pending resolver, a state
+  // the UI can never produce on its own.
+  const runExists =
+    runId && tabIds.length > 0
+      ? (
+          await db
+            .select({ id: snapshots.id })
+            .from(snapshots)
+            .where(
+              and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")),
+            )
+            .limit(1)
+        ).length > 0
+      : false;
+  if (tabIds.length > 0 && runExists) {
     await db.update(snapshots).set({ isBaseline: false }).where(inArray(snapshots.tabId, tabIds));
-    if (runId) {
-      // GIS imports can never be the "collected" baseline — that would blind
-      // the pending-changes resolver (baselines are sheet snapshots only)
-      await db
-        .update(snapshots)
-        .set({ isBaseline: true })
-        .where(
-          and(
-            inArray(snapshots.tabId, tabIds),
-            eq(snapshots.runId, runId),
-            ne(snapshots.trigger, "import"),
-          ),
-        );
-    }
+    // GIS imports can never be the "collected" baseline — that would blind
+    // the pending-changes resolver (baselines are sheet snapshots only)
+    await db
+      .update(snapshots)
+      .set({ isBaseline: true })
+      .where(
+        and(
+          inArray(snapshots.tabId, tabIds),
+          eq(snapshots.runId, runId),
+          ne(snapshots.trigger, "import"),
+        ),
+      );
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
@@ -337,7 +351,11 @@ export async function toggleAck(fd: FormData): Promise<void> {
 
 export async function saveDigestSettings(fd: FormData): Promise<void> {
   const userId = (await requireUser()).id;
-  const email = str(fd, "digestEmail").trim();
+  const raw = str(fd, "digestEmail").trim();
+  // same shape rule as addMembers — a hostile string here becomes a nodemailer
+  // recipient, and while header injection is blocked there, address-group
+  // reinterpretation is not
+  const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? raw : "";
   const time = /^\d{1,2}:\d{2}$/.test(str(fd, "digestTime")) ? str(fd, "digestTime") : "07:00";
   const dayRaw = str(fd, "digestDay"); // "daily" | "0".."6"
   const day = dayRaw === "daily" || dayRaw === "" ? null : Math.max(0, Math.min(6, Number(dayRaw)));

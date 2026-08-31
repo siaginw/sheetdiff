@@ -362,7 +362,9 @@ export default async function Home({
                         </span>
                         {captureIsStale(sheet) ? (
                           <span
-                            className="ml-0.5 inline-flex shrink-0 items-center gap-1 text-amber-600 dark:text-amber-400"
+                            tabIndex={0}
+                            role="note"
+                            className="ml-0.5 inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-400"
                             title={`Snapshots look overdue (last ${relativeTime(sheet.lastSnapshotAt)}) — check that SheetDiff is running and connected to Google. "Up to date" below is computed from stale data.`}
                           >
                             ⚠ stale

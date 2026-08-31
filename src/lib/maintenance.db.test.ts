@@ -97,9 +97,44 @@ describe("backupDatabase", () => {
     expect(await backupDatabase()).toBe(dest); // same-day idempotent
   });
 
+  it("leaves no -shm/-wal sidecars behind (the verify connection's litter)", async () => {
+    const dest = await backupDatabase();
+    const dir = path.dirname(dest!);
+    expect(fs.readdirSync(dir).some((f) => f.endsWith("-shm") || f.endsWith("-wal"))).toBe(false);
+  });
+
   it("returns null when disabled", async () => {
     process.env.SHEETDIFF_BACKUPS = "0";
     expect(await backupDatabase()).toBeNull();
+    delete process.env.SHEETDIFF_BACKUPS;
+  });
+
+  it("evicts oldest-first by REAL timestamp: pre-migrate backups survive their day, oldest dailies go first", async () => {
+    // fixture: rename today's backup to 2000-01-01 (genuinely oldest), add 8
+    // old dailies and a RECENT pre-migrate file, keep=3. Newest 3 survive
+    // (recent pre-migrate + today + the newest daily); the rest evict,
+    // oldest-first, capped at 20 per sweep.
+    const dir = path.join(path.dirname(process.env.DATABASE_PATH!), "backups");
+    for (let i = 1; i <= 8; i++) {
+      const d = new Date(Date.now() - (i + 2) * 86_400_000).toISOString().slice(0, 10);
+      fs.writeFileSync(path.join(dir, `sheetdiff-${d}.db`), "old");
+    }
+    const recentPre = `pre-migrate-${Date.now() - 3_600_000}.db`;
+    fs.writeFileSync(path.join(dir, recentPre), "recent");
+    process.env.SHEETDIFF_BACKUPS = "3";
+    fs.renameSync(
+      path.join(dir, path.basename((await backupDatabase())!)),
+      path.join(dir, "sheetdiff-2000-01-01.db"),
+    );
+    await backupDatabase(); // creates today's + evicts down to keep=3
+    const left = fs.readdirSync(dir).filter((f) => f.endsWith(".db")).sort();
+    // the recent pre-migrate survives — it is NEWER than every old daily, so
+    // "alphabetical pre-migrate first out" is dead
+    expect(left).toContain(recentPre);
+    // newest 3 by real timestamp survive: recentPre, today, newest daily
+    expect(left).toHaveLength(3);
+    expect(left.filter((f) => f.startsWith("sheetdiff-")).length).toBe(2); // today + newest daily
+    expect(left).not.toContain("sheetdiff-2000-01-01.db"); // genuinely oldest — evicted first
     delete process.env.SHEETDIFF_BACKUPS;
   });
 });

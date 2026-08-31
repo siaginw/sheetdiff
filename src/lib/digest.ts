@@ -151,10 +151,12 @@ export async function sendDigestTo(user: User): Promise<DigestSendResult> {
     from: process.env.DIGEST_FROM ?? `SheetDiff <${process.env.SMTP_USER}>`,
     to: user.digestEmail,
     subject:
-      totalUnresolved > 0
-        ? `SheetDiff: ${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to collect`
-        : staleCount > 0
-          ? `SheetDiff: ⚠ ${staleCount} sheet${staleCount === 1 ? "" : "s"} may be stale`
+      // staleness outranks the count: a count computed from data the app
+      // itself flags as stale must not be the headline
+      staleCount > 0
+        ? `SheetDiff: ⚠ ${staleCount} sheet${staleCount === 1 ? "" : "s"} may be stale${totalUnresolved > 0 ? ` · ${totalUnresolved} to collect` : ""}`
+        : totalUnresolved > 0
+          ? `SheetDiff: ${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to collect`
           : "SheetDiff: all sheets up to date",
     html,
   });

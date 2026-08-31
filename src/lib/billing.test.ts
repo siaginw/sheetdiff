@@ -42,6 +42,50 @@ describe("buildBillingPacket", () => {
     expect(csv).toContain('Test, with comma');
     expect(csv.split("\n")[0]).toMatch(/^#/);
   });
+
+  it("quotes comma fields so the formula guard cannot be split off (regression, twice now)", () => {
+    // a tab title or cell containing ",=formula" must stay ONE field: an
+    // unquoted comma splits it and the unguarded remainder executes in Excel.
+    // This exact quoting has regressed twice — the test is the guard.
+    const p = buildBillingPacket({
+      sinceFt: 0,
+      holes: [{ from: 100, to: 200, ft: 100, firstSeen: 1, lastSeen: 2, daysOpen: 3, tab: "Bore Log,=2+5" }],
+      unresolved: [
+        {
+          status: "added",
+          values: ["plain,=SUM(1+1)"],
+          cells: [],
+        },
+      ],
+      lateEntries: [],
+      snapshotLabel: "x",
+      now: 1,
+    });
+    const csv = billingPacketCsv(p);
+    const holeLine = csv.split("\n").find((l) => l.startsWith("hole,"))!;
+    const enterLine = csv.split("\n").find((l) => l.startsWith("to-enter,"))!;
+    // quote-aware field count stays 4 — a naive comma split would see 5+
+    const fields = (line: string) => {
+      const out: string[] = [];
+      let cur = "";
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]!;
+        if (q && ch === '"' && line[i + 1] === '"') { cur += '"'; i++; continue; }
+        if (ch === '"') { q = !q; continue; }
+        if (ch === "," && !q) { out.push(cur); cur = ""; continue; }
+        cur += ch;
+      }
+      out.push(cur);
+      return out;
+    };
+    expect(fields(holeLine)).toHaveLength(4);
+    expect(fields(enterLine)).toHaveLength(4);
+    // the comma-bearing value stays ONE inert field (the prose prefix means
+    // the formula guard cannot fire here — quoting is the only protection)
+    expect(fields(holeLine)[3]!).toBe("do not invoice — unbooked footage (Bore Log,=2+5)");
+    expect(fields(enterLine)[1]!).toBe("NEW row: plain,=SUM(1+1)");
+  });
 });
 
 describe("quietTabs", () => {

@@ -27,37 +27,45 @@ export function ensureMigrated(): void {
     const journal = JSON.parse(
       fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"),
     ) as { entries: { tag: string; when: number }[] };
+    // hash each journal entry's SQL once — used by the backup gate AND stamping
+    const journalEntries = journal.entries.map((e) => {
+      const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
+      return { when: e.when, hash: crypto.createHash("sha256").update(sqlText).digest("hex") };
+    });
     sqlite.exec(
       'CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)',
     );
     // applied ROW count, not table existence — an empty table (legacy DB, or a
     // prior run that crashed between CREATE and stamping) still needs stamping
-    const appliedCount = (
-      sqlite.prepare("SELECT count(*) c FROM __drizzle_migrations").get() as { c: number }
-    ).c;
+    const appliedHashes = new Set(
+      (sqlite.prepare("SELECT hash FROM __drizzle_migrations").all() as { hash: string }[]).map(
+        (r) => r.hash,
+      ),
+    );
     const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
 
-    // pre-migration backup: only when actual migration work is pending (an
-    // unmigrated legacy DB, or newly committed migrations) — not every boot,
-    // which would grow without bound
-    if (hasUsers && appliedCount < journal.entries.length) {
+    // pre-migration backup: only when actual migration work may run — a
+    // journal entry the DB hasn't recorded, whether by count (legacy DB, new
+    // migration) or by hash (a migration file re-authored in place). Not every
+    // boot, which would grow without bound.
+    const pendingWork = journalEntries.some((j) => !appliedHashes.has(j.hash));
+    if (hasUsers && pendingWork) {
       const backupDir = path.join(path.dirname(dbPath), "backups");
       fs.mkdirSync(backupDir, { recursive: true });
       sqlite.pragma("wal_checkpoint(TRUNCATE)");
       fs.copyFileSync(dbPath, path.join(backupDir, `pre-migrate-${Date.now()}.db`));
     }
 
-    if (hasUsers && appliedCount === 0) {
+    if (hasUsers && appliedHashes.size === 0) {
       // legacy push-created DB (or self-heal of an empty migrations table):
       // stamp every journal entry as applied
       const ins = sqlite.prepare(
         'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
       );
-      for (const e of journal.entries) {
-        const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
-        ins.run(crypto.createHash("sha256").update(sqlText).digest("hex"), e.when);
+      for (const e of journalEntries) {
+        ins.run(e.hash, e.when);
       }
-      console.log(`[migrate] stamped ${journal.entries.length} baseline migration(s) on legacy DB`);
+      console.log(`[migrate] stamped ${journalEntries.length} baseline migration(s) on legacy DB`);
     }
 
     migrate(drizzle(sqlite), { migrationsFolder: folder });

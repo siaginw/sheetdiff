@@ -195,4 +195,33 @@ describe("rowKey disambiguation: removed siblings and repeated key values", () =
     expect(changed.rowKey).toBe("s1");
     expect(changed.rowKey).not.toContain("#");
   });
+
+  it("a suffix never lands on another row's RAW key ('s3#0' as a real key value)", () => {
+    // a key value can legitimately contain "#<digits>" — the s3 family's first
+    // suffix would collide with the unrelated row keyed "s3#0". Reserved
+    // bases must force the family to bump past them.
+    const H = ["Shot", "Activity"];
+    const a = snap(H, [["s3", "Plow"], ["s3", "Bore"], ["s3#0", "Plow"]]);
+    const b = snap(H, [["s3", "Plow"], ["s3#0", "Plow"]]);
+    const r = diffSnapshots(a, b, { keyColumn: 0 });
+    const all = r.rows.map((x) => x.rowKey);
+    expect(new Set(all).size).toBe(all.length); // pairwise distinct across ALL rows
+    // the RAW key survives untouched — exactly one row carries it, full stop
+    expect(all.filter((k) => k === "s3#0")).toHaveLength(1);
+  });
+
+  it("duplicate key where the added row's B-index equals the matched row's A-index (the bump path)", () => {
+    // the matched row (A-index 1) and the added row (B-index 1) both propose
+    // "s3#1" — the collision bump must separate them or one ack resolves both
+    const H = ["Shot", "Activity"];
+    const a = snap(H, [["s9", "A"], ["s3", "B"]]);
+    const b = snap(H, [["s3", "B2"], ["s3", "C"], ["s9", "A"]]);
+    const r = diffSnapshots(a, b, { keyColumn: 0 });
+    const changed = r.rows.find((x) => x.status === "changed")!;
+    const added = r.rows.find((x) => x.status === "added")!;
+    expect(changed.rowKey).not.toBe(added.rowKey);
+    expect(new Set(r.rows.map((x) => x.rowKey)).size).toBe(r.rows.length);
+    const acks = new Map([[changed.rowKey, 9999]]);
+    expect(isResolved(acks, added.rowKey, 1)).toBe(false);
+  });
 });

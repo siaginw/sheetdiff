@@ -162,7 +162,7 @@ describe("setBaseline shared gate", () => {
     await expect(setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-manual" }))).rejects.toThrow(/No access/);
   });
 
-  it("GIS imports can never become the baseline; the manual run can; viewer may set/clear", async () => {
+  it("GIS imports can never become the baseline; the manual run can; degenerate runIds are a NO-OP", async () => {
     signIn("owner-1");
     await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-import" }));
     const afterImport = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
@@ -172,10 +172,14 @@ describe("setBaseline shared gate", () => {
     const afterManual = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(afterManual.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
 
+    // a viewer with a degenerate runId (empty, or a run from another sheet)
+    // must NOT wipe every baseline — a state the UI can never produce, which
+    // was previously reachable by tampering the form
     signIn("viewer-1");
-    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "" })); // viewer clears
-    const cleared = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
-    expect(cleared.every((r) => !r.isBaseline)).toBe(true);
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "" }));
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-from-another-sheet" }));
+    const untouched = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
+    expect(untouched.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
   });
 });
 

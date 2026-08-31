@@ -554,8 +554,11 @@ export function DiffView({
             <span className="flex min-w-0 flex-1 items-center overflow-hidden">
               {result.columns.map((c, i) => (
                 <span key={c.col} className="flex min-w-0 shrink-0 items-center">
+                  {/* text-xs, NOT the container's 10.5px: ch units resolve
+                      differently per font-size and the headers must line up
+                      with the text-xs cells below column-for-column */}
                   <span
-                    className={`truncate px-1.5 ${c.status === "added" ? "text-diff-add-fg" : ""}`}
+                    className={`truncate px-1.5 text-xs ${c.status === "added" ? "text-diff-add-fg" : ""}`}
                     style={{ width: `${widths[c.col] + 2}ch` }}
                     title={c.header}
                   >

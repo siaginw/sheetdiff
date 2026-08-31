@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.3.1 — 2026-08-30
-Trust hardening (fleet audit pass 6). Acks: every rowKey now identifies exactly
+Trust hardening (fleet audit passes 6 + 7). Acks: every rowKey now identifies exactly
 one row — repeated shot labels ("S3 twice"), identical added rows, and identical
 removed rows each get distinct keys, so one acknowledgment can never silently
 drop a second change from the to-enter worklist. Staleness is now visible
@@ -12,13 +12,24 @@ resolver as the CSV) and asks for confirmation when unentered work exists.
 Key-column detection no longer promotes arbitrary unique columns (label edits
 stay single changes, not remove+add), scans the full sheet width, and recognizes
 "Shot #"/"Emp #"/Name headers. Numbers above 15 significant digits compare as
-text (17-digit ticket numbers can no longer compare equal). Introduction walks
-past their window treat undated rows as ack-resolvable (no false re-flags on
-hourly sheets). Migration CLI no longer crashes on legacy DBs (and self-heals a
-bricked empty migrations table); pre-migrate backups fire on any pending
-migration and are no longer evicted first by retention. Diff lines view has
-column headers and sizes columns from visible rows only. Billing packet holes
-carry their tab name.
+text (17-digit ticket numbers can no longer compare equal). Migration CLI no
+longer crashes on legacy DBs (and self-heals a bricked empty migrations
+table); pre-migrate backups fire on any pending migration (hash-aware, on the
+CLI too) and are no longer evicted first by retention. Diff lines view has
+column headers (font-aligned with cells) and sizes columns from visible rows
+only. Billing packet holes carry their tab name. Pass 7: introduction walks
+are anchored by the collection baseline, so a re-changed row can never be
+silently swallowed by an old ack (and old acks stop re-nagging) — the walk
+covers the exact window, not a 30-snapshot guess; the billing CSV quotes
+comma/CR fields (the formula guard alone splits on commas — second
+regression of the same line, now test-pinned); rowKey suffixes dodge raw keys
+that contain "#"; degenerate setBaseline inputs are a no-op instead of a
+baseline wipe; digest emails are shape-validated; backup retention evicts
+oldest-first by real timestamp and cleans -shm/-wal litter; key detection
+tokenizes multi-word headers ("EMP NO", "PO Number"); the fresh-import
+timeline explains itself; digest subjects lead with staleness when data is
+stale; the README quick start no longer crashes on fresh clones (`npm run
+setup`); suite grew to 200 tests.
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,

@@ -56,12 +56,12 @@ and Google account.
 ```bash
 git clone https://github.com/siaginw/sheetdiff.git && cd sheetdiff
 npm install
-cp .env.example .env       # then fill in APP_SECRET + Google credentials (below)
-npm run db:push            # creates the SQLite database (data/sheetdiff.db)
-npm run dev                # http://localhost:3000
+npm run setup              # .env with a random APP_SECRET + data/ + the database
+npm run dev                # http://localhost:3000 (add Google credentials to .env when ready)
 ```
 
-`npm run setup` is a shortcut that creates `.env` with a random `APP_SECRET` for you.
+Prefer filling in `.env` by hand? `cp .env.example .env`, then run `mkdir data && npm run db:migrate` —
+`drizzle-kit push` alone crashes on a fresh clone (it does not create the `.db` directory).
 
 ### Try the demo (no Google needed)
 
@@ -203,7 +203,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (174 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (200 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

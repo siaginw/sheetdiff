@@ -10,10 +10,12 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import fs from "node:fs";
+import path from "node:path";
 import Database from "better-sqlite3";
 
-fs.mkdirSync("data", { recursive: true });
-const db = new Database("data/sheetdiff.db");
+const dbPath = process.env.DATABASE_PATH ?? "data/sheetdiff.db";
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+const db = new Database(dbPath);
 if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get()) {
   console.error("Database not initialized — run `npm run db:migrate` first (see README).");
   process.exit(1);

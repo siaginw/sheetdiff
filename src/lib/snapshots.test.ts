@@ -1,10 +1,10 @@
 /** computeNextRun boundary table — pure logic, googleapis mocked away. */
 import { vi } from "vitest";
 vi.mock("./google", () => ({ getUserClient: vi.fn(), fetchTabValues: vi.fn() }));
-process.env.DATABASE_PATH ??= require("node:path").join(
-  require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/sd-test-"),
-  "unused.db",
-);
+import { join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+process.env.DATABASE_PATH ??= join(mkdtempSync(join(tmpdir(), "sd-test-")), "unused.db");
 
 import { describe, it, expect } from "vitest";
 import { computeNextRun } from "./snapshots";

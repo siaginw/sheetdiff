@@ -26,8 +26,10 @@ Google Sheets ──readonly──▶ capture ──▶ gzip'd snapshots (SQLite
 2. `startScheduler()` (`src/lib/scheduler.ts`) — see Scheduling below.
 
 `GET /api/health` (`src/app/api/health/route.ts`) probes a real table (not just
-`SELECT 1`) and reports Google/SMTP/demo config state — used by the Docker
-`HEALTHCHECK` and uptime monitors.
+`SELECT 1`), reports Google/SMTP/demo config state, and counts `staleCaptures` —
+scheduled sheets whose latest snapshot exceeds the shared staleness window
+(`src/lib/staleness.ts`). A non-zero count does NOT fail the probe (the service
+is up); the operator reads it. Used by the Docker `HEALTHCHECK` and uptime monitors.
 
 ## Data model (`src/lib/db/schema.ts`)
 
@@ -177,7 +179,7 @@ role via `getSheetAccess`.
 | `src/lib/actions.ts`, `access.ts` | Server actions, owner/viewer gates |
 | `src/lib/google.ts`, `session.ts`, `crypto.ts` | OAuth+reads, sessions, keys/AEAD |
 | `src/lib/scheduler.ts`, `digest.ts`, `maintenance.ts` | Tick loop, email, retention/backup |
-| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `utils.ts` | Station/column detection, helpers |
+| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts` | Station/column detection, helpers, shared capture-staleness rule |
 | `src/lib/emails/digest.tsx` | Digest email template (react-email) |
 | `src/app/…` | Pages, export/auth/health routes |
 | `src/components/diff/diff-view.tsx`, `src/components/sheet/*` | Diff UI, sheet panels |
