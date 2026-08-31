@@ -153,12 +153,12 @@ describe("computeIntroductions", () => {
     }
   });
 
-  it("the baseline anchor is load-bearing: without it, a change whose content pre-exists in the baseline re-flags forever", () => {
+  it("present-mode rows are dated EXACTLY by the family-count threshold (the twin case), anchor or not", () => {
     // blank-key twins: the changed row's NEW content hash already exists in
-    // the baseline as its sibling (padded trackers have hundreds of these).
-    // Anchored, the row is introduced AT the baseline and an ack after it
-    // resolves; unanchored, the walk's oldest edge postdates the ack and it
-    // re-flags on every capture.
+    // the baseline as its sibling. A presence test of "content exists
+    // anywhere" would date it at the anchor and let a stale ack swallow it;
+    // the count threshold ("the family GREW by one vs the bounding snapshot")
+    // dates it at the moment it grew — in BOTH anchored and unanchored walks.
     const NH = ["Name", "Qty"];
     const baseline = snap(NH, [["x", "40"], ["x", "55"]]);
     const chain = [
@@ -172,8 +172,93 @@ describe("computeIntroductions", () => {
     const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
     const anchored = computeIntroductions([...walk, { createdAt: 1000, data: baseline }], diff.rows);
     const unanchored = computeIntroductions(walk, diff.rows);
-    const acks = new Map([[changed!.rowKey, 1500]]); // ack between baseline and the walk's oldest edge
-    expect(isResolved(acks, changed!.rowKey, anchored.get(changed!.rowKey)!)).toBe(true); // 1000 <= 1500
-    expect(isResolved(acks, changed!.rowKey, unanchored.get(changed!.rowKey)!)).toBe(false); // 2000 > 1500 — the nag
+    // exactly dated at the growth (2000), never at the baseline (1000)
+    expect(anchored.get(changed!.rowKey)).toBe(2000);
+    // unanchored: the walk never sees the pre-growth level, so the row is
+    // left undated (strict fallback) — the re-flag direction, never a swallow
+    expect(unanchored.has(changed!.rowKey)).toBe(false);
+    // an ack BEFORE the growth must not resolve it — the stale-ack swallow
+    const acks = new Map([[changed!.rowKey, 1500]]);
+    expect(isResolved(acks, changed!.rowKey, anchored.get(changed!.rowKey)!)).toBe(false);
+  });
+
+  it("a family that shrinks and REGROWS dates the regrowth — a stale ack cannot swallow the re-addition (fleet-9)", () => {
+    // 2 identical rows at baseline; grows to 3 (an addition), acked; shrinks
+    // to 2; regrows to 3. Content-based presence ("one exists") sees the
+    // family present throughout and dates the addition at the anchor — the
+    // ack then covers the REGROWN row too. The count threshold dates the
+    // regrowth at 5000, so the ack (2500) no longer resolves it.
+    const NH = ["Name", "Qty"];
+    const P = ["x", "55"];
+    const baseline = snap(NH, [P, P]);
+    const chain = [
+      { at: 2000, data: snap(NH, [P, P, P]) }, // grew to 3
+      { at: 3000, data: snap(NH, [P, P]) }, // shrank to 2
+      { at: 4000, data: snap(NH, [P, P]) },
+      { at: 5000, data: snap(NH, [P, P, P]) }, // REGROWN — new unentered work
+      { at: 6000, data: snap(NH, [P, P, P]) },
+    ];
+    const latest = chain[chain.length - 1];
+    const diff = diffSnapshots(baseline, latest.data);
+    const added = diff.rows.find((r) => r.status === "added");
+    expect(added).toBeDefined();
+    const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
+    const intro = computeIntroductions([...walk, { createdAt: 1000, data: baseline }], diff.rows);
+    expect(intro.get(added!.rowKey)).toBe(5000); // the regrowth, not the anchor
+    expect(isResolved(new Map([[added!.rowKey, 2500]]), added!.rowKey, intro.get(added!.rowKey)!)).toBe(false);
+    expect(isResolved(new Map([[added!.rowKey, 5500]]), added!.rowKey, intro.get(added!.rowKey)!)).toBe(true);
+  });
+
+  it("the baseline anchor is still load-bearing for blank-key REMOVALS: without it the family's pre-removal level is unknowable", () => {
+    const NH = ["Name", "Qty"];
+    const P = ["x", "55"];
+    const baseline = snap(NH, [P, P, P]);
+    const chain = [
+      { at: 2000, data: snap(NH, [P]) }, // 2 removed
+      { at: 3000, data: snap(NH, [P]) },
+    ];
+    const latest = chain[chain.length - 1];
+    const diff = diffSnapshots(baseline, latest.data);
+    const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
+    // anchored: the walk sees the baseline's level 3 and dates the drop at 2000
+    const anchored = computeIntroductions([...walk, { createdAt: 1000, data: baseline }], diff.rows);
+    const removed = diff.rows.find((r) => r.status === "removed")!;
+    expect(anchored.get(removed.rowKey)).toBe(2000);
+    expect(isResolved(new Map([[removed.rowKey, 2500]]), removed.rowKey, anchored.get(removed.rowKey)!)).toBe(true);
+    // unanchored: the oldest walked snapshot already shows level 1 — the
+    // removal looks like it predates the window and the row is left undated
+    // (strict fallback: unresolved until re-acked)
+    const unanchored = computeIntroductions(walk, diff.rows);
+    expect(unanchored.has(removed.rowKey)).toBe(false);
+  });
+});
+
+describe("keySetsFor (identity column hardening)", () => {
+  const TH = ["Activity", "Start STA", "End STA", "Crew"];
+  it("builds composite identity sets when headers agree across the walk", async () => {
+    const baseline = snap(TH, [["Plow", "0", "500", "A"], ["Bore", "500", "14800", "B"], ["Plow", "14800", "15743", "C"]]);
+    const chain = [{ at: 2000, data: snap(TH, [["Plow", "0", "500", "A"], ["Plow", "14800", "15743", "C"]]) }]; // bore removed (composite needs >=2 rows in B)
+    const latest = chain[chain.length - 1];
+    const diff = diffSnapshots(baseline, latest.data); // composite engages
+    expect(diff.identityColumns).toEqual([0, 1, 2]);
+    const walk = [...chain].reverse().map((s) => ({ createdAt: s.at, data: s.data }));
+    const anchored = [...walk, { createdAt: 1000, data: baseline }];
+    const keySets = keySetsFor(diff, anchored)!;
+    expect(keySets).toHaveLength(2); // chain + baseline anchor
+    expect(keySets[0]!.has("bore·500·14800")).toBe(false); // removed in the window
+    expect(keySets[1]!.has("bore·500·14800")).toBe(true); // present at the baseline
+    // the removed row dates at the row's disappearance
+    const intro = computeIntroductions(anchored, diff.rows, { keySets });
+    const removed = diff.rows.find((r) => r.status === "removed")!;
+    expect(intro.get(removed.rowKey)).toBe(2000);
+  });
+
+  it("bails to undefined when a walked snapshot's headers drift at the identity indices", () => {
+    const latest = snap(TH, [["Plow", "0", "500", "A"], ["Bore", "500", "14800", "B"]]);
+    const diff = diffSnapshots(latest, latest);
+    // a mid-window snapshot where a column was inserted at index 0
+    const drifted = { createdAt: 2000, data: snap(["Note", "Activity", "Start STA", "End STA", "Crew"], [["n", "Plow", "0", "500", "A"]]) };
+    const walk = [{ createdAt: 3000, data: latest }, drifted];
+    expect(keySetsFor(diff, walk)).toBeUndefined();
   });
 });

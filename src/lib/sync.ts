@@ -2,7 +2,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "./db";
 import { changeAcks } from "./db/schema";
 import { rowContentKey, oldRowValues, type DiffRow, type SnapshotData, type DiffResult } from "./diff/engine";
-import { normalizeKey, compositeKey } from "./diff/normalize";
+import { normalizeKey, compositeKey, norm } from "./diff/normalize";
 
 
 /**
@@ -104,7 +104,12 @@ export function computeIntroductions(
   };
   const snapshotCounts = walk.map(countsOf);
   // family size at the walk's oldest edge (the bounding snapshot when the
-  // caller followed the contract) — the level whose drop IS the removal
+  // caller followed the contract): removals are dated when the count DROPPED
+  // below it, and additions/changes when the count first EXCEEDED it — a
+  // blank-key addition whose content matches existing family members would
+  // otherwise be "present" all the way back to the anchor and a stale ack
+  // could swallow it (fleet-9: the family shrank and regrew, the regrowth
+  // went undated, the resolver went quiet on real unentered work).
   const oldest = snapshotCounts[snapshotCounts.length - 1]!;
 
   for (let i = 0; i < walk.length; i++) {
@@ -116,7 +121,7 @@ export function computeIntroductions(
       if (p.done) continue;
       const isPresent =
         p.mode === "present"
-          ? (cnt.get(p.hash) ?? 0) > 0
+          ? (cnt.get(p.hash) ?? 0) > (oldest.get(p.hash) ?? 0)
           : p.key !== null && keys
             ? keys.has(p.key)
             : (cnt.get(p.hash) ?? 0) >= Math.max(oldest.get(p.hash) ?? 0, 1);
@@ -155,13 +160,26 @@ export async function setAck(tabId: string, rowKey: string, on: boolean): Promis
 
 /** Per-walk-snapshot sets of row identities (single key or composite), using
  *  the diff's OWN resolution — lets removed rows be dated by when the ROW
- *  (its key) disappeared instead of when the old content value did. */
+ *  (its key) disappeared instead of when the old content value did.
+ *
+ *  The identity indices are B-space (the latest snapshot's layout). If any
+ *  walked snapshot's headers drift at those indices — a column inserted or
+ *  deleted mid-window shifts the key column — the index would read the WRONG
+ *  column for that snapshot and silently corrupt key presence. Rather than
+ *  per-snapshot patching, bail to undefined entirely: the content-count walk
+ *  is a consistent, if slightly blunter, fallback. */
 export function keySetsFor(
   diff: Pick<DiffResult, "identityColumns">,
   walk: WalkSnapshot[],
 ): Set<string>[] | undefined {
   const cols = diff.identityColumns;
-  if (!cols) return undefined;
+  if (!cols || walk.length === 0) return undefined;
+  const latestHeaders = walk[0]!.data.headers;
+  for (const w of walk) {
+    for (const c of cols) {
+      if (norm(w.data.headers[c]) !== norm(latestHeaders[c])) return undefined;
+    }
+  }
   return walk.map((w) =>
     new Set(
       w.data.rows.map((r) =>

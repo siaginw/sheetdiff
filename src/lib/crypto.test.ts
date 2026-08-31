@@ -37,3 +37,46 @@ describe("AES-256-GCM round-trip", () => {
     expect(() => decryptJson("!!!")).toThrow();
   });
 });
+
+describe("placeholder APP_SECRET rejection", () => {
+  // module-level key cache: each check needs a FRESH module with the env set
+  // before import
+  async function withSecret(secret: string | undefined): Promise<unknown> {
+    vi.resetModules();
+    if (secret === undefined) delete process.env.APP_SECRET;
+    else process.env.APP_SECRET = secret;
+    const mod = await import("./crypto");
+    try {
+      mod.encryptJson({ x: 1 });
+      return null;
+    } catch (err) {
+      return err;
+    }
+  }
+
+  it("rejects every public .env.example value (anyone holding the repo could forge sessions)", async () => {
+    for (const bad of [
+      "change-me-to-a-long-random-string",
+      "your-app-secret",
+      "replace-me",
+      "your-client-secret",
+      "your-client-id.apps.googleusercontent.com",
+      "your-app-password",
+    ]) {
+      const err = (await withSecret(bad)) as Error | null;
+      expect(err, `placeholder must be rejected: ${bad}`).toBeInstanceOf(Error);
+      expect(err!.message).toMatch(/APP_SECRET/);
+    }
+  });
+
+  it("rejects whitespace-padded placeholders and too-short values", async () => {
+    expect(await withSecret("  change-me-to-a-long-random-string  ")).toBeInstanceOf(Error);
+    expect(await withSecret("short")).toBeInstanceOf(Error);
+    expect(await withSecret(undefined)).toBeInstanceOf(Error);
+  });
+
+  it("accepts a real random secret (round-trips)", async () => {
+    const err = await withSecret("a-real-random-secret-0123456789abcdef");
+    expect(err).toBeNull();
+  });
+});

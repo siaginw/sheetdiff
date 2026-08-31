@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,30 +10,29 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { addMembers, removeMember } from "@/lib/actions";
 
 /** Manage viewer access: members sign in with their own Google account
  *  (matched by email) and can see diffs, leave notes, tick off changes,
- *  and mark collections — nothing destructive. */
-export function ShareDialog({ members }: { members: { id: string; email: string }[] }) {
-  const [open, setOpen] = useState(false);
+ *  and mark collections — nothing destructive.
+ *  Controlled: the account menu owns the open state (see DigestSettingsDialog). */
+export function ShareDialog({
+  open,
+  onOpenChange,
+  members,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  members: { id: string; email: string }[];
+}) {
   const [emails, setEmails] = useState("");
   const [rejected, setRejected] = useState<string[]>([]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <DropdownMenuItem onSelect={undefined} onClick={() => setOpen(true)}>
-            <UserPlus /> Share access…
-          </DropdownMenuItem>
-        }
-      />
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Share access</DialogTitle>

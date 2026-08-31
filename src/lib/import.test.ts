@@ -91,3 +91,103 @@ describe("parseImportFile (XLSX)", () => {
     expect(runChecks([{ tabTitle: "PE", data, keyColumn: null }])).toEqual([]);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* zip guard: crafted archives (bombs, lies)                           */
+/* ------------------------------------------------------------------ */
+
+import zlib from "node:zlib";
+
+/** Hand-built zip: local headers + data + central directory + EOCD, with
+ *  knobs for the exact lies attackers write. */
+function craftZip(opts: {
+  entries: { name: string; uncompressed: Buffer }[];
+  /** local-header sizes zeroed + flag bit 3 (streamed/descriptor entry) */
+  descriptor?: boolean;
+  /** lie in the central directory's uncompressed-size fields */
+  declaredUncompressed?: number;
+  /** lie in the EOCD's entry count (JSZip ignores it and walks signatures) */
+  eocdCount?: number;
+}): Buffer {
+  const parts: Buffer[] = [];
+  const central: Buffer[] = [];
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const e of opts.entries) {
+    offsets.push(offset);
+    const comp = zlib.deflateRawSync(e.uncompressed);
+    const nameBuf = Buffer.from(e.name, "utf8");
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(opts.descriptor ? 0x0008 : 0, 6); // flags: bit 3
+    local.writeUInt16LE(8, 8); // method: deflate
+    local.writeUInt16LE(0, 10); // time
+    local.writeUInt16LE(0x21, 12); // date
+    local.writeUInt32LE(0, 14); // crc
+    local.writeUInt32LE(opts.descriptor ? 0 : comp.length, 18); // comp size
+    local.writeUInt32LE(opts.descriptor ? 0 : e.uncompressed.length, 22); // uncomp size
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    parts.push(local, nameBuf, comp);
+    offset += 30 + nameBuf.length + comp.length;
+  }
+  for (let i = 0; i < opts.entries.length; i++) {
+    const e = opts.entries[i]!;
+    const nameBuf = Buffer.from(e.name, "utf8");
+    const comp = zlib.deflateRawSync(e.uncompressed);
+    const c = Buffer.alloc(46);
+    c.writeUInt32LE(0x02014b50, 0);
+    c.writeUInt16LE(8, 10); // method
+    c.writeUInt32LE(opts.declaredUncompressed ?? e.uncompressed.length, 24); // declared uncompressed
+    c.writeUInt32LE(comp.length, 20); // compressed size (truthful — needed to walk)
+    c.writeUInt16LE(nameBuf.length, 28);
+    c.writeUInt16LE(0, 30);
+    c.writeUInt16LE(0, 32);
+    c.writeUInt32LE(offsets[i]!, 42);
+    central.push(c, nameBuf);
+  }
+  const centralBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4); // disk number
+  eocd.writeUInt16LE(0, 6); // disk with central directory
+  eocd.writeUInt16LE(opts.eocdCount ?? opts.entries.length, 8); // entries this disk
+  eocd.writeUInt16LE(opts.eocdCount ?? opts.entries.length, 10); // total entries
+  eocd.writeUInt32LE(centralBuf.length, 12); // central directory size
+  eocd.writeUInt32LE(offset, 16); // central directory offset
+  eocd.writeUInt16LE(0, 20); // comment length
+  return Buffer.concat([...parts, centralBuf, eocd]);
+}
+
+const bomb = (mb: number) => Buffer.alloc(mb * 1024 * 1024, 0x41); // DEFLATE compresses ~1000:1
+
+describe("parseImportFile (XLSX zip guard)", () => {
+  it("rejects a data-descriptor bomb (flag bit 3, zeroed local sizes) with the friendly message", async () => {
+    const zip = craftZip({
+      entries: [
+        { name: "xl/worksheets/sheet1.xml", uncompressed: bomb(70) },
+      ],
+      descriptor: true,
+      declaredUncompressed: 1000,
+    });
+    await expect(parseImportFile(new File([new Uint8Array(zip)], "bomb.xlsx"))).rejects.toThrow(/expands too large/);
+  });
+
+  it("rejects an EOCD count lie (entries hidden past the declared count — JSZip walks them anyway)", async () => {
+    const zip = craftZip({
+      entries: [
+        { name: "[Content_Types].xml", uncompressed: Buffer.from("<Types/>") },
+        { name: "xl/worksheets/sheet1.xml", uncompressed: bomb(70) },
+      ],
+      declaredUncompressed: 100,
+      eocdCount: 1, // the bomb is "not there"
+    });
+    await expect(parseImportFile(new File([new Uint8Array(zip)], "lie.xlsx"))).rejects.toThrow(/expands too large|corrupt or lies/);
+  });
+
+  it("survives a truncated deflate stream with a clean error (no raw zlib internals)", async () => {
+    const zip = craftZip({ entries: [{ name: "a.xml", uncompressed: Buffer.from("hello") }] });
+    const truncated = zip.subarray(0, zip.length - 8); // chop into the central dir/EOCD
+    await expect(parseImportFile(new File([new Uint8Array(truncated)], "cut.xlsx"))).rejects.toThrow(/xlsx|zip|central/i);
+  });
+});

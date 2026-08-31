@@ -1,6 +1,11 @@
 # Changelog
 
 ## 0.3.1 — 2026-08-30
+
+**Requires Node.js 22+** (better-sqlite3 v13 is N-API-based and unsupported on
+end-of-life Node 20 — it segfaults on Linux). CI now runs Node 22 and is
+green for the first time; `npm ci` enforces the floor (engine-strict).
+
 Trust hardening (fleet audit passes 6 + 7). Acks: every rowKey now identifies exactly
 one row — repeated shot labels ("S3 twice"), identical added rows, and identical
 removed rows each get distinct keys, so one acknowledgment can never silently
@@ -49,6 +54,23 @@ xlsx zip guard trial-inflates data-descriptor entries via the central
 directory (a 522 KB crafted file previously materialized 512 MB in heap);
 wide diffs scroll horizontally in lines mode; the demo login refuses real
 databases; digest day/time inputs are strictly validated.
+
+Pass 9: the account-menu dialogs (digest settings, share access, stop
+tracking) were unreachable — they unmounted with the closing menu ~200ms
+after opening, and never opened at all on production builds; they are now
+state-driven and mounted OUTSIDE the menu. The xlsx zip guard rejects an
+EOCD entry-count lie (JSZip ignores the count and walks hidden bomb entries
+that the count-based guards skipped) and reports corrupt archives instead of
+leaking zlib internals. Blank-key additions and changes are dated by family
+count growth — a family that shrank and regrew no longer lets a stale ack
+swallow the regrown row. keySets bail to content matching when a walked
+snapshot's headers drift at the identity columns. The APP_SECRET placeholder
+list covers every public .env.example value (whitespace-trimmed). The migrate
+CLI applies positionally like the boot path (a hash-divergent journal is a
+warn + no-op, not a crash). engine-strict enforces the Node floor at install;
+CI pins TZ for the local-calendar stamp test; check messages pin en-US
+grouping; notes can be deleted; backwards-row findings collapse; collapsed
+cross-tab findings only reference their own tab's rows; suite 233.
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,

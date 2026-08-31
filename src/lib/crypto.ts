@@ -16,11 +16,17 @@ const PLACEHOLDER_SECRETS = new Set([
   "change-me-to-a-long-random-string",
   "your-app-secret",
   "replace-me",
+  // the OTHER public example values from .env.example / generate-env.mjs —
+  // pasting the wrong line into APP_SECRET is exactly the misconfiguration
+  // class this check exists for
+  "your-client-secret",
+  "your-client-id.apps.googleusercontent.com",
+  "your-app-password",
 ]);
 
 function deriveKey(purpose: "enc" | "sig"): Buffer {
   const secret = process.env.APP_SECRET;
-  if (!secret || secret.length < 16 || PLACEHOLDER_SECRETS.has(secret)) {
+  if (!secret || secret.length < 16 || PLACEHOLDER_SECRETS.has(secret.trim())) {
     throw new Error(
       "APP_SECRET is missing, too short, or a known placeholder (the .env.example value is public — " +
         "anyone could forge sessions with it). Run `npm run setup` to generate a .env file, " +

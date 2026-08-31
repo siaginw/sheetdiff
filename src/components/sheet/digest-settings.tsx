@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Mail, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,9 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,19 +35,24 @@ const DAY_ITEMS = [
   { value: "0", label: "Every Sunday" },
 ];
 
-/** Daily/weekly digest email settings (address + cadence + send time). */
+/** Daily/weekly digest email settings (address + cadence + send time).
+ *  Controlled: the account menu owns the open state so this dialog is never
+ *  mounted inside the menu subtree (it would unmount with the closing menu). */
 export function DigestSettingsDialog({
+  open,
+  onOpenChange,
   digestEmail,
   digestTime,
   digestDay,
   smtpReady,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   digestEmail: string | null;
   digestTime: string;
   digestDay: number | null;
   smtpReady: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState(digestEmail ?? "");
   const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
   const [testing, setTesting] = useState(false);
@@ -65,16 +68,9 @@ export function DigestSettingsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <DropdownMenuItem onSelect={undefined} onClick={() => setOpen(true)}>
-            <Mail /> Digest email…
-          </DropdownMenuItem>
-        }
-      />
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <form action={saveDigestSettings} onSubmit={() => setOpen(false)}>
+        <form action={saveDigestSettings} onSubmit={() => onOpenChange(false)}>
           <DialogHeader>
             <DialogTitle>Digest email</DialogTitle>
             <DialogDescription>

@@ -73,7 +73,7 @@ Two kinds of tests, both vitest, colocated as `*.test.ts`.
 **Pure logic** — no mocks, no I/O. Just describe/it over the module.
 
 **DB-backed** (`*.db.test.ts`): set `DATABASE_PATH` to a temp file BEFORE
-dynamically importing `./db`, push the schema with `drizzle-kit push --force`,
+dynamically importing `./db`, create the schema with `node scripts/migrate.mjs` (the production boot path),
 mock `next/*` and `./google`, then seed with `encodeSnapshot(toSnapshotData(grid))`
 blobs. See `actions.db.test.ts` for the canonical contract. The first test
 asserts the connection really points at the temp file.

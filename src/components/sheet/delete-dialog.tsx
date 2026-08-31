@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,35 +8,26 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { removeSheet } from "@/lib/actions";
 
+/** "Stop tracking" confirmation. Controlled: the sheet menu owns the open
+ *  state so this dialog is never mounted inside the menu subtree (a dialog
+ *  there unmounts with the closing menu — fleet 8/9's unreachable-delete
+ *  bug class). */
 export function DeleteSheetDialog({
+  open,
+  onOpenChange,
   spreadsheetId,
   title,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   spreadsheetId: string;
   title: string;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        // the trigger renders a DropdownMenuItem (not a native <button>), so
-        // Base UI's native-button assumptions must be off or the click never
-        // opens the dialog
-        nativeButton={false}
-        render={
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={(e) => e.preventDefault()} // keep the menu open while the dialog opens
-          >
-            <Trash2 /> Stop tracking…
-          </DropdownMenuItem>
-        }
-      />
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <form action={removeSheet}>
           <input type="hidden" name="spreadsheetId" value={spreadsheetId} />
@@ -50,7 +39,7 @@ export function DeleteSheetDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" variant="destructive">

@@ -23,6 +23,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+        env:
+          TZ: America/Chicago # the local-calendar backup-stamp test is a silent no-op on UTC runners
       - run: npm run build
         env:
           # build-time placeholder; runtime config comes from the deployer's .env

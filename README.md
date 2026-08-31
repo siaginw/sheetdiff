@@ -93,7 +93,7 @@ docker compose up -d --build
 The database persists in `./data`. Behind a proxy with a domain? Set `APP_URL` and
 `GOOGLE_REDIRECT_URI` in `.env` to match.
 
-**Any always-on box:** a spare office PC, a home server, or a ~$5 VPS with Node 20+ works —
+**Any always-on box:** a spare office PC, a home server, or a ~$5 VPS with Node 22+ works —
 `npm ci && npm run build && npm start` (consider [pm2](https://pm2.io) or a systemd service to
 keep it alive).
 
@@ -203,7 +203,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (218 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (233 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

@@ -244,3 +244,29 @@ describe("addMembers / removeMember", () => {
     expect((await db.select().from(members).where(eq(members.ownerUserId, "owner-2"))).length).toBe(2);
   });
 });
+
+describe("setBaseline cross-run scoping (fleet-9)", () => {
+  it("marking a run that covers SOME tabs never wipes baselines on tabs the run predates", async () => {
+    // tab-late was added AFTER the other tabs' runs and baselined by its own
+    // run; re-marking an older run on the other tabs must leave it alone —
+    // the old wipe-all-then-set blinded tab-late's pending resolver
+    await seedSheet("sheet-scoped", "owner-1", "Scoped");
+    await seedTab("tab-a", "sheet-scoped");
+    await seedTab("tab-late", "sheet-scoped");
+    await seedSnapshot("tab-a", "run-early", "manual", false, 100, [["ID"], ["1"]]);
+    await seedSnapshot("tab-late", "run-late", "manual", true, 200, [["ID"], ["9"]]);
+
+    signIn("owner-1");
+    await setBaseline(fd({ spreadsheetId: "sheet-scoped", runId: "run-early" }));
+    const rows = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-a", "tab-late"]));
+    // tab-a's run-early snapshot is now the baseline...
+    expect(rows.find((r) => r.tabId === "tab-a")!.isBaseline).toBe(true);
+    // ...and tab-late's baseline SURVIVES (the run doesn't cover that tab)
+    expect(rows.find((r) => r.tabId === "tab-late")!.isBaseline).toBe(true);
+    // its pending resolver still has a baseline to resolve against
+    const lateTab = (await db.select().from(tabs).where(eq(tabs.id, "tab-late")))[0]!;
+    const { getPendingChanges } = await import("./pending");
+    const p = await getPendingChanges(lateTab);
+    expect(p).toBeNull(); // quiet (baseline == latest) — NOT the no-baseline null path
+  });
+});

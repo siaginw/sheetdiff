@@ -51,16 +51,19 @@ if (hasUsers && appliedHashes.size === 0) {
   console.log(`[migrate] stamped ${journalHashes.length} baseline migration(s) on legacy DB`);
 }
 
-// apply pending migrations by executing journal entries not yet recorded
-const applied = new Set(sqlite.prepare("SELECT hash FROM __drizzle_migrations").all().map((r) => r.hash));
+// apply POSITIONALLY, like drizzle's boot-path migrator: entries beyond the
+// recorded row count run; a re-authored entry WITHIN the recorded range is a
+// no-op on boot, and the CLI used to crash on it instead (CREATE TABLE on an
+// existing table) — the divergence warning above already told the operator why
+const appliedCount = sqlite.prepare("SELECT count(*) c FROM __drizzle_migrations").get().c;
 let ran = 0;
-for (const e of journal.entries) {
+for (let i = appliedCount; i < journal.entries.length; i++) {
+  const e = journal.entries[i];
   const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
   const hash = crypto.createHash("sha256").update(sqlText).digest("hex");
-  if (applied.has(hash)) continue;
   sqlite.exec(sqlText.split("--> statement-breakpoint").join(""));
   sqlite.prepare('INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)').run(hash, e.when);
   ran++;
 }
 sqlite.close();
-console.log(`[migrate] done (${ran} applied, ${applied.size} already recorded)`);
+console.log(`[migrate] done (${ran} applied, ${appliedCount} already recorded)`);

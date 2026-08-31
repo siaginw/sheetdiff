@@ -8,7 +8,7 @@
  *  - boot: ensureMigrated() with DATABASE_PATH swapped per fixture
  *  - CLI: `node scripts/migrate.mjs` via execFileSync
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -117,5 +117,37 @@ describe("scripts/migrate.mjs (CLI path)", () => {
     expect(out2).toContain("already recorded");
     expect(stateOf(dbPath)).toEqual({ applied: journalCount, users: 1 });
     expect(backupsIn(dbPath).length).toBe(1);
+  });
+});
+
+describe("hash-divergent journal (re-authored migrations)", () => {
+  const run = (dbPath: string) => {
+    // console.warn goes to stderr — merge both streams for assertion
+    const r = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "migrate.mjs")], {
+      cwd: repoRoot,
+      env: { ...process.env, DATABASE_PATH: dbPath },
+      timeout: 60_000,
+      encoding: "utf8",
+    });
+    if (r.status !== 0) throw new Error(r.stderr || r.stdout);
+    return (r.stdout ?? "") + (r.stderr ?? "");
+  };
+
+  it("CLI warns, backs up, and NO-OPS instead of crashing (boot-path parity)", () => {
+    const dbPath = legacyFixture("cli-divergent.db");
+    run(dbPath); // stamp + apply
+    expect(stateOf(dbPath)).toEqual({ applied: journalCount, users: 1 });
+    expect(backupsIn(dbPath).length).toBe(1);
+
+    // re-author the recorded hash in place (same count, different hash)
+    const db = new Database(dbPath);
+    db.prepare("UPDATE __drizzle_migrations SET hash = ?").run("0".repeat(64));
+    db.close();
+
+    const out = run(dbPath);
+    expect(out).toContain("diverge from drizzle/meta"); // loud warning
+    expect(out).toContain("already recorded"); // no re-execution, no crash
+    expect(stateOf(dbPath)).toEqual({ applied: journalCount, users: 1 }); // data intact
+    expect(backupsIn(dbPath).length).toBe(2); // safety net fired again
   });
 });

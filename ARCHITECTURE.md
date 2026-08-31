@@ -178,7 +178,7 @@ role via `getSheetAccess`.
 | `src/lib/import.ts` | GIS CSV/XLSX import (bomb-guarded) |
 | `src/lib/actions.ts`, `access.ts` | Server actions, owner/viewer gates |
 | `src/lib/google.ts`, `session.ts`, `crypto.ts` | OAuth+reads, sessions, keys/AEAD |
-| `src/lib/scheduler.ts`, `digest.ts`, `maintenance.ts` | Tick loop, email, retention/backup |
+| `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup |
 | `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts` | Station/column detection, helpers, shared capture-staleness rule |
 | `src/lib/emails/digest.tsx` | Digest email template (react-email) |
 | `src/app/…` | Pages, export/auth/health routes |

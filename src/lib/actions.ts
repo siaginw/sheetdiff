@@ -292,7 +292,7 @@ export async function addNote(fd: FormData): Promise<void> {
   const user = await requireUser();
   const spreadsheetId = str(fd, "spreadsheetId");
   const body = str(fd, "body").trim();
-  if (!body) return;
+  if (!body && str(fd, "delete") !== "1") return;
   await requireSharedSpreadsheet(spreadsheetId, user);
   const tabId = str(fd, "tabId") || null;
   const runId = str(fd, "runId") || null;
@@ -314,10 +314,16 @@ export async function addNote(fd: FormData): Promise<void> {
     .filter((n) => n.authorUserId === user.id)
     .sort((a, b) => b.createdAt - a.createdAt)[0];
   if (existing) {
-    await db
-      .update(notesTable)
-      .set({ body: body.slice(0, 2000), createdAt: Date.now() })
-      .where(eq(notesTable.id, existing.id));
+    // an explicit delete (or an emptied body while editing) removes the note —
+    // notes were otherwise permanent unless overwritten
+    if (!body) {
+      await db.delete(notesTable).where(eq(notesTable.id, existing.id));
+    } else {
+      await db
+        .update(notesTable)
+        .set({ body: body.slice(0, 2000), createdAt: Date.now() })
+        .where(eq(notesTable.id, existing.id));
+    }
   } else {
     await db.insert(notesTable).values({
       id: crypto.randomUUID(),

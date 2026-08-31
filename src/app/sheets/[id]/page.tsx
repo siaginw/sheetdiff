@@ -8,26 +8,17 @@ import {
   Camera,
   CheckCircle2,
   Clock,
-  Download,
   ExternalLink,
-  MoreHorizontal,
   Star,
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { DiffView } from "@/components/diff/diff-view";
 import { SnapshotSelect } from "@/components/sheet/snapshot-select";
 import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
 import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
-import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
+import { SheetMenu } from "@/components/sheet/sheet-menu";
 import { db } from "@/lib/db";
 import { tabs, snapshots, snapshotStats, notes, changeAcks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
@@ -423,32 +414,7 @@ export default async function SheetPage({
               </Button>
             </form>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="outline" size="icon-sm" aria-label="More options">
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem render={<a href={`${sheet.id}/export`} />}>
-                  <Download /> Download changes to enter (CSV)
-                </DropdownMenuItem>
-                <DropdownMenuItem render={<a href={`${sheet.id}/export/billing`} />}>
-                  <Download /> Billing-day packet (CSV)
-                </DropdownMenuItem>
-                <DropdownMenuItem render={<a href={sheet.url} target="_blank" rel="noreferrer" />}>
-                  <ExternalLink /> Open in Google Sheets
-                </DropdownMenuItem>
-                {isOwner ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DeleteSheetDialog spreadsheetId={sheet.id} title={sheet.title} />
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <SheetMenu spreadsheetId={sheet.id} title={sheet.title} sheetUrl={sheet.url} isOwner={isOwner} />
           </div>
         </div>
 

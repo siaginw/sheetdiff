@@ -10,6 +10,16 @@ const MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024; // decompression-bomb guard
  * decompressing anything — a crafted 5 MB xlsx can declare gigabytes, and
  * exceljs would happily materialize them into heap.
  */
+/** The EOCD declares how many central-directory records follow; JSZip (what
+ *  ExcelJS uses) IGNORES that count and walks while the signature matches —
+ *  so a crafted file can hide bomb entries past the declared count and both
+ *  count-based guards silently skip them. Any central-dir signature left
+ *  between where the count-loop stopped and the EOCD is a lie. */
+function centralDirCountLie(buf: Buffer, eocd: number, ptr: number): boolean {
+  if (ptr + 46 > eocd) return false;
+  return buf.readUInt32LE(ptr) === 0x02014b50;
+}
+
 function zipUncompressedSize(buf: Buffer): number | null {
   // find End Of Central Directory (scan back over the 22-byte record + comment)
   let eocd = -1;
@@ -29,6 +39,7 @@ function zipUncompressedSize(buf: Buffer): number | null {
     total += buf.readUInt32LE(ptr + 24); // uncompressed size
     ptr += 46 + buf.readUInt16LE(ptr + 28) + buf.readUInt16LE(ptr + 30) + buf.readUInt16LE(ptr + 32);
   }
+  if (centralDirCountLie(buf, eocd, ptr)) return null; // untrustworthy — verifyActualZipSize rejects precisely
   return total;
 }
 
@@ -48,7 +59,7 @@ function zipUncompressedSize(buf: Buffer): number | null {
  *  compressed sizes even for descriptor entries, and its offsets let each
  *  entry's data be located and trial-inflated against a SHARED budget. */
 function verifyActualZipSize(buf: Buffer, limit: number): void {
-  // locate End Of Central Directory (scan back over the record + comment)
+  // locate End Of Central Directory (scan back over the 22-byte record + comment)
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65_536); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) {
@@ -79,14 +90,30 @@ function verifyActualZipSize(buf: Buffer, limit: number): void {
     if (compSize === 0) continue; // directories / truly empty entries
     if (dataStart + compSize > buf.length) throw new Error("[zip] entry data out of range");
     if (method === 8) {
-      const out = zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
-        maxOutputLength: budget,
-      });
+      let out: Buffer;
+      try {
+        out = zlib.inflateRawSync(buf.subarray(dataStart, dataStart + compSize), {
+          maxOutputLength: budget,
+        });
+      } catch (err) {
+        // Node's maxOutputLength trip surfaces as a raw RangeError and
+        // truncated streams as zlib errors — neither starts with "[zip]", so
+        // the caller's message filter would let the internals leak through.
+        // Normalize: both mean the file is over-budget or corrupt.
+        if (err instanceof RangeError) throw new Error("[zip] expands over the limit");
+        throw new Error("[zip] corrupt entry");
+      }
       budget -= out.length;
     } else {
       budget -= compSize; // stored (uncompressed) entry
     }
     if (budget <= 0) throw new Error("[zip] expands over the limit");
+  }
+  // JSZip ignores the EOCD count and walks while signatures match — entries
+  // hidden past the declared count would parse in ExcelJS but never be
+  // trial-inflated here. Reject the lie outright.
+  if (centralDirCountLie(buf, eocd, ptr)) {
+    throw new Error("[zip] central directory declares fewer entries than it contains");
   }
 }
 
@@ -141,8 +168,11 @@ export async function parseImportFile(
     try {
       verifyActualZipSize(buf, MAX_UNCOMPRESSED_BYTES);
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith("[zip]")) {
+      if (err instanceof Error && err.message.startsWith("[zip] expands")) {
         throw new Error("That workbook expands too large when decompressed — over the 64 MB limit.");
+      }
+      if (err instanceof Error && err.message.startsWith("[zip]")) {
+        throw new Error("That workbook's zip structure is corrupt or lies about its contents.");
       }
       throw err;
     }

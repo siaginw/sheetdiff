@@ -147,7 +147,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
           kind: "gap",
           severity: "warning",
           tabTitle,
-          message: `${report.unaccounted.length} unaccounted holes totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — see the gap report for the itemized list`,
+          message: `${report.unaccounted.length} unaccounted holes totaling ${ft.toLocaleString("en-US")} ft (e.g. stations ${first.from.toLocaleString("en-US")}–${first.to.toLocaleString("en-US")} after row ${first.afterRow}) — see the gap report for the itemized list`,
           rows: [first.afterRow],
         });
       } else {
@@ -157,7 +157,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
             severity: "warning",
             tabTitle,
             message:
-              `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})` +
+              `${g.ft} ft unaccounted: stations ${g.from.toLocaleString("en-US")}–${g.to.toLocaleString("en-US")} (after row ${g.afterRow})` +
               (g.spansInvalid ? " — unreadable chain rows in between; check those stations for typos" : ""),
             rows: [g.afterRow],
           });
@@ -170,7 +170,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
           kind: "overlap",
           severity: "error",
           tabTitle,
-          message: `${report.overlaps.length} overlaps totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — the chain double-counts repeatedly; check for duplicated or double-entered rows (see the gap report for the itemized list)`,
+          message: `${report.overlaps.length} overlaps totaling ${ft.toLocaleString("en-US")} ft (e.g. stations ${first.from.toLocaleString("en-US")}–${first.to.toLocaleString("en-US")} after row ${first.afterRow}) — the chain double-counts repeatedly; check for duplicated or double-entered rows (see the gap report for the itemized list)`,
           rows: [first.afterRow],
         });
       } else {
@@ -179,17 +179,32 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
             kind: "overlap",
             severity: "error",
             tabTitle,
-            message: `${o.ft} ft overlap: stations ${o.from.toLocaleString()}–${o.to.toLocaleString()} double-counted (after row ${o.afterRow})`,
+            message: `${o.ft} ft overlap: stations ${o.from.toLocaleString("en-US")}–${o.to.toLocaleString("en-US")} double-counted (after row ${o.afterRow})`,
             rows: [o.afterRow],
           });
         }
       }
-      // backwards rows are their own finding regardless of the chain
+      // backwards rows are their own finding regardless of the chain —
+      // systematically swapped station columns would produce one per row and
+      // re-saturate the panel, so collapse like the chain lists above
       const stations0 = stations;
+      const backwards: number[] = [];
       data.rows.forEach((r, i) => {
         const st = parseStation(r[stations0.start]);
         const en = parseStation(r[stations0.end]);
-        if (st !== null && en !== null && en < st && isFootageChainRow(r, activityCol)) {
+        if (st !== null && en !== null && en < st && isFootageChainRow(r, activityCol)) backwards.push(i);
+      });
+      if (backwards.length > COLLAPSE_AT) {
+        findings.push({
+          kind: "gap",
+          severity: "error",
+          tabTitle,
+          message: `${backwards.length} rows run backwards (start > end station, e.g. row ${backwards[0]! + 1}: ${norm(data.rows[backwards[0]!]![stations0.start])} > ${norm(data.rows[backwards[0]!]![stations0.end])}) — station columns swapped or mis-typed?`,
+          rows: [backwards[0]! + 1],
+        });
+      } else {
+        for (const i of backwards) {
+          const r = data.rows[i]!;
           findings.push({
             kind: "gap",
             severity: "error",
@@ -198,7 +213,7 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
             rows: [i + 1],
           });
         }
-      });
+      }
     }
 
     // ---- duplicate identities within the tab ----
@@ -264,7 +279,9 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
         severity: "error",
         tabTitle,
         message: `${entries.length} identities also appear in ${[...otherTabs].length} other tab${[...otherTabs].length === 1 ? "" : "s"} (e.g. “${entries[0]!.k.replace(/·/g, " ")}”) — a compilation tab, or shots entered in two places?`,
-        rows: entries[0]!.owners.map((o) => o.row),
+        // jump-to-row targets this tab — row numbers from OTHER tabs would
+        // point at rows that don't exist here
+        rows: entries[0]!.owners.filter((o) => o.tab === tabTitle).map((o) => o.row),
       });
     } else {
       for (const e of entries) {

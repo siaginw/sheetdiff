@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquarePlus, MessageSquareText } from "lucide-react";
+import { MessageSquarePlus, MessageSquareText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -89,7 +89,19 @@ export function NoteDialog({
               autoFocus
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex items-center gap-2">
+            {existingNote ? (
+              <Button
+                type="submit"
+                name="delete"
+                value="1"
+                variant="outline"
+                className="text-destructive"
+                title="Remove this note"
+              >
+                <Trash2 className="size-4" /> Delete
+              </Button>
+            ) : null}
             <Button type="submit" disabled={!body.trim()}>
               Save note
             </Button>
