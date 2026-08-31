@@ -27,7 +27,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (!access) return NextResponse.json({ error: "not found" }, { status: 404 });
   const sheet = access.sheet;
 
-  const allSheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, id));
+  const allSheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)).orderBy(tabs.position);
   const trackedTabs = allSheetTabs.filter((t) => t.tracked);
   if (trackedTabs.length === 0) {
     return NextResponse.json({ error: "no tracked tabs" }, { status: 400 });
@@ -56,6 +56,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   let latestLabel = "unknown";
   let latestAtMs = 0;
 
+  // compilation tabs double every finding — dedupe rows cross-tab before
+// any per-tab aggregation (the dashboard page does the same; the CSV and
+// the screen must never disagree on billing day)
+  const seenRows = new Set<string>();
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
