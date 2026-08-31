@@ -44,6 +44,7 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  render,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
@@ -51,6 +52,11 @@ function Button({
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      render={render}
+      // rendering a non-button element (Link, DropdownMenuTrigger) must drop
+      // the native <button> assumptions — Base UI logs a warning per render
+      // otherwise, and the server/client attribute sets diverge
+      nativeButton={render ? (props.nativeButton ?? false) : props.nativeButton}
     />
   )
 }

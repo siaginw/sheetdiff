@@ -32,6 +32,9 @@ const appliedHashes = new Set(sqlite.prepare("SELECT hash FROM __drizzle_migrati
 // only when a journal entry isn't recorded yet — count (legacy/new) or hash
 // (re-authored). The CLI does the same destructive work as boot; it gets the
 // same safety net.
+if (journalHashes.some((j) => !appliedHashes.has(j.hash)) && journalHashes.length === appliedHashes.size) {
+  console.warn("[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING");
+}
 if (hasUsers && journalHashes.some((j) => !appliedHashes.has(j.hash))) {
   const backupDir = path.join(path.dirname(dbPath), "backups");
   fs.mkdirSync(backupDir, { recursive: true });

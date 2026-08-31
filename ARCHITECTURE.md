@@ -169,7 +169,7 @@ role via `getSheetAccess`.
 |---|---|
 | `src/instrumentation.ts` | Boot: fail-closed migrations, scheduler start |
 | `src/lib/db/{index,schema,migrate}.ts` | SQLite (WAL), schema, boot migrations |
-| `src/lib/diff/{engine,normalize,worddiff}.ts` | Pure diff engine + normalization |
+| `src/lib/diff/{engine,normalize,worddiff,widths}.ts` | Pure diff engine + normalization + layout math |
 | `src/lib/snapshots.ts` | Capture, gzip storage, schedule math, stats materialization |
 | `src/lib/pending.ts` | Baseline→pending resolver with quiet-day short-circuit |
 | `src/lib/sync.ts` | Ack resolution + introduction walk |

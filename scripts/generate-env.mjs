@@ -65,5 +65,5 @@ const push = spawnSync(process.execPath, [path2.join(process.cwd(), "scripts", "
 if (push.status !== 0) {
   console.log("Database creation skipped — run `npm run db:migrate` manually.");
 } else {
-  console.log("Database ready (data/sheetdiff.db).");
+  console.log(`Database ready (${process.env.DATABASE_PATH ?? path2.join(process.cwd(), "data", "sheetdiff.db")}).`);
 }

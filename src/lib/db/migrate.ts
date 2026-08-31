@@ -49,6 +49,12 @@ export function ensureMigrated(): void {
     // migration) or by hash (a migration file re-authored in place). Not every
     // boot, which would grow without bound.
     const pendingWork = journalEntries.some((j) => !appliedHashes.has(j.hash));
+    if (pendingWork && journalEntries.length === appliedHashes.size) {
+      // same count, different hashes: migrations were re-authored in place.
+      // drizzle's timestamp-driven apply() usually no-ops, so the only visible
+      // effect is a pre-migrate backup on every boot — say so, loudly.
+      console.warn("[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING");
+    }
     if (hasUsers && pendingWork) {
       const backupDir = path.join(path.dirname(dbPath), "backups");
       fs.mkdirSync(backupDir, { recursive: true });
