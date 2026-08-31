@@ -159,3 +159,35 @@ describe("runChecks", () => {
     expect(cross!.message).toContain("PE6 and PE7");
   });
 });
+
+describe("runChecks: oversized chain lists collapse (digest saturation)", () => {
+  // the real 43-tab tracker's Line List produces ~950 overlap findings and
+  // drowns the checks panel and digest; >10 of either collapses to one
+  // honest summary that points at the gap report
+  const H = ["Activity", "Start STA", "End STA", "Crew"];
+
+  it("more than 10 overlaps collapse into one summary finding", () => {
+    // 15 consecutive rows, each overlapping the previous by 100 ft
+    const rows = Array.from({ length: 15 }, (_, i) => ["Plow", String(i * 100), String(i * 100 + 200), "C"]);
+    const findings = runChecks([{ tabTitle: "LL", data: snap(H, rows), keyColumn: null }]);
+    const overlaps = findings.filter((f) => f.kind === "overlap");
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]!.message).toMatch(/14 overlaps totaling \d[\d,]* ft/);
+    expect(overlaps[0]!.message).toContain("double-counts repeatedly");
+  });
+
+  it("more than 10 unaccounted holes collapse into one summary finding", () => {
+    // 15 rows with 100-ft jumps between them
+    const rows = Array.from({ length: 15 }, (_, i) => ["Plow", String(i * 200), String(i * 200 + 100), "C"]);
+    const findings = runChecks([{ tabTitle: "LL", data: snap(H, rows), keyColumn: null }]);
+    const gaps = findings.filter((f) => f.kind === "gap" && f.message.includes("unaccounted holes"));
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.message).toContain("see the gap report");
+  });
+
+  it("10 or fewer stay itemized — small tabs keep their precise findings", () => {
+    const rows = Array.from({ length: 8 }, (_, i) => ["Plow", String(i * 100), String(i * 100 + 200), "C"]);
+    const findings = runChecks([{ tabTitle: "LL", data: snap(H, rows), keyColumn: null }]);
+    expect(findings.filter((f) => f.kind === "overlap").length).toBe(7); // one per boundary
+  });
+});

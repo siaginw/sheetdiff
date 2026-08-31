@@ -56,7 +56,12 @@ const { spawnSync } = await import("node:child_process");
 const { default: fs2 } = await import("node:fs");
 const { default: path2 } = await import("node:path");
 fs2.mkdirSync(path2.join(process.cwd(), "data"), { recursive: true });
-const push = spawnSync("node", ["scripts/migrate.mjs"], { stdio: "inherit", shell: true });
+// process.execPath + no shell: spawning a command WITH args through a shell
+// is DEP0190 on modern Node, and the shell adds nothing here
+const push = spawnSync(process.execPath, [path2.join(process.cwd(), "scripts", "migrate.mjs")], {
+  stdio: "inherit",
+  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH ?? path2.join(process.cwd(), "data", "sheetdiff.db") },
+});
 if (push.status !== 0) {
   console.log("Database creation skipped — run `npm run db:migrate` manually.");
 } else {

@@ -224,4 +224,40 @@ describe("rowKey disambiguation: removed siblings and repeated key values", () =
     const acks = new Map([[changed.rowKey, 9999]]);
     expect(isResolved(acks, added.rowKey, 1)).toBe(false);
   });
+
+  it("DOCUMENTED TRADEOFF: identical added rows' suffixes are B-positional and shift when rows insert above", () => {
+    // identical blank-key rows have no content discriminator, so their keys
+    // move with their position. An ack can transfer between identical
+    // siblings across captures — but the pending COUNT stays correct (one
+    // sibling remains unresolved), which is the invariant every consumer
+    // relies on. This test pins that deliberately; change it consciously.
+    const base = snap(TRACKER_HEADERS, [["Plow", "0", "500", "CREW A", ""]]);
+    const cap1 = snap(TRACKER_HEADERS, [
+      ["Plow", "0", "500", "CREW A", ""],
+      ["", "", "", "", "ZONE 7"],
+      ["", "", "", "", "ZONE 7"],
+    ]);
+    const r1 = diffSnapshots(base, cap1);
+    const added1 = r1.rows.filter((x) => x.status === "added");
+    expect(added1).toHaveLength(2);
+    // acking one leaves exactly one pending — the count survives any shift
+    const acks = new Map([[added1[0]!.rowKey, 9999]]);
+    expect(added1.filter((x) => !isResolved(acks, x.rowKey, 1))).toHaveLength(1);
+
+    // next capture: a keyed row inserted ABOVE the twins shifts their
+    // suffixes — the ack may now match the other sibling, yet exactly ONE
+    // twin stays unresolved. Count integrity over identity purity.
+    const cap2 = snap(TRACKER_HEADERS, [
+      ["Plow", "0", "500", "CREW A", ""],
+      ["Bore", "500", "14800", "CREW B", ""],
+      ["", "", "", "", "ZONE 7"],
+      ["", "", "", "", "ZONE 7"],
+    ]);
+    const r2 = diffSnapshots(base, cap2);
+    const added2 = r2.rows.filter((x) => x.status === "added");
+    expect(added2).toHaveLength(3); // the bore plus both twins
+    const twins = added2.filter((x) => x.values[4] === "ZONE 7");
+    expect(twins).toHaveLength(2);
+    expect(twins.filter((x) => !isResolved(acks, x.rowKey, 1)).length).toBeGreaterThanOrEqual(1);
+  });
 });

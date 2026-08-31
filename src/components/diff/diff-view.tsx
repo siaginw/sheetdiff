@@ -17,23 +17,12 @@ import { Label } from "@/components/ui/label";
 import { NoteDialog } from "@/components/sheet/note-dialog";
 import { toggleAck } from "@/lib/actions";
 import { wordDiff, shouldWordDiff } from "@/lib/diff/worddiff";
+import { columnWidths } from "@/lib/diff/widths";
 import { oldRowValues, type DiffResult, DiffRow } from "@/lib/diff/engine";
 
 /* ------------------------------------------------------------------ */
 /* shared helpers                                                      */
 /* ------------------------------------------------------------------ */
-
-/** Per-column widths (in ch) so mono cells align across all lines. */
-function columnWidths(result: DiffResult, lines: DiffRow[]): number[] {
-  const widths = result.columns.map((c) => Math.max(3, c.header.length));
-  for (const row of lines) {
-    const vals = row.status === "removed" || row.status === "changed" ? oldRowValues(row) : row.values;
-    for (let i = 0; i < vals.length; i++) {
-      widths[i] = Math.max(widths[i], Math.min(vals[i].length, 22));
-    }
-  }
-  return widths.map((w) => Math.min(w, 22));
-}
 
 function DiffStat({ s }: { s: DiffResult["summary"] }) {
   return (

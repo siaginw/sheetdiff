@@ -132,25 +132,55 @@ export function runChecks(tabs: TabChecksInput[]): CheckFinding[] {
       // (computeGapReport) so the checks panel and the gap report can never
       // disagree — out-of-order rows are not findings, holes and overlaps are
       const report = computeGapReport(data);
-      for (const g of report.unaccounted) {
+      // A tab with dozens of tiny holes/overlaps (systematically interleaved
+      // or double-entered rows — the real 43-tab tracker's Line List makes
+      // ~950) drowns every other signal in the checks panel AND the digest.
+      // Collapse oversized lists into one honest summary; the gap report
+      // panel keeps the itemized, aged view.
+      const COLLAPSE_AT = 10;
+      if (report.unaccounted.length > COLLAPSE_AT) {
+        const ft = report.unaccounted.reduce((n, g) => n + g.ft, 0);
+        const first = report.unaccounted[0]!;
         findings.push({
           kind: "gap",
           severity: "warning",
           tabTitle,
-          message:
-            `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})` +
-            (g.spansInvalid ? " — unreadable chain rows in between; check those stations for typos" : ""),
-          rows: [g.afterRow],
+          message: `${report.unaccounted.length} unaccounted holes totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — see the gap report for the itemized list`,
+          rows: [first.afterRow],
         });
+      } else {
+        for (const g of report.unaccounted) {
+          findings.push({
+            kind: "gap",
+            severity: "warning",
+            tabTitle,
+            message:
+              `${g.ft} ft unaccounted: stations ${g.from.toLocaleString()}–${g.to.toLocaleString()} (after row ${g.afterRow})` +
+              (g.spansInvalid ? " — unreadable chain rows in between; check those stations for typos" : ""),
+            rows: [g.afterRow],
+          });
+        }
       }
-      for (const o of report.overlaps) {
+      if (report.overlaps.length > COLLAPSE_AT) {
+        const ft = report.overlaps.reduce((n, o) => n + o.ft, 0);
+        const first = report.overlaps[0]!;
         findings.push({
           kind: "overlap",
           severity: "error",
           tabTitle,
-          message: `${o.ft} ft overlap: stations ${o.from.toLocaleString()}–${o.to.toLocaleString()} double-counted (after row ${o.afterRow})`,
-          rows: [o.afterRow],
+          message: `${report.overlaps.length} overlaps totaling ${ft.toLocaleString()} ft (e.g. stations ${first.from.toLocaleString()}–${first.to.toLocaleString()} after row ${first.afterRow}) — the chain double-counts repeatedly; check for duplicated or double-entered rows`,
+          rows: [first.afterRow],
         });
+      } else {
+        for (const o of report.overlaps) {
+          findings.push({
+            kind: "overlap",
+            severity: "error",
+            tabTitle,
+            message: `${o.ft} ft overlap: stations ${o.from.toLocaleString()}–${o.to.toLocaleString()} double-counted (after row ${o.afterRow})`,
+            rows: [o.afterRow],
+          });
+        }
       }
       // backwards rows are their own finding regardless of the chain
       const stations0 = stations;

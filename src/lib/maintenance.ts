@@ -59,7 +59,12 @@ export async function backupDatabase(): Promise<string | null> {
   const dir = path.join(path.dirname(dbPath), "backups");
   fs.mkdirSync(dir, { recursive: true });
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  // local-calendar stamp (maintenanceDue itself is local-clock): a UTC stamp
+  // near local midnight names tomorrow's date and confuses the once-a-day
+  // dedup + the "newest backup" restore runbook
+  const now = new Date();
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
   const dest = path.join(dir, `sheetdiff-${stamp}.db`);
   if (fs.existsSync(dest)) return dest; // already backed up today
 

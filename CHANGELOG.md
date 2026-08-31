@@ -29,7 +29,10 @@ oldest-first by real timestamp and cleans -shm/-wal litter; key detection
 tokenizes multi-word headers ("EMP NO", "PO Number"); the fresh-import
 timeline explains itself; digest subjects lead with staleness when data is
 stale; the README quick start no longer crashes on fresh clones (`npm run
-setup`); suite grew to 200 tests.
+setup`); oversized check lists collapse to honest summaries (the real
+43-tab tracker made ~950 overlap findings, drowning the checks panel and
+digest); the sheet page no longer pans sideways on phones; suite grew to
+207 tests.
 
 ## 0.3.0 — 2026-08-30
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,
