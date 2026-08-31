@@ -80,7 +80,7 @@ export async function backupDatabase(): Promise<string | null> {
 
   const old = fs
     .readdirSync(dir)
-    .filter((f) => f.startsWith("sheetdiff-") && f.endsWith(".db"))
+    .filter((f) => (f.startsWith("sheetdiff-") || f.startsWith("pre-migrate-")) && f.endsWith(".db"))
     .sort()
     .reverse()
     .slice(keep);

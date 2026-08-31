@@ -24,9 +24,11 @@ export function ensureMigrated(): void {
   try {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("busy_timeout = 30000");
-    // pre-migration backup: a bad migration never costs more than the last snapshot
+    // pre-migration backup: only when actual migration work is pending, not
+    // every boot (unbounded growth otherwise)
     const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
-    if (hasUsers) {
+    const hasMigrationsTbl = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'").get();
+    if (hasUsers && !hasMigrationsTbl) {
       const backupDir = path.join(path.dirname(dbPath), "backups");
       fs.mkdirSync(backupDir, { recursive: true });
       sqlite.pragma("wal_checkpoint(TRUNCATE)");

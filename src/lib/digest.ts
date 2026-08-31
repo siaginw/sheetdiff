@@ -15,7 +15,7 @@ export function smtpConfigured(): boolean {
 }
 
 /** Assemble the digest content for one user's sheets. */
-export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> {
+export async function buildDigestSheets(userId: string, now = Date.now()): Promise<DigestSheet[]> {
   const userRows = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!userRows[0]) return [];
   const sheets = await listAccessibleSpreadsheets(userRows[0]);
@@ -37,7 +37,20 @@ export async function buildDigestSheets(userId: string): Promise<DigestSheet[]> 
       topChecks: [],
       notes: [],
       footageDelta: 0,
+      lastSnapshotAgo: null,
     };
+    // staleness signal: if the latest capture is older than 2x the schedule window,
+    // say so — "all up to date" computed from stale data is a lie
+    if (sheet.lastSnapshotAt && sheet.scheduleKind !== "off") {
+      const ageMs = now - sheet.lastSnapshotAt;
+      const windowMs =
+        sheet.scheduleKind === "hourly" ? (sheet.scheduleHours ?? 1) * 3_600_000 * 3 :
+        sheet.scheduleKind === "daily" ? 48 * 3_600_000 :
+        8 * 24 * 3_600_000;
+      if (ageMs > windowMs) {
+        digest.lastSnapshotAgo = relativeTime(sheet.lastSnapshotAt);
+      }
+    }
 
     for (const tab of tracked) {
       // latest SHEET snapshot (GIS imports excluded) for checks + footage

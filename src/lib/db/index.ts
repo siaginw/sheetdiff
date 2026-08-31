@@ -13,6 +13,7 @@ const globalForDb = globalThis as unknown as { __sheetdiffDb?: ReturnType<typeof
 function createDb() {
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("busy_timeout = 30000"); // shared-volume contention: wait, don't throw
   return drizzle(sqlite, { schema });
 }
 

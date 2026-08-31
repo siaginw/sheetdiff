@@ -28,6 +28,8 @@ export interface DigestSheet {
   notes: { body: string; when: string }[];
   /** total footage change since collection, when station columns exist */
   footageDelta: number;
+  /** "3d ago" — stale captures are a pipeline problem, not "all up to date" */
+  lastSnapshotAgo: string | null;
 }
 
 export function DigestEmail({

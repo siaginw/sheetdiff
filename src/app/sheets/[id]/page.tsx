@@ -382,6 +382,11 @@ export default async function SheetPage({
                   type="submit"
                   size="sm"
                   variant={toSnap.isBaseline ? "secondary" : "outline"}
+                  title={
+                    diff && diff.rows.some((r) => r.status !== "unchanged" && r.status !== "moved")
+                      ? `${diff.rows.filter((r) => r.status !== "unchanged" && r.status !== "moved").length} unentered changes will be cleared — export your worklist first`
+                      : undefined
+                  }
                 >
                   {toSnap.isBaseline ? (
                     <>
@@ -389,7 +394,7 @@ export default async function SheetPage({
                     </>
                   ) : (
                     <>
-                      <Star className="size-4" /> Mark as collected
+                      <Star className="size-4" /> Mark as collected{!toSnap.isBaseline && diff && diff.rows.some((r) => r.status !== "unchanged" && r.status !== "moved") ? ` (${diff.rows.filter((r) => r.status !== "unchanged" && r.status !== "moved").length} to enter)` : ""}
                     </>
                   )}
                 </Button>
