@@ -93,12 +93,16 @@ export interface DiffOptions {
   toWhen?: number | null;
 }
 
-const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit)$/i;
+const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit|shot)$/;
 
 /**
  * Auto-detect the column that identifies rows. A column qualifies when its
- * values are non-empty for ~all rows and unique. Header names that look like
- * identifiers win ties; leftmost wins remaining ties.
+ * values are non-empty for ~all rows, unique, AND its header carries some
+ * identifier evidence — a column with zero evidence must not become identity
+ * by accident: on padded label-only tabs a unique Notes/Crew column would
+ * flip every label edit into remove+add, the exact flood the blank-key
+ * fallthrough exists to prevent. Identifier-ish headers win ties; leftmost
+ * wins remaining ties.
  */
 export function detectKeyColumn(s: SnapshotData): number | null {
   const { headers, rows } = s;
@@ -111,8 +115,7 @@ export function detectKeyColumn(s: SnapshotData): number | null {
   const width = headers.length;
   let best: { col: number; score: number } | null = null;
 
-  const scanCols = Math.min(width, 12);
-  for (let c = 0; c < scanCols; c++) {
+  for (let c = 0; c < width; c++) {
     if (banned.has(c)) continue;
     const values = rows.map((r) => normalizeKey(r[c]));
     const nonEmpty = values.filter((v) => v !== "");
@@ -122,13 +125,14 @@ export function detectKeyColumn(s: SnapshotData): number | null {
     // ...and be unique (a key that repeats can't identify a row)
     if (new Set(nonEmpty).size !== nonEmpty.length) continue;
 
-    const header = norm(headers[c]).toLowerCase();
+    // "Shot #" and "Emp #" are identifier headers too — judge the alphanumerics
+    const header = norm(headers[c]).toLowerCase().replace(/[^a-z0-9]/g, "");
     const score =
       (KEY_HEADER_RE.test(header) ? 2 : 0) +
-      (header.includes("id") || header.includes("key") || header.includes("date") ? 1 : 0);
+      (header.includes("id") || header.includes("key") || header.includes("date") || header.includes("name") ? 1 : 0);
     if (!best || score > best.score) best = { col: c, score };
   }
-  return best ? best.col : null;
+  return best && best.score > 0 ? best.col : null;
 }
 
 /**
@@ -171,7 +175,6 @@ function matchColumns(a: SnapshotData, b: SnapshotData): {
   const aHeaderMap = new Map<string, number[]>();
   for (let c = 0; c < aWidth; c++) {
     const h = norm(a.headers[c]);
-    if (h === "" && c >= a.headers.length) continue;
     if (h === "") continue;
     const list = aHeaderMap.get(h) ?? [];
     list.push(c);
@@ -475,6 +478,27 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     while (ri < removedIdx.length && removedIdx[ri] < nextOld) emitRemoved(removedIdx[ri++]);
   }
   while (ri < removedIdx.length) emitRemoved(removedIdx[ri++]);
+
+  // ---- rowKey uniqueness pass ----
+  // changeAcks and notes are keyed by (tab, rowKey): two rows sharing one
+  // rowKey means a single ack silently resolves both — the exact miss this
+  // product exists to prevent. Bases collide when a key value repeats (shot
+  // labels do: "S3 entered twice, plow + bore") or when identical blank-keyed
+  // rows are added/removed together. Families with a single member keep the
+  // raw base (unique keys stay plain, existing acks keep matching); repeated
+  // families get a positional suffix — A-side index for rows that existed in
+  // A (stable across re-diffs of the same pair), B-side for added rows.
+  const baseCount = new Map<string, number>();
+  for (const r of diffRows) baseCount.set(r.rowKey, (baseCount.get(r.rowKey) ?? 0) + 1);
+  const handed = new Set<string>();
+  for (const r of diffRows) {
+    if ((baseCount.get(r.rowKey) ?? 0) < 2) continue;
+    let n = r.oldIndex ?? r.newIndex ?? 0;
+    let candidate = `${r.rowKey}#${n}`;
+    while (handed.has(candidate)) candidate = `${r.rowKey}#${++n}`;
+    handed.add(candidate);
+    r.rowKey = candidate;
+  }
 
   const columns: ColumnInfo[] = b.headers.map((h, c) => ({
     col: c,

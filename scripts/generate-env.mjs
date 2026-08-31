@@ -53,7 +53,10 @@ console.log("Next: add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see READM
 
 // create the database too, so `npm run dev` works right after
 const { spawnSync } = await import("node:child_process");
-const push = spawnSync("npx", ["drizzle-kit", "migrate"], { stdio: "inherit", shell: true });
+const { default: fs2 } = await import("node:fs");
+const { default: path2 } = await import("node:path");
+fs2.mkdirSync(path2.join(process.cwd(), "data"), { recursive: true });
+const push = spawnSync("node", ["scripts/migrate.mjs"], { stdio: "inherit", shell: true });
 if (push.status !== 0) {
   console.log("Database creation skipped — run `npm run db:migrate` manually.");
 } else {

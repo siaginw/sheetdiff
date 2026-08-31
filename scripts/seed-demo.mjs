@@ -9,9 +9,15 @@
  */
 import crypto from "node:crypto";
 import zlib from "node:zlib";
+import fs from "node:fs";
 import Database from "better-sqlite3";
 
+fs.mkdirSync("data", { recursive: true });
 const db = new Database("data/sheetdiff.db");
+if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get()) {
+  console.error("Database not initialized — run `npm run db:migrate` first (see README).");
+  process.exit(1);
+}
 db.pragma("journal_mode = WAL");
 
 const enc = (data) => zlib.gzipSync(Buffer.from(JSON.stringify(data)));

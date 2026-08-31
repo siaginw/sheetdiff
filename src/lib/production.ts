@@ -1,13 +1,13 @@
 import { rowContentKey, type SnapshotData } from "./diff/engine";
 import { compositeKey } from "./diff/normalize";
 import { norm, normalizeKey } from "./diff/normalize";
+import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
 
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
 function localDayKey(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
 
 /**
  * Production-domain analytics beyond the chain: crew productivity, TOTALS-tab

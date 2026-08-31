@@ -80,6 +80,9 @@ export async function GET(req: Request) {
     // never log the raw error object — gaxios errors embed the token-exchange
     // body (auth code + client secret) in enumerable properties
     console.error("OAuth callback failed:", err instanceof Error ? err.message : String(err));
+    if (err instanceof Error && err.message.includes("APP_SECRET")) {
+      return fail("app-secret-missing");
+    }
     return fail("oauth-failed");
   }
 }

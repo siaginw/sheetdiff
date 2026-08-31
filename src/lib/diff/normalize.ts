@@ -26,6 +26,13 @@ export function parseNumberLike(s: string): number | null {
   t = t.replace(CURRENCY_RE, "");
   if (THOUSANDS_RE.test(t)) t = t.replace(/,/g, "");
   if (!/^-?\d+(\.\d+)?$/.test(t)) return null;
+  // Numbers are only "confidently" numbers while every digit survives the
+  // double round-trip: above 15 significant digits Number() quantizes, so a
+  // 17-digit ticket/reference whose LAST digit changed would compare equal.
+  // Long digit strings are identities — bail out and let callers compare
+  // them as text (module contract: when unsure, treat values as different).
+  const significant = t.replace(/^[+-]?0*/, "").replace(".", "");
+  if (significant.length > 15) return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 }

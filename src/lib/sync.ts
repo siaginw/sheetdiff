@@ -37,10 +37,16 @@ export interface WalkSnapshot {
  * added/changed rows the introduction is the oldest walked snapshot still
  * containing the row's NEW content hash; for removed rows, the oldest snapshot
  * in which the OLD content hash is gone.
+ *
+ * `truncated` must be true when older in-window snapshots exist but weren't
+ * loaded: a row present in every walked snapshot then only PROVES it predates
+ * the oldest one, so its introduction is unknown — reported as 0, which any
+ * ack satisfies. A false nag (re-entering an acked row) beats a false miss.
  */
 export function computeIntroductions(
   walk: WalkSnapshot[],
   rows: DiffRow[],
+  opts: { truncated?: boolean } = {},
 ): Map<string, number> {
   const out = new Map<string, number>();
   if (walk.length === 0) return out;
@@ -92,7 +98,14 @@ export function computeIntroductions(
   // newest walked snapshot) must fall back to the caller's strict default,
   // never to a sentinel 0 that any ack would satisfy
   for (const [rowKey, p] of pending) {
-    if (p.introduced > 0) out.set(rowKey, p.introduced);
+    if (p.introduced === 0) continue;
+    if (opts.truncated && !p.done) {
+      // never bounded within the walk + walk is truncated → the row predates
+      // the window; the true introduction is unknowable, so any ack counts
+      out.set(rowKey, 0);
+    } else {
+      out.set(rowKey, p.introduced);
+    }
   }
   return out;
 }

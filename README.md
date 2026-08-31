@@ -175,7 +175,7 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice), the to-enter worklist, and late entries in one CSV.
 - **Monitoring.** Set `HEALTHCHECK_PING_URL` (see `.env.example`) to a free healthchecks.io monitor and get alerted if snapshots ever silently stop.
 
-**When the app seems quiet:** check `docker compose logs sheetdiff` for `[scheduler]` errors (most common: revoked Google token — re-authenticate via the app), verify `curl localhost:3000/api/health` shows `"ok":true`, check disk space (`data/backups/` grows), and confirm the container is running (`docker ps`). To restore: stop the container, copy the newest `data/backups/sheetdiff-YYYY-MM-DD.db` over `data/sheetdiff.db` (delete the `-wal` and `-shm` siblings), restart.
+**When the app seems quiet:** check `docker compose logs sheetdiff` for `[scheduler]` errors (most common: revoked Google token — re-authenticate via the app), verify `curl localhost:3000/api/health` shows `"ok":true` (a non-zero `staleCaptures` means scheduled snapshots are overdue — the pages still render from old data, so this is often the first visible sign), check disk space (`data/backups/` grows), and confirm the container is running (`docker ps`). To restore: stop the container, copy the newest `data/backups/sheetdiff-YYYY-MM-DD.db` over `data/sheetdiff.db` (delete the `-wal` and `-shm` siblings), restart.
 
 - **Self-maintaining data** — automatic nightly backups (`data/backups/`, keep 14 by default)
   and snapshot retention (keep the newest 200 per tab, baselines always kept). Both tunable via
@@ -203,7 +203,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (154 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (174 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

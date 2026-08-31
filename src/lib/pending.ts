@@ -99,16 +99,20 @@ export async function getPendingChanges(
   }
 
   // bounded walk between baseline and latest (newest first, baseline excluded)
-  const between = sheetSnaps
-    .filter((s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt)
-    .slice(0, INTRO_WALK_LIMIT);
+  const windowAll = sheetSnaps.filter(
+    (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
+  );
+  const between = windowAll.slice(0, INTRO_WALK_LIMIT);
+  // hourly sheets outrun the walk window within days; a truncated walk cannot
+  // date rows older than its oldest snapshot and must say so
+  const truncated = windowAll.length > between.length;
   let introducedAt = new Map<string, number>();
   if (between.length > 1) {
     const walkBlobs = await fetchBlobs(between.map((s) => s.id));
     const walk: WalkSnapshot[] = between
       .map((s) => ({ createdAt: s.createdAt, data: walkBlobs.get(s.id) }))
       .filter((w): w is WalkSnapshot => Boolean(w.data));
-    introducedAt = computeIntroductions(walk, diff.rows);
+    introducedAt = computeIntroductions(walk, diff.rows, { truncated });
   }
 
   const unresolved = changeRows.filter(

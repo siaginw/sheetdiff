@@ -223,9 +223,9 @@ describe("billing route: packet assembly across every tracked tab", () => {
     const body = lines.slice(4);
     // footage summary row
     expect(body).toContain("footage,Placed footage since last collection,400,");
-    // the open hole, with its do-not-invoice note (days-open grows with the
-    // wall clock — match, don't pin)
-    expect(body.some((l) => /^hole,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage$/.test(l))).toBe(true);
+    // the open hole, with its do-not-invoice note tagged with its tab (days-open
+    // grows with the wall clock — match, don't pin)
+    expect(body.some((l) => /^hole,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(bill-a\)$/.test(l))).toBe(true);
     // tab A's crew fix is on the worklist, tagged with its tab
     expect(body).toContain("to-enter,Crew #: CREW A -> CREW Z,,enter in office system (bill-a)");
     // NEW rows from both tabs carry the tab tag too (to-enter count 4 = 1

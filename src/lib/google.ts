@@ -18,8 +18,18 @@ export interface StoredTokens {
   expiry_date?: number | null;
 }
 
+const PLACEHOLDER_VALUES = new Set([
+  "your-client-id.apps.googleusercontent.com",
+  "your-client-secret",
+  "change-me-to-a-long-random-string",
+]);
+
 export function googleConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const id = process.env.GOOGLE_CLIENT_ID;
+  const secret = process.env.GOOGLE_CLIENT_SECRET;
+  return Boolean(
+    id && secret && !PLACEHOLDER_VALUES.has(id) && !PLACEHOLDER_VALUES.has(secret),
+  );
 }
 
 export function getRedirectUri(): string {

@@ -37,7 +37,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   // aggregate across EVERY tracked tab
   const unresolvedRows: { tab: string; status: string; key: string | null; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
-  const allAgedGaps: AgingGap[] = [];
+  const allAgedGaps: (AgingGap & { tab?: string })[] = [];
   const allLateEntries: LateEntry[] = [];
   let totalSinceFt = 0;
   let anyBaselineFound = false;
@@ -71,15 +71,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
       .orderBy(desc(snapshots.createdAt))
       .limit(15);
-    if (window.length > 0) {
-      const walk = [...window].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) }));
-      for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
-        allAgedGaps.push(g);
+      if (window.length > 0) {
+        const walk = [...window].reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob) }));
+        for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
+          allAgedGaps.push({ ...g, tab: tab.title });
+        }
+        if (walk.length > 1) {
+          for (const e of detectLateEntries(walk)) allLateEntries.push(e);
+        }
       }
-      if (walk.length > 1) {
-        for (const e of detectLateEntries(walk)) allLateEntries.push(e);
-      }
-    }
 
     const pending = await getPendingChanges(tab);
     if (pending) {

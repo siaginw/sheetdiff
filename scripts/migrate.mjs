@@ -18,13 +18,13 @@ const sqlite = new Database(dbPath);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("busy_timeout = 30000"); // two containers on one volume: wait, don't crash-loop
 const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
-const hasMigrations = sqlite.prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'").get();
-// detect legacy BEFORE creating the table — otherwise the count is always > 0
 sqlite.exec('CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
+// applied ROW count, not table existence — an empty table (legacy DB, or a
+// prior run that crashed between CREATE and stamping) still needs stamping
+const appliedCount = sqlite.prepare("SELECT count(*) c FROM __drizzle_migrations").get().c;
 
-if (hasUsers && hasMigrations.c === 0) {
+if (hasUsers && appliedCount === 0) {
   const journal = JSON.parse(fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"));
-  sqlite.exec('CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
   const ins = sqlite.prepare('INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)');
   for (const e of journal.entries) {
     const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");

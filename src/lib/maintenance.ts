@@ -78,12 +78,20 @@ export async function backupDatabase(): Promise<string | null> {
     sqlite.close();
   }
 
+  // evict oldest-first by REAL timestamp, not filename alphabet — sorted by
+  // name, "pre-migrate-<epoch>" always sorts before "sheetdiff-<date>" and the
+  // migration safety net would be evicted first
+  const stampOf = (f: string): number => {
+    const m = /^(?:pre-migrate-(\d+)|sheetdiff-(\d{4}-\d{2}-\d{2}))\.db$/.exec(f);
+    if (!m) return 0;
+    return m[1] ? Number(m[1]) : Date.parse(`${m[2]}T00:00:00Z`);
+  };
   const old = fs
     .readdirSync(dir)
     .filter((f) => (f.startsWith("sheetdiff-") || f.startsWith("pre-migrate-")) && f.endsWith(".db"))
-    .sort()
-    .reverse()
-    .slice(keep);
+    .sort((a, b) => stampOf(a) - stampOf(b))
+    .slice(0, -keep)
+    .slice(-20); // never evict more than 20 files in one sweep, whatever the count
   for (const f of old) {
     try {
       fs.rmSync(path.join(dir, f));

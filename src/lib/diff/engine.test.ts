@@ -37,6 +37,14 @@ describe("sameValue", () => {
     expect(sameValue("abc", "abd")).toBe(false);
     expect(sameValue("40", "40x")).toBe(false);
   });
+  it("does not equate integers above double precision — long digit strings are identities", () => {
+    // 17-digit ticket/reference numbers: Number() quantizes past 2^53, so the
+    // last digit would silently compare equal. They must compare as text.
+    expect(sameValue("123456789012345678", "123456789012345679")).toBe(false);
+    expect(sameValue("123456789012345678", "123456789012345678")).toBe(true);
+    // leading zeros stay insignificant only within exact-integer range
+    expect(sameValue("007", "7")).toBe(true);
+  });
 });
 
 describe("colLetter", () => {
@@ -72,6 +80,42 @@ describe("detectKeyColumn", () => {
       ["y", "2"],
     ]);
     expect(detectKeyColumn(s)).toBeNull();
+  });
+  it("never promotes a column with zero identifier evidence, however unique", () => {
+    // padded label-only tab: every Notes value unique -> the old score-0
+    // promotion keyed the diff on the label text, flipping a label edit into
+    // remove+add (the flood the blank-key machinery exists to prevent)
+    const s = snap(["Activity", "Start STA", "End STA", "Notes"], [
+      ["Plow", "0", "500", "ZONE 2"],
+      ["Plow", "0", "500", "ZONE 3"],
+      ["Plow", "0", "500", "ZONE 4"],
+    ]);
+    expect(detectKeyColumn(s)).toBeNull();
+    // consequence: a label edit is a CHANGE, not remove+add
+    const b = snap(["Activity", "Start STA", "End STA", "Notes"], [
+      ["Plow", "0", "500", "ZONE 2"],
+      ["Plow", "0", "500", "ZONE 3 DONE"],
+      ["Plow", "0", "500", "ZONE 4"],
+    ]);
+    const r = diffSnapshots(s, b);
+    expect(r.summary.changedRows).toBe(1);
+    expect(r.summary.addedRows + r.summary.removedRows).toBe(0);
+  });
+  it("detects identifier headers anywhere in the sheet, not just the first 12 columns", () => {
+    const wide = Array.from({ length: 14 }, (_, i) => `Filler ${i + 1}`);
+    wide[12] = "Ticket #";
+    const rows = [
+      ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "T-001", "x"],
+      ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "T-002", "y"],
+    ];
+    expect(detectKeyColumn(snap(wide, rows))).toBe(12);
+  });
+  it("counts 'Shot #' and 'Emp #' as identifier headers", () => {
+    const s = snap(["Shot #", "Activity"], [
+      ["s1", "Plow"],
+      ["s2", "Bore"],
+    ]);
+    expect(detectKeyColumn(s)).toBe(0);
   });
 });
 
@@ -294,20 +338,6 @@ describe("diffSnapshots", () => {
     expect(statuses.indexOf("removed")).toBe(1);
   });
 
-  it("treats blank and empty-string cells as equal", () => {
-    const a = snap(["ID", "Note"], [
-      ["1", ""],
-      ["2", "x"],
-    ]);
-    const b = snap(["ID", "Note"], [
-      ["1", ""],
-      ["2", "x"],
-    ]);
-    a.rows[0][1] = "";
-    b.rows[0][1] = "";
-    const r = diffSnapshots(a, b);
-    expect(r.summary.changedRows).toBe(0);
-  });
 
   it("respects an explicit key column choice", () => {
     // Two unique columns; force keying on Name (col 1) instead of auto ID
@@ -342,7 +372,6 @@ describe("diffSnapshots", () => {
     const r = diffSnapshots(a, b);
     const changed = r.rows.find((x) => x.status === "changed")!;
     // content-hash identity is stable across the value edit
-    expect(changed.rowKey).toBe(changed.rowKey);
     expect(typeof changed.rowKey).toBe("string");
     expect(changed.rowKey.length).toBeGreaterThan(0);
   });

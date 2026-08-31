@@ -1,5 +1,3 @@
-import { norm } from "./diff/normalize";
-import { detectActivityColumn } from "./detect";
 import type { LateEntry, AgingGap } from "./production";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
@@ -35,7 +33,7 @@ export interface BillingPacket {
 
 export function buildBillingPacket(input: {
   sinceFt: number;
-  holes: AgingGap[];
+  holes: (AgingGap & { tab?: string })[];
   unresolved: BillingUnresolvedRow[];
   lateEntries: LateEntry[];
   snapshotLabel: string;
@@ -53,7 +51,8 @@ export function buildBillingPacket(input: {
       kind: "hole",
       detail: `Unaccounted ${Math.round(h.from).toLocaleString()}-${Math.round(h.to).toLocaleString()} (open ${h.daysOpen}d)`,
       ft: h.ft,
-      meta: "do not invoice — unbooked footage",
+      // with 3+ tracked spreads the office must know WHICH tab a hole is on
+      meta: `do not invoice — unbooked footage${h.tab ? ` (${h.tab})` : ""}`,
     });
   }
   for (const r of input.unresolved.slice(0, 50)) {

@@ -35,6 +35,8 @@ import { getTabDiff, decodeSnapshot, latestNonImportSnapshots } from "@/lib/snap
 import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
 import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
 import { computeIntroductions, isResolved } from "@/lib/sync";
+import { getPendingChanges } from "@/lib/pending";
+import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
 import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { snapshotNow, setBaseline } from "@/lib/actions";
@@ -55,7 +57,6 @@ import {
 import { traceKey as traceKeyFn } from "@/lib/trace";
 
 
-const TIMELINE_STATS_LIMIT = 30; // legacy on-demand fallback window
 const TIMELINE_RENDER_CAP = 60;
 const INTRO_WALK_WINDOW = 31; // blob budget: latest + baseline + walk
 
@@ -229,11 +230,15 @@ export default async function SheetPage({
     const between = recent.filter(
       (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
     );
+    // in-window snapshots beyond the blob budget have no dataBlob — the walk
+    // can't see that far back, and rows predating it must not re-flag
+    const truncated = between.some((s) => !s.dataBlob);
     const introduced =
       between.length > 1
         ? computeIntroductions(
             between.filter((s) => s.dataBlob).map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
             diff.rows,
+            { truncated },
           )
         : new Map<string, number>();
     for (const r of diff.rows) {
@@ -322,6 +327,15 @@ export default async function SheetPage({
   }
 
   const trackedCount = trackedTabs.length;
+  // "Mark as collected" re-baselines EVERY tracked tab in the run, so the
+  // warning count must be sheet-wide and ack-aware — the same pending resolver
+  // the CSV export and dashboard use, never the viewed tab's raw diff rows
+  // (which would ignore acks and other tabs' unentered work)
+  let unenteredCount = 0;
+  for (const t of trackedTabs) {
+    const pending = await getPendingChanges(t);
+    if (pending) unenteredCount += pending.counts.unresolved;
+  }
 
   const IMPORT_ERRORS: Record<string, string> = {
     "snapshot-failed": "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
@@ -375,30 +389,12 @@ export default async function SheetPage({
             ) : null}
             {isOwner ? <ScheduleDialog sheet={sheet} /> : null}
             {toSnap && toSnap.trigger !== "import" ? (
-              <form action={setBaseline}>
-                <input type="hidden" name="spreadsheetId" value={sheet.id} />
-                <input type="hidden" name="runId" value={toSnap.runId} />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant={toSnap.isBaseline ? "secondary" : "outline"}
-                  title={
-                    diff && diff.rows.some((r) => r.status !== "unchanged" && r.status !== "moved")
-                      ? `${diff.rows.filter((r) => r.status !== "unchanged" && r.status !== "moved").length} unentered changes will be cleared — export your worklist first`
-                      : undefined
-                  }
-                >
-                  {toSnap.isBaseline ? (
-                    <>
-                      <CheckCircle2 className="size-4 text-diff-move-fg" /> Collected here
-                    </>
-                  ) : (
-                    <>
-                      <Star className="size-4" /> Mark as collected{!toSnap.isBaseline && diff && diff.rows.some((r) => r.status !== "unchanged" && r.status !== "moved") ? ` (${diff.rows.filter((r) => r.status !== "unchanged" && r.status !== "moved").length} to enter)` : ""}
-                    </>
-                  )}
-                </Button>
-              </form>
+              <MarkCollectedButton
+                spreadsheetId={sheet.id}
+                runId={toSnap.runId}
+                isBaseline={toSnap.isBaseline}
+                unenteredCount={unenteredCount}
+              />
             ) : null}
             {isOwner ? (
             <form action={snapshotNow}>
@@ -517,7 +513,12 @@ export default async function SheetPage({
                         <span className="mt-0.5 flex items-center gap-2 font-mono text-[10.5px]">
                           <span className="text-muted-foreground/70">{s.rowCount} rows</span>
                           {st == null ? (
-                            <span className="text-muted-foreground/40" title="Change counts weren't recorded for snapshots this old">—</span>
+                            <span
+                              className="text-muted-foreground/40"
+                              title={isImport ? "GIS imports replace the tracked state — they don't record change counts" : "Change counts weren't recorded for snapshots this old"}
+                            >
+                              {isImport ? "" : "—"}
+                            </span>
                           ) : st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">
                               {st.add > 0 && <span className="text-diff-add-fg">+{st.add}</span>}

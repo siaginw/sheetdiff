@@ -9,6 +9,7 @@ import { getPendingChanges } from "./pending";
 import { listAccessibleSpreadsheets } from "./access";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
 import { relativeTime } from "./format";
+import { captureIsStale } from "./staleness";
 
 export function smtpConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -38,18 +39,13 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       notes: [],
       footageDelta: 0,
       lastSnapshotAgo: null,
+      paused: sheet.scheduleKind === "off",
     };
-    // staleness signal: if the latest capture is older than 2x the schedule window,
-    // say so — "all up to date" computed from stale data is a lie
-    if (sheet.lastSnapshotAt && sheet.scheduleKind !== "off") {
-      const ageMs = now - sheet.lastSnapshotAt;
-      const windowMs =
-        sheet.scheduleKind === "hourly" ? (sheet.scheduleHours ?? 1) * 3_600_000 * 3 :
-        sheet.scheduleKind === "daily" ? 48 * 3_600_000 :
-        8 * 24 * 3_600_000;
-      if (ageMs > windowMs) {
-        digest.lastSnapshotAgo = relativeTime(sheet.lastSnapshotAt);
-      }
+    // staleness signal: after 3x the hourly window / 48h daily / 8d weekly,
+    // consecutive captures have been missed — "all up to date" computed from
+    // stale data is a lie. Paused sheets are exempt (not capturing by choice).
+    if (sheet.lastSnapshotAt && captureIsStale(sheet, now)) {
+      digest.lastSnapshotAgo = relativeTime(sheet.lastSnapshotAt);
     }
 
     for (const tab of tracked) {
@@ -142,6 +138,7 @@ export async function sendDigestTo(user: User): Promise<DigestSendResult> {
     DigestEmail({ name: user.name?.split(" ")[0] ?? "", appUrl, sheets }),
   );
   const totalUnresolved = sheets.reduce((n, s) => n + s.unresolved, 0);
+  const staleCount = sheets.filter((s) => s.lastSnapshotAgo).length;
 
   const transport = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -156,7 +153,9 @@ export async function sendDigestTo(user: User): Promise<DigestSendResult> {
     subject:
       totalUnresolved > 0
         ? `SheetDiff: ${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to collect`
-        : "SheetDiff: all sheets up to date",
+        : staleCount > 0
+          ? `SheetDiff: ⚠ ${staleCount} sheet${staleCount === 1 ? "" : "s"} may be stale`
+          : "SheetDiff: all sheets up to date",
     html,
   });
   return { sent: true };

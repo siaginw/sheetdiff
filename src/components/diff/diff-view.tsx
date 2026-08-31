@@ -435,8 +435,10 @@ export function DiffView({
   );
 
   const widths = useMemo(
-    () => columnWidths(result, mode === "code" ? result.rows : visibleRows),
-    [result, mode, mode === "table" ? visibleRows : null],
+    // from VISIBLE rows only — hidden rows (changes-only filter, search) must
+    // not stretch columns past anything on screen
+    () => columnWidths(result, visibleRows),
+    [result, visibleRows],
   );
 
   const codeVirtualizer = useVirtualizer({
@@ -541,6 +543,29 @@ export function DiffView({
         </div>
       ) : mode === "code" ? (
         <div ref={scrollRef} className="max-h-[calc(100dvh-300px)] min-h-72 overflow-auto">
+          {/* column headers, laid out exactly like a code line so cells align;
+              without them, added/removed rows are 3-4 unlabeled values */}
+          <div className="sticky top-0 z-10 flex h-8 shrink-0 items-center gap-2 border-b bg-card/95 px-3 font-mono text-[10.5px] font-semibold text-muted-foreground backdrop-blur">
+            <span className="w-4 shrink-0" />
+            <span className="flex shrink-0 select-none gap-1.5 leading-none">
+              <span className="w-7 text-right font-normal" title="row number in the older snapshot">old</span>
+              <span className="w-7 text-right font-normal" title="row number in the newer snapshot">new</span>
+            </span>
+            <span className="flex min-w-0 flex-1 items-center overflow-hidden">
+              {result.columns.map((c, i) => (
+                <span key={c.col} className="flex min-w-0 shrink-0 items-center">
+                  <span
+                    className={`truncate px-1.5 ${c.status === "added" ? "text-diff-add-fg" : ""}`}
+                    style={{ width: `${widths[c.col] + 2}ch` }}
+                    title={c.header}
+                  >
+                    {c.header || "\u00A0"}
+                  </span>
+                  {i < result.columns.length - 1 && <span className="text-muted-foreground/40">│</span>}
+                </span>
+              ))}
+            </span>
+          </div>
           <div style={{ height: codeVirtualizer.getTotalSize(), position: "relative" }}>
             {codeVirtualizer.getVirtualItems().map((vr) => {
               const item = lines[vr.index];

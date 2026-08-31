@@ -24,29 +24,32 @@ export function ensureMigrated(): void {
   try {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("busy_timeout = 30000");
-    // pre-migration backup: only when actual migration work is pending, not
-    // every boot (unbounded growth otherwise)
+    const journal = JSON.parse(
+      fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"),
+    ) as { entries: { tag: string; when: number }[] };
+    sqlite.exec(
+      'CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)',
+    );
+    // applied ROW count, not table existence — an empty table (legacy DB, or a
+    // prior run that crashed between CREATE and stamping) still needs stamping
+    const appliedCount = (
+      sqlite.prepare("SELECT count(*) c FROM __drizzle_migrations").get() as { c: number }
+    ).c;
     const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
-    const hasMigrationsTbl = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'").get();
-    if (hasUsers && !hasMigrationsTbl) {
+
+    // pre-migration backup: only when actual migration work is pending (an
+    // unmigrated legacy DB, or newly committed migrations) — not every boot,
+    // which would grow without bound
+    if (hasUsers && appliedCount < journal.entries.length) {
       const backupDir = path.join(path.dirname(dbPath), "backups");
       fs.mkdirSync(backupDir, { recursive: true });
       sqlite.pragma("wal_checkpoint(TRUNCATE)");
       fs.copyFileSync(dbPath, path.join(backupDir, `pre-migrate-${Date.now()}.db`));
     }
 
-    const hasMigrations = sqlite
-      .prepare("SELECT count(*) c FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'")
-      .get() as { c: number } | undefined;
-
-    if (hasUsers && (hasMigrations?.c ?? 0) === 0) {
-      // legacy push-created DB: stamp every journal entry as applied
-      const journal = JSON.parse(
-        fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"),
-      ) as { entries: { tag: string; when: number }[] };
-      sqlite.exec(
-        'CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)',
-      );
+    if (hasUsers && appliedCount === 0) {
+      // legacy push-created DB (or self-heal of an empty migrations table):
+      // stamp every journal entry as applied
       const ins = sqlite.prepare(
         'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
       );

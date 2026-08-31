@@ -2,21 +2,21 @@
  * rowKey disambiguation coverage — the newest engine behavior, tested as
  * BEHAVIOR (not source text):
  *
- *   blank-keyed rows paired by content can be exact duplicates in A (padded
- *   tracker rows, repeated label rows). When BOTH siblings change in B, their
- *   rowKeys would both be the content hash of the SAME A row, so one ack
- *   (changeAcks is keyed by tab+rowKey) would resolve BOTH changes. The fix
- *   appends the A-side position: rowKey = baseRowKey + "#" + i.
+ *   A rowKey must identify ONE row per diff (changeAcks/notes are keyed by
+ *   tab+rowKey). Collisions arise three ways, all fixed by a post-emission
+ *   uniqueness pass that suffixes repeated families positionally:
+ *
+ *   1. blank-keyed rows paired by content — exact duplicates in A (padded
+ *      tracker rows) — get the A-side position: rowKey = base + "#" + i.
+ *   2. a key VALUE that repeats (shot labels do: "S3 entered twice, plow +
+ *      bore") — one changed + one removed row both carry rowKey "s3".
+ *   3. identical blank-keyed rows added or removed together — the added and
+ *      removed emit paths had no disambiguation at all.
  *
  * History worth guarding: an earlier attempt shipped the detection variable
  * (`needsDisambiguation`) but never wired the suffix — dead code describing an
  * unimplemented fix. A source-grep test cannot tell wired from dead; the
  * behavioral tests below can, and survive any refactor of the expression.
- *
- * The final it.fails documents the residual hole: emitRemoved has no
- * disambiguation, so two identical blank-key rows deleted together still
- * share one rowKey (one ack resolves both removals). When that ships, the
- * it.fails flips to "unexpectedly passed" and must be unmarked.
  */
 import { describe, it, expect } from "vitest";
 import { diffSnapshots, rowContentKey, type SnapshotData } from "./engine";
@@ -81,7 +81,9 @@ describe("rowKey disambiguation: same-family blank-key siblings both changed", (
   it("keyed rows keep their raw identity as rowKey — the suffix never applies", () => {
     // composite identity (or an explicit tabs.keyColumn): acks recorded
     // against key-valued rowKeys must survive the disambiguation untouched.
-    // Two rows per side — composite detection needs ≥2 rows to engage.
+    // Two rows per side — composite detection needs ≥2 rows to engage. (The
+    // Activity column is deliberately NOT promoted to key anymore — activity
+    // values repeat on real trackers, so composite is the honest identity.)
     const ka = snap(TRACKER_HEADERS, [
       ["Plow", "0", "500", "BIG M P1", ""],
       ["Bore", "500", "14800", "HAIDER 1", ""],
@@ -91,7 +93,7 @@ describe("rowKey disambiguation: same-family blank-key siblings both changed", (
       ["Bore", "500", "14800", "HAIDER 2", ""],
     ]);
     const changed = diffSnapshots(ka, kb).rows.find((x) => x.status === "changed")!;
-    expect(changed.rowKey).toBe("bore"); // the detected key column value, never "#i"
+    expect(changed.rowKey).toBe("bore·500·14800"); // the composite identity, never "#i"
     expect(changed.rowKey).not.toContain("#");
   });
 
@@ -124,12 +126,12 @@ describe("rowKey disambiguation: same-family blank-key siblings both changed", (
   });
 });
 
-describe("rowKey disambiguation: residual hole in emitRemoved (documented, known-failing)", () => {
-  it.fails("two identical blank-key rows deleted together get distinct rowKeys too", () => {
+describe("rowKey disambiguation: removed siblings and repeated key values", () => {
+  it("two identical blank-key rows deleted together get distinct rowKeys too", () => {
     // A has three identical padded rows; B replaces the family with different
     // content. One A row pairs positionally (changed), the other two are
-    // removed — and today BOTH removals carry the same content-hash rowKey
-    // (emitRemoved has no disambiguation), so one ack resolves both.
+    // removed — both removals must carry distinct content-hash rowKeys or one
+    // ack resolves both.
     const a = snap(TRACKER_HEADERS, [
       ["", "", "", "", "ZONE 2"],
       ["", "", "", "", "ZONE 2"],
@@ -139,5 +141,58 @@ describe("rowKey disambiguation: residual hole in emitRemoved (documented, known
     const removed = diffSnapshots(a, b).rows.filter((x) => x.status === "removed");
     expect(removed).toHaveLength(2);
     expect(removed[0]!.rowKey).not.toBe(removed[1]!.rowKey);
+  });
+
+  it("two identical blank-key rows ADDED together get distinct rowKeys", () => {
+    // the added-row sibling of the above: both new rows share one content
+    // hash; without disambiguation one ack makes both vanish from the
+    // to-enter worklist
+    const a = snap(TRACKER_HEADERS, [["Plow", "0", "500", "CREW A", ""]]);
+    const b = snap(TRACKER_HEADERS, [
+      ["Plow", "0", "500", "CREW A", ""],
+      ["", "", "", "", "ZONE 7"],
+      ["", "", "", "", "ZONE 7"],
+    ]);
+    const added = diffSnapshots(a, b).rows.filter((x) => x.status === "added");
+    expect(added).toHaveLength(2);
+    expect(added[0]!.rowKey).not.toBe(added[1]!.rowKey);
+    // one ack resolves exactly one added row
+    const ackMap = new Map([[added[0]!.rowKey, 9999]]);
+    expect(isResolved(ackMap, added[0]!.rowKey, 1)).toBe(true);
+    expect(isResolved(ackMap, added[1]!.rowKey, 1)).toBe(false);
+  });
+
+  it("a repeated key VALUE yields distinct rowKeys for changed vs removed (the 'S3 twice' case)", () => {
+    // real trackers repeat shot labels: "S3 entered twice, plow + bore". With
+    // an explicit key column, one row changes and its duplicate is removed —
+    // both would carry rowKey "s3" and one ack would drop the removal from
+    // the worklist. The demo seed models exactly this.
+    const H = ["Shot", "Activity", "Start STA", "End STA", "Crew"];
+    const ka = snap(H, [
+      ["s3", "Plow", "0", "500", "CREW A"],
+      ["s3", "Bore", "500", "14800", "CREW B"],
+      ["s9", "Plow", "14800", "15743", "CREW A"],
+    ]);
+    const kb = snap(H, [
+      ["s3", "Plow", "0", "500", "CREW A-2"], // s3-plow changed
+      ["s9", "Plow", "14800", "15743", "CREW A"], // s3-bore removed
+    ]);
+    const r = diffSnapshots(ka, kb, { keyColumn: 0 });
+    const changed = r.rows.find((x) => x.status === "changed")!;
+    const removed = r.rows.filter((x) => x.status === "removed");
+    expect(removed).toHaveLength(1);
+    expect(changed.rowKey).not.toBe(removed[0]!.rowKey);
+    // acking the change must not resolve the removal
+    const ackMap = new Map([[changed.rowKey, 9999]]);
+    expect(isResolved(ackMap, removed[0]!.rowKey, 1)).toBe(false);
+  });
+
+  it("a UNIQUE key still keeps its raw identity — no suffix appears", () => {
+    const H = ["Shot", "Activity", "Start STA", "End STA", "Crew"];
+    const ka = snap(H, [["s1", "Plow", "0", "500", "CREW A"]]);
+    const kb = snap(H, [["s1", "Plow", "0", "500", "CREW B"]]);
+    const changed = diffSnapshots(ka, kb, { keyColumn: 0 }).rows.find((x) => x.status === "changed")!;
+    expect(changed.rowKey).toBe("s1");
+    expect(changed.rowKey).not.toContain("#");
   });
 });

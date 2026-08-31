@@ -18,6 +18,7 @@ import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
 import { relativeTime, scheduleLabel } from "@/lib/format";
+import { captureIsStale } from "@/lib/staleness";
 import { getPendingChanges } from "@/lib/pending";
 import { listAccessibleSpreadsheets } from "@/lib/access";
 
@@ -28,6 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Google didn't return a refresh token. Revoke the app in your Google account permissions and try connecting again.",
   "demo-disabled":
     "The demo login is off. Set ENABLE_DEMO=1 in .env and run `npm run seed-demo` to explore the demo data (never enable this on a real deployment).",
+  "app-secret-missing": "Server configuration error: APP_SECRET is missing or too short. Run `npm run setup` to fix it.",
   "oauth-failed": "Google sign-in failed. Please try again.",
   "oauth-state-mismatch": "Sign-in session expired. Please try again.",
   "oauth-missing-code": "Sign-in was incomplete. Please try again.",
@@ -352,9 +354,20 @@ export default async function Home({
                         <span className="truncate">{sheet.title}</span>
                         <ExternalLink className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
                       </Link>
-                      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                        {scheduleLabel(sheet).toLowerCase()} · snapshot {relativeTime(sheet.lastSnapshotAt)}
-                        {!st.baselineAt && " · no baseline yet"}
+                      <p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+                        <span className="truncate">
+                          {scheduleLabel(sheet).toLowerCase()} · snapshot {relativeTime(sheet.lastSnapshotAt)}
+                          {!st.baselineAt && " · no baseline yet"}
+                          {sheet.scheduleKind === "off" && sheet.lastSnapshotAt ? " · paused" : ""}
+                        </span>
+                        {captureIsStale(sheet) ? (
+                          <span
+                            className="ml-0.5 inline-flex shrink-0 items-center gap-1 text-amber-600 dark:text-amber-400"
+                            title={`Snapshots look overdue (last ${relativeTime(sheet.lastSnapshotAt)}) — check that SheetDiff is running and connected to Google. "Up to date" below is computed from stale data.`}
+                          >
+                            ⚠ stale
+                          </span>
+                        ) : null}
                       </p>
                     </div>
                     <div className="flex items-center gap-4">

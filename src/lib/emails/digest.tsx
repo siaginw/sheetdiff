@@ -30,6 +30,8 @@ export interface DigestSheet {
   footageDelta: number;
   /** "3d ago" — stale captures are a pipeline problem, not "all up to date" */
   lastSnapshotAgo: string | null;
+  /** schedule is off — the sheet isn't capturing by choice, so an old snapshot is expected */
+  paused?: boolean;
 }
 
 export function DigestEmail({
@@ -43,13 +45,16 @@ export function DigestEmail({
 }) {
   const totalUnresolved = sheets.reduce((n, s) => n + s.unresolved, 0);
   const totalChecks = sheets.reduce((n, s) => n + s.checkCount, 0);
+  const staleSheets = sheets.filter((s) => s.lastSnapshotAgo);
   return (
     <Html>
       <Head />
       <Preview>
-        {totalUnresolved > 0
-          ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} waiting to be collected`
-          : "all sheets up to date since collection"}
+        {staleSheets.length > 0
+          ? `⚠ ${staleSheets.length} sheet${staleSheets.length === 1 ? "" : "s"} may have stale data${totalUnresolved > 0 ? ` · ${totalUnresolved} to collect` : ""}`
+          : totalUnresolved > 0
+            ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} waiting to be collected`
+            : "all sheets up to date since collection"}
       </Preview>
       <Body style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", margin: 0, padding: "24px 0", background: "#f6f8fa" }}>
         <Container style={{ maxWidth: 560, margin: "0 auto" }}>
@@ -65,6 +70,17 @@ export function DigestEmail({
               : "Every tracked sheet is up to date since its last collection."}
             {totalChecks > 0 ? ` ${totalChecks} check finding${totalChecks === 1 ? "" : "s"} need a look.` : ""}
           </Text>
+
+          {staleSheets.length > 0 ? (
+            <div style={{ background: "#fff8c5", border: "1px solid #d4a72c", borderRadius: 8, padding: "10px 14px", margin: "0 0 16px" }}>
+              <Text style={{ fontSize: 13, margin: 0, color: "#4d3800", fontWeight: 600 }}>
+                ⚠ {staleSheets.length} sheet{staleSheets.length === 1 ? "" : "s"} haven&rsquo;t synced recently — the numbers below may be out of date.
+              </Text>
+              <Text style={{ fontSize: 12, margin: "4px 0 0", color: "#4d3800" }}>
+                Last snapshot{staleSheets.length === 1 ? "" : "s"}: {staleSheets.map((s) => `${s.title} (${s.lastSnapshotAgo})`).join(", ")}. Check that SheetDiff is running and connected to Google.
+              </Text>
+            </div>
+          ) : null}
 
           {sheets.map((s) => (
             <Section key={s.title} style={{ background: "#ffffff", border: "1px solid #d1d9e0", borderRadius: 8, padding: "16px 20px", margin: "0 0 16px" }}>
@@ -82,9 +98,15 @@ export function DigestEmail({
                       <span style={{ color: "#57606a" }}> ({s.unresolved} still to enter)</span>
                     ) : null}
                   </>
+                ) : s.lastSnapshotAgo ? (
+                  // stale data can never certify "up to date" — this is the lie the flag exists to catch
+                  <span style={{ color: "#9a6700", fontWeight: 600 }}>
+                    ⚠ last snapshot {s.lastSnapshotAgo} — data may be stale
+                  </span>
                 ) : (
                   <span style={{ color: "#1a7f37" }}>✓ up to date since collection</span>
                 )}
+                {s.paused ? <span style={{ color: "#57606a" }}> · paused</span> : null}
                 {s.footageDelta !== 0 ? (
                   <>
                     {" · "}
