@@ -7,6 +7,8 @@ import {
   detectOverplacement,
   computeCrewBoard,
   agingGaps,
+  officePipeline,
+  weeklyProduction,
 } from "./production";
 import { computeGapReport } from "./gaps";
 import type { SnapshotData } from "./diff/engine";
@@ -239,5 +241,62 @@ describe("agingGaps", () => {
     const aged = agingGaps(reports, now);
     expect(aged).toHaveLength(1); // the ledger's whole job: it is open RIGHT NOW
     expect(aged[0]!.daysOpen).toBe(4); // aged from the reopen, not the original sighting
+  });
+});
+
+describe("officePipeline (the sheet's own entered-downstream column)", () => {
+  const H = ["Activity", "Start STA", "End STA", "Date Complete", "Entered in InEight"];
+  const NOW = new Date("2026-08-30T12:00:00").getTime();
+
+  it("buckets completed-but-unentered rows by age and no-ops without the column", () => {
+    const mk = (completed: string, entered: string) => ["Plow", "0", "500", completed, entered];
+    const data = snap(H, [
+      mk("2026-08-29", "2026-08-30"), // entered — excluded
+      mk("2026-08-29", ""), // 1d — normal
+      mk("2026-08-26", ""), // 4d — aging
+      mk("2026-07-11", ""), // 50d — stuck
+      ["GAP", "500", "620", "2026-08-29", ""], // gap row — not office work
+      ["Plow", "620", "700", "", ""], // not complete yet
+    ]);
+    const p = officePipeline(data, NOW);
+    expect(p.enteredColumn).toBe("Entered in InEight");
+    expect(p.normal).toHaveLength(1);
+    expect(p.aging).toHaveLength(1);
+    expect(p.stuck).toHaveLength(1);
+    expect(p.stuck[0]!.daysWaiting).toBeGreaterThanOrEqual(49);
+    expect(p.stuck[0]!.completedOn).toBe("2026-07-11");
+    // no entered column → silent no-op
+    const plain = snap(["Activity", "Start STA", "End STA", "Date Complete", "Notes"], [["Plow", "0", "500", "2026-08-29", "x"]]);
+    plain.headers = ["Activity", "Start STA", "End STA", "Date Complete", "Notes"];
+    expect(officePipeline(plain, NOW).enteredColumn).toBeNull();
+  });
+});
+
+describe("weeklyProduction (footage per week, as dated)", () => {
+  it("buckets by Monday of Date Complete; adders/gaps/handholes excluded", () => {
+    const H = ["Activity", "Start STA", "End STA", "Date Complete"];
+    const data = snap(H, [
+      ["Plow", "0", "500", "2026-08-25"], // Tue Aug 25 — week of Mon Aug 24
+      ["Bore", "500", "14800", "2026-08-27"], // same week: +14300
+      ["Plow", "14800", "15743", "2026-08-18"], // week of Aug 17
+      ["Cobble Adder", "500", "600", "2026-08-26"], // adder — excluded
+      ["GAP", "600", "700", "2026-08-26"], // gap — excluded
+      ["48 Handhole", "700", "700", "2026-08-26"], // zero-length — excluded
+      ["Plow", "20000", "20500", ""], // undated — excluded
+    ]);
+    const weeks = weeklyProduction(data);
+    expect(weeks).toHaveLength(2);
+    const w1 = weeks.find((w) => new Date(w.weekStart).getDate() === 17);
+    const w2 = weeks.find((w) => new Date(w.weekStart).getDate() === 24);
+    expect(w1?.ft).toBe(943);
+    expect(w2?.ft).toBe(500 + 14300);
+    expect(w2?.shots).toBe(2);
+    // weekStart is a Monday
+    expect(new Date(weeks[0]!.weekStart).getDay()).toBe(1);
+  });
+
+  it("returns [] without a date column", () => {
+    const data = snap(["Activity", "Start STA", "End STA"], [["Plow", "0", "500"]]);
+    expect(weeklyProduction(data)).toEqual([]);
   });
 });

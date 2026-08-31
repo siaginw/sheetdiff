@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
+import { CalendarRange, Download, ExternalLink, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -42,8 +42,14 @@ export function SheetMenu({
           }
         />
         <DropdownMenuContent align="end">
+          <DropdownMenuItem render={<a href={`${spreadsheetId}/export/queue`} />}>
+            <Download /> Entry queue — one row per shot (CSV)
+          </DropdownMenuItem>
+          <DropdownMenuItem render={<a href={`${spreadsheetId}/report`} />}>
+            <CalendarRange /> Weekly production report
+          </DropdownMenuItem>
           <DropdownMenuItem render={<a href={`${spreadsheetId}/export`} />}>
-            <Download /> Download changes to enter (CSV)
+            <Download /> Changes to enter, cell by cell (CSV)
           </DropdownMenuItem>
           <DropdownMenuItem render={<a href={`${spreadsheetId}/export/billing`} />}>
             <Download /> Billing-day packet (CSV)

@@ -44,12 +44,14 @@ export function DigestSettingsDialog({
   digestEmail,
   digestTime,
   digestDay,
+  smtpReady,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   digestEmail: string | null;
   digestTime: string;
   digestDay: number | null;
+  smtpReady: boolean;
 }) {
   const [email, setEmail] = useState(digestEmail ?? "");
   const [saved, setSaved] = useState(false);
@@ -94,8 +96,8 @@ export function DigestSettingsDialog({
             <DialogTitle>Digest email</DialogTitle>
             <DialogDescription>
               A scheduled email with what changed since the last collection, unresolved changes,
-              check findings, footage movement, and audit notes. Requires SMTP settings in .env
-              (see README). Clear the address to turn it off.
+              check findings, footage movement, and audit notes. Clear the address to turn it
+              off.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -149,7 +151,10 @@ export function DigestSettingsDialog({
               type="button"
               variant="outline"
               onClick={sendTest}
-              disabled={!email.trim() || testing}
+              disabled={!email.trim() || testing || !smtpReady}
+              title={smtpReady
+                ? undefined
+                : "This server has no SMTP settings (.env: SMTP_HOST / SMTP_USER / SMTP_PASS) — whoever runs SheetDiff needs to add them."}
             >
               <Send className="size-4" /> {testing ? "Sending…" : "Send test"}
             </Button>

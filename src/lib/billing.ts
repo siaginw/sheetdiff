@@ -1,4 +1,4 @@
-import type { LateEntry, AgingGap, OverplacementFinding } from "./production";
+import type { LateEntry, AgingGap, OverplacementFinding, OfficePipeline } from "./production";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
 export interface BillingUnresolvedRow {
@@ -39,6 +39,8 @@ export function buildBillingPacket(input: {
   lateEntries: LateEntry[];
   /** TOTALS packages where Placed exceeds Designed — do-not-invoice bait */
   overplacement?: OverplacementFinding[];
+  /** per-tab office-entry backlog from the sheets' own "entered" columns */
+  office?: { tab: string; pipeline: OfficePipeline }[];
   snapshotLabel: string;
   now?: number;
 }): BillingPacket {
@@ -74,6 +76,17 @@ export function buildBillingPacket(input: {
           ? `DELETED row: ${r.values.slice(0, 4).filter(Boolean).join(" | ")}`
           : r.cells.map((c) => `${c.header}: ${c.from} -> ${c.to}`).join("; ");
     rows.push({ kind: "to-enter", detail: what, meta: `enter in office system${(r as { tab?: string }).tab ? ` (${(r as { tab?: string }).tab})` : ""}` });
+  }
+  for (const o of input.office ?? []) {
+    // the sheet's own record of completed-but-unentered work — stuck rows
+    // are billing-day blockers the ack layer cannot see
+    for (const r of [...o.pipeline.stuck, ...o.pipeline.aging].slice(0, 20)) {
+      rows.push({
+        kind: "to-enter",
+        detail: `Row ${r.row} (${r.activity}) completed ${r.completedOn} — ${r.daysWaiting}d unentered downstream`,
+        meta: `per the sheet's "${o.pipeline.enteredColumn}" column (${o.tab})`,
+      });
+    }
   }
   for (const e of input.lateEntries.slice(0, 20)) {
     rows.push({

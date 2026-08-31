@@ -7,7 +7,7 @@ import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { computeGapReport } from "@/lib/gaps";
-import { agingGaps, detectLateEntries, detectOverplacement, type LateEntry, type AgingGap, type OverplacementFinding } from "@/lib/production";
+import { agingGaps, detectLateEntries, detectOverplacement, officePipeline, type LateEntry, type AgingGap, type OverplacementFinding, type OfficePipeline } from "@/lib/production";
 import { buildBillingPacket, billingPacketCsv } from "@/lib/billing";
 import { absoluteTime } from "@/lib/format";
 
@@ -48,6 +48,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // aggregate across EVERY tracked tab
   const unresolvedRows: { tab: string; status: string; key: string | null; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
   const allAgedGaps: (AgingGap & { tab?: string })[] = [];
+  const officeByTab: { tab: string; pipeline: OfficePipeline }[] = [];
   const allLateEntries: LateEntry[] = [];
   let totalSinceFt = 0;
   let anyBaselineFound = false;
@@ -90,6 +91,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
           for (const e of detectLateEntries(walk)) allLateEntries.push(e);
         }
       }
+
+    // the office-entry backlog comes from the sheet's own entered-column
+    officeByTab.push({ tab: tab.title, pipeline: officePipeline(decodeSnapshot(latestSnap.dataBlob)) });
 
     const pending = await getPendingChanges(tab);
     if (pending) {

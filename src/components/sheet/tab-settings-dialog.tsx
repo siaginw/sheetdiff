@@ -118,6 +118,9 @@ export function TabSettingsDialog({
           </div>
 
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button type="submit">Save</Button>
           </DialogFooter>
         </form>

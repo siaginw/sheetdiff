@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccountMenu } from "@/components/sheet/account-menu";
 import { listMembers } from "@/lib/access";
+import { smtpConfigured } from "@/lib/digest";
 import type { User } from "@/lib/db/schema";
 
 export async function AppHeader({ user }: { user: User | null }) {
@@ -30,6 +31,7 @@ export async function AppHeader({ user }: { user: User | null }) {
               digestEmail={user.digestEmail}
               digestTime={user.digestTime ?? "07:00"}
               digestDay={user.digestDay ?? null}
+              smtpReady={smtpConfigured()}
               members={memberList.map((m) => ({ id: m.id, email: m.email }))}
             />
           </div>

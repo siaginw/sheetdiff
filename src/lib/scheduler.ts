@@ -38,10 +38,14 @@ async function tick() {
   if (ticking) return; // a slow Google fetch must not double-capture
   ticking = true;
   try {
-    await tickInner();
-    // dead-man switch: this only fires while the process AND scheduler live
+    const captured = await tickInner();
+    // dead-man switch: pings while the process, scheduler, AND CAPTURES live.
+    // Gating on capture success matters: a dead OAuth token makes every
+    // capture fail while ticks succeed — the monitor would stay green while
+    // the product silently starves (staleCaptures on /api/health is the
+    // slower signal; this is the fast one).
     const ping = process.env.HEALTHCHECK_PING_URL;
-    if (ping) await fetch(ping, { method: "POST" }).catch(() => {});
+    if (ping && captured) await fetch(ping, { method: "POST" }).catch(() => {});
   } finally {
     ticking = false;
   }
@@ -49,21 +53,23 @@ async function tick() {
 
 let ticking = false;
 
-async function tickInner() {
+async function tickInner(): Promise<boolean> {
   const now = Date.now();
   let due: Spreadsheet[] = [];
   try {
     due = await loadDue(now);
   } catch (err) {
     console.error("[scheduler] failed to query due sheets:", err);
-    return;
+    return false;
   }
+  let anySuccess = false;
   for (const sheet of due) {
     try {
       const result = await captureSnapshot(sheet.id, "scheduled");
       console.log(
         `[scheduler] snapshot of "${sheet.title}": ${result.tabCount} tab(s), ${result.rowCount} rows`,
       );
+      anySuccess = true;
     } catch (err) {
       console.error(
         `[scheduler] snapshot of "${sheet.title}" failed:`,
@@ -104,4 +110,5 @@ async function tickInner() {
   } catch (err) {
     console.error("[scheduler] digest/maintenance pass failed:", err);
   }
+  return anySuccess;
 }

@@ -78,6 +78,12 @@ cross-tab check to catch. It also seeds a demo *viewer* — sign in at `/auth/de
 to see exactly what a shared teammate (your data collector) sees. `ENABLE_DEMO` is opt-in and
 should stay off on any real deployment.
 
+## Privacy
+
+Self-hosted means YOU hold the data — snapshots, tokens, notes, everything lives in
+your  directory. Ship a policy for your users from the template in
+[PRIVACY.md](PRIVACY.md).
+
 ## Self-hosting (always-on)
 
 Scheduled snapshots and the digest email run **while the app runs**. For anything shared,
@@ -177,6 +183,10 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 - **Daily/weekly digest email** — account menu → *Digest email…*: pick daily or a weekday, and
   each send includes what changed since the last collection, unresolved changes, check findings,
   footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works —
+
+For deliverability on your own domain, consider signing with DKIM — nodemailer
+supports it via `dkim: { domainName, keySelector, privateKey }` transport options
+(see nodemailer.com/dkim).
   see the commented block). Sent while the app is running.
 - **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take.
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice), the to-enter worklist, and late entries in one CSV.
@@ -210,7 +220,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (244 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm test           # domain test suite (251 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
 npm run build      # production build
 ```

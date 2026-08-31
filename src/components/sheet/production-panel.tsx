@@ -1,5 +1,5 @@
 import { CalendarClock, HardHat, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
-import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap } from "@/lib/production";
+import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline } from "@/lib/production";
 import { absoluteTime } from "@/lib/format";
 
 const ft = (n: number) => n.toLocaleString();
@@ -47,6 +47,7 @@ export function ProductionPanel({
   overplacements,
   crewBoard,
   agedGaps,
+  office,
 }: {
   tabTitle: string;
   hygiene: DateHygieneFinding[];
@@ -55,6 +56,7 @@ export function ProductionPanel({
   overplacements: OverplacementFinding[];
   crewBoard: CrewBoard | null;
   agedGaps: AgingGap[];
+  office: OfficePipeline | null;
 }) {
   const problems = hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length;
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
@@ -93,7 +95,15 @@ export function ProductionPanel({
               {ft(overplacements.reduce((n, o) => n + o.overBy, 0))} ft)
             </span>
           )}
-          {problems === 0 && oldHoles.length === 0 && <span className="text-diff-add-fg">clean</span>}
+          {office && office.stuck.length > 0 && (
+            <span className="text-diff-del-fg">
+              {office.stuck.length} stuck in office (oldest {office.stuck[0]!.daysWaiting}d)
+            </span>
+          )}
+          {office && office.stuck.length === 0 && office.aging.length > 0 && (
+            <span className="text-diff-move-fg">{office.aging.length} waiting on office entry</span>
+          )}
+          {problems === 0 && oldHoles.length === 0 && !(office && (office.stuck.length > 0 || office.aging.length > 0)) && <span className="text-diff-add-fg">clean</span>}
         </span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground group-open:hidden">expand</span>
         <span className="ml-auto hidden font-mono text-[10px] text-muted-foreground group-open:inline">collapse</span>

@@ -1,7 +1,7 @@
 import { rowContentKey, type SnapshotData } from "./diff/engine";
 import { compositeKey } from "./diff/normalize";
 import { norm } from "./diff/normalize";
-import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
+import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow, isAdderRow } from "./detect";
 
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
 function localDayKey(d: Date): string {
@@ -408,4 +408,118 @@ export function agingGaps(
     out.push(g);
   }
   return out.sort((a, b) => b.daysOpen - a.daysOpen || b.ft - a.ft);
+}
+
+/* ------------------------------------------------------------------ */
+/* office pipeline — the sheet's own "entered downstream" column        */
+/* ------------------------------------------------------------------ */
+
+const OFFICE_ENTERED_RE = /entered.*(ineight|in\s*eight|office|system|downstream)|entered\s+down/i;
+
+export interface OfficePipelineRow {
+  row: number;
+  activity: string;
+  completedOn: string;
+  daysWaiting: number;
+}
+
+export interface OfficePipeline {
+  /** the detected "entered downstream" column header, or null when the tab
+   *  doesn't track one (the whole feature no-ops silently, like date
+   *  detection — a different firm's column vocabulary must never break it) */
+  enteredColumn: string | null;
+  /** completed-but-unentered footage-chain rows, bucketed by age */
+  normal: OfficePipelineRow[]; // 0–2 days: ordinary keying lag
+  aging: OfficePipelineRow[]; // 3–7 days: worth a nudge
+  stuck: OfficePipelineRow[]; // 15+ days: almost certainly forgotten
+}
+
+/** Read the tracker's own record of what the office has already entered: a
+ *  dated column the office fills in by hand, independent of SheetDiff's ack
+ *  layer. Rows completed but still blank there are the real backlog — and a
+ *  stuck bucket here is a signal acks can never give. */
+export function officePipeline(data: SnapshotData, now = Date.now()): OfficePipeline {
+  const out: OfficePipeline = { enteredColumn: null, normal: [], aging: [], stuck: [] };
+  let enteredCol: number | null = null;
+  for (let i = 0; i < data.headers.length; i++) {
+    if (OFFICE_ENTERED_RE.test(norm(data.headers[i]))) {
+      enteredCol = i;
+      out.enteredColumn = norm(data.headers[i]);
+      break;
+    }
+  }
+  if (enteredCol === null) return out;
+  const dateCol = detectDateColumn(data);
+  if (dateCol === null) return out;
+  const activityCol = detectActivityColumn(data);
+
+  data.rows.forEach((r, i) => {
+    if (norm(r[enteredCol!]) !== "") return; // already entered downstream
+    if (!isFootageChainRow(r, activityCol) || isGapRow(r, activityCol)) return; // proposed/structure/GAP-placeholder rows aren't office work
+    const d = parseCompletedDate(r[dateCol]);
+    if (d === null) return; // not complete yet (or unreadable — hygiene owns that)
+    const days = Math.floor((now - d.getTime()) / 86_400_000);
+    const entry: OfficePipelineRow = {
+      row: i + 1,
+      activity: activityCol !== null ? norm(r[activityCol]) : "",
+      completedOn: norm(r[dateCol]),
+      daysWaiting: days,
+    };
+    if (days >= 15) out.stuck.push(entry);
+    else if (days >= 3) out.aging.push(entry);
+    else out.normal.push(entry);
+  });
+  const byAge = (a: OfficePipelineRow, b: OfficePipelineRow) => b.daysWaiting - a.daysWaiting;
+  out.stuck.sort(byAge);
+  out.aging.sort(byAge);
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* weekly production — the one-pager numbers                           */
+/* ------------------------------------------------------------------ */
+
+export interface WeekBucket {
+  /** Monday of the week (local calendar), epoch ms */
+  weekStart: number;
+  ft: number;
+  shots: number;
+}
+
+/** Footage per calendar week from Date Complete — the management view. All
+ *  from ONE snapshot (no history needed): a row lands in the week it says it
+ *  was completed, which is exactly how the office talks about progress.
+ *  Late-entered rows shift retroactively; callers should label the series
+ *  "as dated" and surface late entries alongside. */
+export function weeklyProduction(data: SnapshotData): WeekBucket[] {
+  const dateCol = detectDateColumn(data);
+  if (dateCol === null) return [];
+  const activityCol = detectActivityColumn(data);
+  const stations = detectStationColumns(data);
+  const byWeek = new Map<number, WeekBucket>();
+  for (const r of data.rows) {
+    if (stations) {
+      const s = parseStation(r[stations.start]);
+      const e = parseStation(r[stations.end]);
+      if (s === null || e === null || e < s) continue; // not a footage row we can measure
+    } else if (!isFootageChainRow(r, activityCol)) continue;
+    if (isAdderRow(r, activityCol)) continue; // billing overlay
+    if (isGapRow(r, activityCol)) continue; // unworked span
+    const d = parseCompletedDate(r[dateCol]);
+    if (d === null) continue;
+    const ft = stations ? Math.max(
+      parseStation(r[stations.end])! - parseStation(r[stations.start])!,
+      0,
+    ) : 0;
+    if (stations && ft === 0) continue; // handholes/structures: counted, not footage
+    // local-calendar Monday
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dow = (day.getDay() + 6) % 7; // Monday = 0
+    const monday = day.getTime() - dow * 86_400_000;
+    const bucket = byWeek.get(monday) ?? { weekStart: monday, ft: 0, shots: 0 };
+    bucket.ft += ft;
+    bucket.shots += 1;
+    byWeek.set(monday, bucket);
+  }
+  return [...byWeek.values()].sort((a, b) => a.weekStart - b.weekStart);
 }
