@@ -6,7 +6,7 @@ explains how the systems fit; this file gets you productive.
 
 ## Setup
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
 git clone https://github.com/siaginw/sheetdiff.git && cd sheetdiff

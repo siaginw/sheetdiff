@@ -50,7 +50,7 @@ on the dashboard.
 
 ## Quick start
 
-Requires Node.js 20+. Runs entirely on your machine — the data never leaves your SQLite file
+Requires Node.js 22+. Runs entirely on your machine — the data never leaves your SQLite file
 and Google account.
 
 ```bash
