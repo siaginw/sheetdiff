@@ -43,6 +43,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     const digest: DigestSheet = {
       title: sheet.title,
       url: sheet.url,
+      id: sheet.id,
       changes: 0,
       detail: { added: 0, removed: 0, changed: 0 },
       unresolved: 0,

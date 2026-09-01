@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
   AlertTriangle,
   ArrowLeft,
+  Undo2,
   ArrowUpRight,
   Camera,
   CheckCircle2,
@@ -32,7 +33,8 @@ import { getPendingChanges } from "@/lib/pending";
 import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
 import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
-import { snapshotNow } from "@/lib/actions";
+import { captureIsStale } from "@/lib/staleness";
+import { snapshotNow, setBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
 import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
@@ -82,8 +84,24 @@ export default async function SheetPage({
 
   const trackedTabs = allTabs.filter((t) => t.tracked);
   const latestDataByTab = new Map<string, { title: string; data: ReturnType<typeof decodeSnapshot> }>();
+
+  // The pending resolver for every tracked tab — computed ONCE at the top,
+  // BEFORE activeTab selection (so the default tab can be the first one with
+  // changes), and reused for the ack resolution and the sheet-wide
+  // "Mark as collected" count, so every surface agrees.
+  const pendingByTab = new Map<string, Awaited<ReturnType<typeof getPendingChanges>>>();
+  for (const t of trackedTabs) {
+    pendingByTab.set(t.id, await getPendingChanges(t));
+  }
+
   const tabParam = typeof sp.tab === "string" ? sp.tab : null;
-  const activeTab = allTabs.find((t) => t.title === tabParam) ?? allTabs.find((t) => t.tracked) ?? allTabs[0];
+  // Default to the first tab WITH pending changes (not just the first tracked
+  // tab) — "which tab changed?" is the first question every morning; landing
+  // on a quiet tab makes the user hunt pill-by-pill
+  const firstChangedTabId = [...pendingByTab.entries()].find(([, p]) => p && p.counts.unresolved > 0)?.[0];
+  const activeTab = allTabs.find((t) => t.title === tabParam) ??
+    (firstChangedTabId ? allTabs.find((t) => t.id === firstChangedTabId) : null) ??
+    allTabs.find((t) => t.tracked) ?? allTabs[0];
 
   // timeline rows (no blobs)
   const timeline = await db
@@ -183,9 +201,18 @@ export default async function SheetPage({
   }
   if (toId && !fromId) {
     const toIdx = timeline.findIndex((s) => s.id === toId);
+    const toSnapIsBaseline = toIdx > -1 && timeline[toIdx]?.isBaseline;
     const baseline = timeline.slice(toIdx).find((s) => s.isBaseline && s.id !== toId);
-    fromId = baseline?.id ?? timeline[timeline.length - 1]?.id ?? null;
-    if (fromId === toId) fromId = null;
+    // When the "to" snapshot IS the baseline (right after "Mark as collected"),
+    // there are no changes since collection — show the clean empty diff, not
+    // the full oldest→latest history. Fall back to oldest ONLY when no
+    // baseline exists at all (first-use case).
+    if (toSnapIsBaseline && !baseline) {
+      fromId = null;
+    } else {
+      fromId = baseline?.id ?? timeline[timeline.length - 1]?.id ?? null;
+      if (fromId === toId) fromId = null;
+    }
   }
   if (fromId && toId && fromId === toId) {
     fromId = null;
@@ -223,13 +250,7 @@ export default async function SheetPage({
   const ackRows = await db.select().from(changeAcks).where(eq(changeAcks.tabId, activeTab.id));
   const ackMap = new Map(ackRows.map((a) => [a.rowKey, a.ackedAt]));
 
-  // The pending resolver for every tracked tab — computed ONCE, reused for the
-  // ack resolution below (exact introductions for the default view) and for
-  // the sheet-wide "Mark as collected" count, so every surface agrees.
-  const pendingByTab = new Map<string, Awaited<ReturnType<typeof getPendingChanges>>>();
-  for (const t of trackedTabs) {
-    pendingByTab.set(t.id, await getPendingChanges(t));
-  }
+  // pendingByTab was computed at the top of the component (before activeTab)
 
   // resolve acks against per-row introduction times. For the DEFAULT view
   // (baseline -> latest) reuse the pending resolver's own introductions so the
@@ -424,6 +445,22 @@ export default async function SheetPage({
             <span>{importError}</span>
           </div>
         ) : null}
+        {/* undo banner after "Mark as collected" — the one-shot escape hatch
+            for the product's only irreversible action */}
+        {sp.collected === "1" && sp.undo ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-diff-move-fg/30 bg-diff-move-bg/20 px-4 py-2.5 text-sm">
+            <span className="text-foreground">
+              <strong>Collection point moved.</strong> Everything before this snapshot is now considered entered.
+            </span>
+            <form action={setBaseline} className="shrink-0">
+              <input type="hidden" name="spreadsheetId" value={sheet.id} />
+              <input type="hidden" name="runId" value={sp.undo} />
+              <Button type="submit" variant="outline" size="sm">
+                <Undo2 className="size-4" /> Undo — restore previous collection point
+              </Button>
+            </form>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <Button variant="ghost" size="sm" className="-ml-2 mb-1 text-muted-foreground" render={<Link href="/" />}>
@@ -443,6 +480,11 @@ export default async function SheetPage({
             </h1>
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
+              {captureIsStale(sheet) ? (
+                <span className="ml-1 font-medium text-amber-600 dark:text-amber-400" title="Snapshots look overdue — check that SheetDiff is running and connected to Google. The numbers below are computed from stale data.">
+                  · ⚠ data may be stale
+                </span>
+              ) : ""}
               {sheet.nextRunAt ? (sheet.nextRunAt > nextRunThreshold ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : " · run overdue") : ""}
             {sheet.captureFailStreak > 0 ? (
               <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>

@@ -128,10 +128,10 @@ describe("to-enter worklist export", () => {
   it("one line per changed CELL (a 2-cell change = 2 lines), one per add/remove; untracked tabs never contribute", async () => {
     signIn("u1");
     const lines = await csvDataLines("sh1");
-    expect(lines[0]).toBe("Tab,Change,Key,Row,Column,Old,New,Note,Snapshot");
+    expect(lines[0]).toBe("Tab,Change,Row ID,Row,Column,Old,New,Note,Seen at");
     const data = lines.slice(1);
-    expect(data.filter((l) => l.startsWith("B,changed")).length).toBe(2);
-    expect(data.filter((l) => l.startsWith("A,added")).length).toBe(1);
+    expect(data.filter((l) => l.startsWith("B,Changed")).length).toBe(2);
+    expect(data.filter((l) => l.startsWith("A,Added")).length).toBe(1);
     expect(data.length).toBe(3);
     expect(data.some((l) => l.startsWith("C,"))).toBe(false);
   });

@@ -188,6 +188,24 @@ export async function setBaseline(fd: FormData): Promise<void> {
     // can interleave into two baselines, and a global wipe strips baselines
     // from tabs the run predates. The CASE handles "GIS imports can never be
     // the collected baseline" in the same breath.
+    // Remember the CURRENT baseline so the UI can offer undo — "Mark as
+    // collected" is the product's only irreversible destructive action, and
+    // with exactly 2 snapshots (fresh sheets) there's no way back without it
+    const prevBaseline =
+      (
+        await db
+          .selectDistinct({ runId: snapshots.runId })
+          .from(snapshots)
+          .where(
+            and(
+              inArray(snapshots.tabId, tabIds),
+              eq(snapshots.isBaseline, true),
+              ne(snapshots.trigger, "import"),
+            ),
+          )
+          .limit(1)
+      )[0]?.runId ?? null;
+
     await db
       .update(snapshots)
       .set({ isBaseline: sql`(run_id = ${runId} AND trigger <> 'import')` })
@@ -200,12 +218,14 @@ export async function setBaseline(fd: FormData): Promise<void> {
             .where(and(eq(snapshots.runId, runId), ne(snapshots.trigger, "import"))),
         ),
       );
+
+    // land on the CLEAN since-collection view with the undo token in the URL
+    redirect(
+      `/sheets/${spreadsheetId}?collected=1${prevBaseline && prevBaseline !== runId ? `&undo=${encodeURIComponent(prevBaseline)}` : ""}`,
+    );
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
-  // land on the CLEAN since-collection view — revalidating alone keeps the
-  // old ?from/?to params and shows yesterday's diff right after collecting
-  redirect(`/sheets/${spreadsheetId}`);
 }
 
 export async function updateSchedule(fd: FormData): Promise<void> {

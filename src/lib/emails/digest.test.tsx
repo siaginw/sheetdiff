@@ -10,6 +10,7 @@ import { DigestEmail, type DigestSheet } from "./digest";
 const base: DigestSheet = {
   title: "Springfield Tracker",
   url: "https://x",
+  id: "sheet-1",
   changes: 0,
   detail: { added: 0, removed: 0, changed: 0 },
   unresolved: 0,

@@ -19,6 +19,8 @@ export interface DigestChange {
 export interface DigestSheet {
   title: string;
   url: string;
+  /** internal SheetDiff id for deep-linking from the email */
+  id: string;
   changes: number;
   detail: { added: number; removed: number; changed: number };
   unresolved: number;
@@ -97,7 +99,9 @@ export function DigestEmail({
           {sheets.map((s) => (
             <Section key={s.title} style={{ background: "#ffffff", border: "1px solid #d1d9e0", borderRadius: 8, padding: "16px 20px", margin: "0 0 16px" }}>
               <Text style={{ fontSize: 15, fontWeight: 600, margin: "0 0 2px", color: "#1f2328" }}>
-                {s.title}
+                <Link href={`${appUrl}/sheets/${s.id}`} style={{ color: "#1f2328", textDecoration: "none" }}>
+                  {s.title}
+                </Link>
               </Text>
               <Text style={{ fontSize: 13, margin: "0 0 10px", fontFamily: "ui-monospace, monospace" }}>
                 {s.changes > 0 ? (

@@ -35,7 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const sheetNotes = await db.select().from(notesTable).where(eq(notesTable.spreadsheetId, id));
 
   const rows: string[][] = [
-    ["Tab", "Change", "Key", "Row", "Column", "Old", "New", "Note", "Snapshot"],
+    ["Tab", "Change", "Row ID", "Row", "Column", "Old", "New", "Note", "Seen at"],
   ];
 
   for (const tab of tracked) {
@@ -55,18 +55,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       if (row.status === "changed") {
         for (const c of row.cells) {
           rows.push([
-            csvSafe(tab.title), "changed", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
+            csvSafe(tab.title), "Changed", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
             csvSafe(c.header), csvSafe(c.from), csvSafe(c.to), csvSafe(note), when,
           ]);
         }
       } else if (row.status === "added") {
         rows.push([
-          csvSafe(tab.title), "added", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
+          csvSafe(tab.title), "Added", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
           "(new row)", "", csvSafe(row.values.filter(Boolean).join(" | ")), csvSafe(note), when,
         ]);
       } else {
         rows.push([
-          csvSafe(tab.title), "removed", csvSafe(row.key ?? ""), String((row.oldIndex ?? 0) + 1),
+          csvSafe(tab.title), "Removed", csvSafe(row.key ?? ""), String((row.oldIndex ?? 0) + 1),
           "(deleted row)", csvSafe(row.values.filter(Boolean).join(" | ")), "", csvSafe(note), when,
         ]);
       }
