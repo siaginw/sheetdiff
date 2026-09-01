@@ -80,6 +80,9 @@ export default async function BillingPage({
   // the DATA clock — the same one the CSV export uses: ages, stamps, and the
   // packet all read the latest snapshot time, never the render moment, so the
   // screen and the file can never disagree and re-renders are deterministic
+  // (Date.now is impure during render per the React Compiler; this is a
+  // server component where it's safe — same suppression the sheet page uses)
+  // eslint-disable-next-line react-hooks/purity
   const dataAsOf = Math.max(
     0,
     ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
