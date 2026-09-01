@@ -206,7 +206,7 @@ export default async function ReportPage({
                 </tbody>
               </table>
               {quietLog ? (
-                <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-[11px] text-warning">
                   Stoppage log looks quiet: newest entry {quietLog.newestStoppage} is {quietLog.daysBehind} day{quietLog.daysBehind === 1 ? "" : "s"} behind the newest completed work ({quietLog.newestCompletion}) — is the log being kept?
                 </p>
               ) : null}

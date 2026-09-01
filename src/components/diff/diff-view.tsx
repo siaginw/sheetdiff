@@ -89,7 +89,7 @@ function RowActions({
           type="submit"
           aria-label={acked ? "Mark as not yet entered" : "Mark as entered in the office system"}
           title={acked ? "Entered downstream — click to un-resolve" : "Mark as entered in the downstream system"}
-          className={`rounded-md p-1 transition-colors ${
+          className={`rounded-md p-2 transition-colors ${
             acked
               ? "text-diff-add-fg"
               : "text-muted-foreground/50 hover:bg-muted hover:text-foreground"
@@ -486,7 +486,7 @@ export function DiffView({
             </button>
           </form>
         ) : null}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input

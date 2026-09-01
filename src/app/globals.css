@@ -26,6 +26,8 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -84,6 +86,8 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+  --warning: oklch(0.55 0.14 75);
+  --warning-foreground: oklch(0.98 0 0);
   /* git diff palette */
   --diff-add-bg: #e6ffec;
   --diff-add-fg: #1a7f37;
@@ -109,6 +113,8 @@
 }
 
 .dark {
+  --warning: oklch(0.75 0.14 75);
+  --warning-foreground: oklch(0.25 0 0);
   /* GitHub dark diff palette */
   --diff-add-bg: rgba(46, 160, 67, 0.15);
   --diff-add-fg: #3fb950;

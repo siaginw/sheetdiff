@@ -290,7 +290,7 @@ function Card({ label, value, sub, icon }: { label: string; value: string; sub?:
 
 function Section({ title, tone, icon, children }: { title: string; tone: "del" | "move"; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="mb-6">
+    <section className="mb-6 print:break-inside-avoid-page">
       <h2 className={`mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wide ${tone === "del" ? "text-diff-del-fg" : "text-diff-move-fg"}`}>
         {icon} {title}
       </h2>
@@ -301,7 +301,7 @@ function Section({ title, tone, icon, children }: { title: string; tone: "del" |
 
 function Row({ row }: { row: BillingRow }) {
   return (
-    <li className={`flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded border-l-2 py-1 pl-3 pr-2 ${row.kind === "hole" || row.kind === "over" ? "border-diff-del-fg bg-diff-del-bg/30" : "border-diff-move-fg bg-diff-move-bg/20"}`}>
+    <li className={`flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded border-l-2 py-1 pl-3 pr-2 print:break-inside-avoid ${row.kind === "hole" || row.kind === "over" ? "border-diff-del-fg bg-diff-del-bg/30" : "border-diff-move-fg bg-diff-move-bg/20"}`}>
       <span className="min-w-0 flex-1 break-words">{row.detail}</span>
       {row.ft !== undefined ? <span className="shrink-0 font-semibold">{ft(row.ft)}</span> : null}
       {row.meta ? <span className="min-w-0 shrink text-[10px] break-words text-muted-foreground">{row.meta}</span> : null}
