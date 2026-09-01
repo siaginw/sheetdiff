@@ -83,10 +83,11 @@ export default async function BillingPage({
   // (Date.now is impure during render per the React Compiler; this is a
   // server component where it's safe — same suppression the sheet page uses)
   // eslint-disable-next-line react-hooks/purity
+  const fallbackNow = Date.now();
   const dataAsOf = Math.max(
     0,
     ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
-  ) || Date.now();
+  ) || fallbackNow;
   const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
