@@ -6,7 +6,7 @@ your data always know what changed since they last pulled it.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-![The diff view](docs/img/diff-light.png)
+![The sheet page — diff since last collection, with the billing-day badge](docs/img/diff-dark.png)
 
 **In one line:** automatic snapshots, human-readable diffs, and an audit trail of who changed what — with a gap linter that catches missing footage and overlapping stations in utility-construction production logs before invoicing or GIS upload. Self-hosted and open source: keep your spreadsheets, keep your data, gain the accountability enterprise trackers charge $40–150 per user per month for.
 
@@ -20,6 +20,7 @@ on the dashboard.
 
 | | |
 |---|---|
+| ![Billing day](docs/img/billing.png) | ![Weekly report](docs/img/report.png) |
 | ![Landing](docs/img/landing.png) | ![Dashboard](docs/img/dashboard.png) |
 | ![Diff in dark mode](docs/img/diff-dark.png) | ![Audit workflow](docs/img/audit-dark.png) |
 

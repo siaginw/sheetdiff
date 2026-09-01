@@ -115,9 +115,9 @@ function WordDiffValues({ from, to }: { from: string; to: string }) {
         seg.kind === "same" ? (
           <span key={i} className="text-muted-foreground">{seg.text}</span>
         ) : seg.kind === "removed" ? (
-          <span key={i} className="rounded-sm bg-diff-del-token px-0.5 text-diff-del-fg line-through decoration-diff-del-fg/60">{seg.text}</span>
+          <span key={i} className="rounded-sm bg-diff-del-token px-0.5 line-through decoration-diff-del-fg/60">{seg.text}</span>
         ) : (
-          <span key={i} className="rounded-sm bg-diff-add-token px-0.5 font-semibold text-diff-add-fg">{seg.text}</span>
+          <span key={i} className="rounded-sm bg-diff-add-token px-0.5 font-semibold">{seg.text}</span>
         ),
       )}
     </>
@@ -314,8 +314,8 @@ function Cells({
               className={`truncate px-1.5 ${
                 isChanged
                   ? tone === "add"
-                    ? "rounded-sm bg-diff-add-token font-semibold text-diff-add-fg"
-                    : "rounded-sm bg-diff-del-token font-semibold text-diff-del-fg"
+                    ? "rounded-sm bg-diff-add-token font-semibold"
+                    : "rounded-sm bg-diff-del-token font-semibold"
                   : ""
               }`}
               style={{ width: `${widths[c.col] + 2}ch` }}

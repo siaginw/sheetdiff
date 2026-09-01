@@ -15,6 +15,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  openGraph: {
+    images: ["/img/social-preview.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    images: ["/img/social-preview.png"],
+  },
   title: "SheetDiff — version tracking for Google Sheets",
   description:
     "Snapshots of your team's Google Sheets with GitHub-style diffs. See exactly what changed, when, and since the last time data was collected.",
@@ -25,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.className} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
