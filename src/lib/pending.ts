@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, lte } from "drizzle-orm";
 import { db } from "./db";
 import { snapshots, snapshotStats, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
-import { decodeSnapshot } from "./snapshots";
+import { latestNonImportSnapshots } from "./snapshots";
 import { peekSnapshot, rememberSnapshot } from "./snapshot-cache";
 import { getAckMap, isResolved, computeIntroductions, keySetsFor, type WalkSnapshot } from "./sync";
 
@@ -190,4 +190,25 @@ async function fetchBlobs(ids: string[]): Promise<Map<string, SnapshotData>> {
     for (const r of rows) out.set(r.id, rememberSnapshot(r.id, r.dataBlob));
   }
   return out;
+}
+
+/** Tab ids whose LATEST content is fully owned by earlier tabs — pure
+ *  compilation tabs (a Line List that re-lists the working tabs' shots).
+ *  Every TO-ENTER count surface (dashboard badge, sheet page, both typing
+ *  CSVs, digest, billing) skips these: the working tabs' own pending already
+ *  lists that work, and counting both would promise the office two entries
+ *  for one shot. One classifier, so every surface agrees by construction. */
+export async function pureCopyTabIds(tabRows: Tab[]): Promise<Set<string>> {
+  const { dedupeTabData } = await import("./dedupe");
+  const tracked = tabRows.filter((t) => t.tracked).sort((a, b) => a.position - b.position);
+  if (tracked.length === 0) return new Set();
+  const latestByTab = await latestNonImportSnapshots(tracked.map((t) => t.id));
+  const grids: { title: string; data: SnapshotData }[] = [];
+  for (const t of tracked) {
+    const snap = latestByTab.get(t.id);
+    if (snap) grids.push({ title: t.title, data: rememberSnapshot(snap.id, snap.dataBlob) });
+  }
+  if (grids.length === 0) return new Set();
+  const { pureCopies } = dedupeTabData(grids);
+  return new Set(tracked.filter((t) => pureCopies.has(t.title)).map((t) => t.id));
 }

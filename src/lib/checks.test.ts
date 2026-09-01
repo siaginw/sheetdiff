@@ -8,6 +8,11 @@ describe("parseStation", () => {
   it("parses survey notation", () => {
     expect(parseStation("4+47")).toBe(447);
     expect(parseStation("164+82")).toBe(16482);
+    // absurd magnitudes are not stations — two ~1e308 cells used to sum to
+    // Infinity in the footage ledger
+    expect(parseStation("1".repeat(309))).toBeNull();
+    expect(parseStation("1000000000000")).toBeNull(); // 1e12 ft
+    expect(parseStation("999999999")).toBe(999999999); // 1e9 still plausible
     expect(parseStation("267+18")).toBe(26718);
   });
   it("parses plain feet and tolerant formats", () => {

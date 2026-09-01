@@ -14,7 +14,9 @@ const ADDER_ACTIVITY_RE = /adder/i;
 /** matches "GAP", "Gap (rock)", "gap-pave" — not "gapping" (word-bounded, backslash-free) */
 const GAP_ACTIVITY_RE = /(^|[^a-z])gap([^a-z]|$)/i;
 
-/** Parse a station value to feet ("15743", "4+47", "15,743"). */
+/** Parse a station value to feet ("15743", "4+47", "15,743"). Values beyond
+ *  1e9 ft (~190,000 mi) are not stations — treating garbage mega-numbers as
+ *  real stations lets two absurd cells sum to Infinity in the footage ledger. */
 export function parseStation(value: unknown): number | null {
   const t = norm(value).replace(/,/g, "").trim();
   if (t === "") return null;
@@ -26,7 +28,8 @@ export function parseStation(value: unknown): number | null {
   const plain = /^(?:sta\.?\s*)?(\d+(?:\.\d+)?)\s*(?:ft|feet|')?$/i.exec(t);
   if (plain) {
     const n = Number(plain[1]);
-    return Number.isFinite(n) ? n : null; // 309-digit cells must not become Infinity
+    if (!Number.isFinite(n)) return null; // 309-digit cells must not become Infinity
+    return n <= 1e9 ? n : null;
   }
   return null;
 }

@@ -29,6 +29,20 @@ describe("parseCompletedDate", () => {
   it("parses the formats crews type", () => {
     expect(parseCompletedDate("2026-07-14")?.toISOString().slice(0, 10)).toBe("2026-07-14");
     expect(parseCompletedDate("7/14/2026")?.getFullYear()).toBe(2026);
+    // NEVER silent rollover: month-name entries naming a day that month does
+    // not have are unreadable, not next month (V8 parses "Feb 30 2026" to
+    // Mar 2 — that mis-aged A/R by days and shifted weekly buckets)
+    expect(parseCompletedDate("Feb 30 2026")).toBeNull();
+    expect(parseCompletedDate("February 30, 2026")).toBeNull();
+    expect(parseCompletedDate("Thu Feb 30 2026")).toBeNull();
+    expect(parseCompletedDate("30 Feb 2026")).toBeNull();
+    expect(parseCompletedDate("June 31 2026")).toBeNull();
+    expect(parseCompletedDate("Sep 31, 2026")).toBeNull();
+    // valid month-name forms still parse (including 3-letter + weekday + time)
+    expect(parseCompletedDate("May 28 2026")?.toISOString().slice(0, 10)).toBe("2026-05-28");
+    expect(parseCompletedDate("Thu May 28 2026 19:00:00")?.toISOString().slice(0, 10)).toBe("2026-05-28");
+    expect(parseCompletedDate("Sept 5 2026")?.toISOString().slice(0, 10)).toBe("2026-09-05");
+    expect(parseCompletedDate("28 May 2026")?.toISOString().slice(0, 10)).toBe("2026-05-28");
     expect(parseCompletedDate("7/14")?.getMonth()).toBe(6); // year defaults to current
     expect(parseCompletedDate("14/07/2026")).toBeNull(); // day-first: month 14 is NOT a rollover
     expect(parseCompletedDate("6/31/26")).toBeNull(); // June has 30 days, not a silent July 1
@@ -209,6 +223,28 @@ describe("detectOverplacement", () => {
 });
 
 describe("agingGaps", () => {
+  it("fractional-station holes are DISTINCT identities, never rounded together", () => {
+    const day = 86_400_000;
+    const now = 10 * day;
+    const gapAt = (from: number, to: number) => computeGapReport(
+      snap(["Activity", "Start STA", "End STA"], [
+        ["Plow", "0", String(from)],
+        ["Plow", String(to), "2000"],
+      ]),
+    );
+    // 101.5-203.25 and 101-203 are different holes; the rounded key used to
+    // merge them and drop one from the aging report
+    const aged = agingGaps(
+      [
+        { createdAt: 2 * day, report: gapAt(101.5, 203.25) },
+        { createdAt: 5 * day, report: gapAt(101.5, 203.25) },
+      ],
+      now,
+    );
+    expect(aged).toHaveLength(1);
+    expect(aged[0]!.ft).toBeCloseTo(101.75, 6);
+  });
+
   it("ages open holes by station-range identity and drops closed ones", () => {
     const day = 86_400_000;
     const now = 10 * day;
@@ -448,8 +484,10 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
       { title: "PE-4", data: snap(HEAD, [row, ["", "", "", ""]]) },
       { title: "Line List", data: snap(HEAD, [row, row, ["Bore", "500", "14800", "CREW B"]]) },
     ]);
-    expect(out.freshByTab.get("PE-4")).toEqual([row]); // blank padding skipped, not deduped
-    expect(out.freshByTab.get("Line List")).toEqual([["Bore", "500", "14800", "CREW B"]]);
+    // position-preserving: blank padding keeps its slot, copied rows are
+    // blanked IN PLACE so "Row N" stays the sheet's true row number
+    expect(out.freshByTab.get("PE-4")).toEqual([row, ["", "", "", ""]]);
+    expect(out.freshByTab.get("Line List")).toEqual([["", "", "", ""], ["", "", "", ""], ["Bore", "500", "14800", "CREW B"]]);
     expect(out.duplicatesDropped).toBe(2);
     expect(out.pureCopies.size).toBe(0);
   });
@@ -460,7 +498,7 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
       { title: "PE7", data: snap(HEAD, [row, ["", "", "", ""], ["", "", "", ""]]) },
     ]);
     expect(out.pureCopies).toEqual(new Set(["PE7"]));
-    expect(out.freshByTab.get("PE7")).toEqual([]);
+    expect(out.freshByTab.get("PE7")).toEqual([["", "", "", ""], ["", "", "", ""], ["", "", "", ""]]);
     // an all-blank tab is EMPTY, not a copy — callers may still read its headers
     const blank = dedupeTabData([{ title: "Blank", data: snap(HEAD, [["", "", "", ""]]) }]);
     expect(blank.pureCopies.size).toBe(0);
@@ -471,7 +509,7 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
       { title: "PE-4", data: snap(HEAD, [row]) },
       { title: "PE-5", data: snap(HEAD, [row, ["Bore", "500", "900", "CREW B"]]) },
     ]);
-    expect(out.freshByTab.get("PE-5")).toEqual([["Bore", "500", "900", "CREW B"]]);
+    expect(out.freshByTab.get("PE-5")).toEqual([["", "", "", ""], ["Bore", "500", "900", "CREW B"]]);
     expect(out.duplicatesDropped).toBe(1);
     expect(out.pureCopies.size).toBe(0);
   });

@@ -72,13 +72,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     tabData.push({ title: tab.title, data });
     dataByTitle.set(tab.title, data);
   }
-  const { freshByTab, pureCopies } = dedupeTabData(tabData);
+  const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
     if (latestSnap.createdAt > latestAtMs) {
       latestAtMs = latestSnap.createdAt;
-      latestLabel = absoluteTime(latestSnap.createdAt);
+      latestLabel = `${absoluteTime(latestSnap.createdAt)} · run ${latestSnap.runId.slice(0, 8)}`;
     }
     if (pureCopies.has(tab.title)) continue;
     // the deduped latest data — every aggregate below reads it, so a copied
@@ -88,6 +88,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       rows: freshByTab.get(tab.title) ?? [],
     };
     const latestReport = computeGapReport(latestData);
+    // non-latest snapshots filtered to rows THIS tab owns — the page does the
+    // same, and the CSV and the screen must never disagree on billing day
+    const ownedSlice = (blob: Buffer) => {
+      const d = decodeSnapshot(blob);
+      return { headers: d.headers, rows: ownedRows(new Map([[tab.title, d]])).get(tab.title) ?? [] };
+    };
 
     // this tab's baseline (query per tab — bounded, billing-export only)
     const baselineRows = await db
@@ -99,7 +105,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
     if (baselineRows[0]) {
       anyBaselineFound = true;
-      const baselineReport = computeGapReport(decodeSnapshot(baselineRows[0].dataBlob));
+      const baselineReport = computeGapReport(ownedSlice(baselineRows[0].dataBlob));
       // negative deltas are REAL (footage corrected/removed) — report, don't clamp
       totalSinceFt += latestReport.placedFt - baselineReport.placedFt;
     }
@@ -111,14 +117,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
       .orderBy(desc(snapshots.createdAt))
       .limit(15);
-      if (window.length > 0) {
-        // after reverse, window[0] IS the latest snapshot row (same
-        // non-import filter, same createdAt ordering) — reuse its decode
-        // rather than gunzipping the identical blob a second time
-        const walk = [...window].reverse().map((s) => ({
-          createdAt: s.createdAt,
-          data: s.id === latestSnap.id ? latestData : decodeSnapshot(s.dataBlob),
-        }));
+    if (window.length > 0) {
+      // after reverse, window[0] IS the latest snapshot row (same
+      // non-import filter, same createdAt ordering) — reuse its decode
+      // rather than gunzipping the identical blob a second time
+      const walk = [...window].reverse().map((s) => ({
+        createdAt: s.createdAt,
+        data: s.id === latestSnap.id ? latestData : ownedSlice(s.dataBlob),
+      }));
         for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
           allAgedGaps.push({ ...g, tab: tab.title });
         }

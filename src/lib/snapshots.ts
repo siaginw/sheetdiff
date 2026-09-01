@@ -22,7 +22,10 @@ export function toSnapshotData(raw: string[][]): SnapshotData {
     // drop fully-empty rows anywhere (Sheets/API omits some, trackers pad
     // hundreds of blank formatted rows) — they carry no data and only add noise
     .filter((r) => r.some((v) => v !== ""));
-  const width = Math.max(1, ...rows.map((r) => r.length));
+  // loop, not Math.max(...rows.map()) — the spread blows the call stack on
+  // ~130k-row captures (a loud failure, but still a failed capture)
+  let width = 1;
+  for (const r of rows) if (r.length > width) width = r.length;
   const padded = rows.map((r) => {
     const p = r.slice(0, width);
     while (p.length < width) p.push("");

@@ -3,6 +3,8 @@ import { compositeKey } from "./diff/normalize";
 import { norm } from "./diff/normalize";
 import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow, isAdderRow } from "./detect";
 
+const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
 function localDayKey(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -59,13 +61,26 @@ export function parseCompletedDate(value: unknown): Date | null {
     const yy = us[3] ? Number(us[3].length === 2 ? `20${us[3]}` : us[3]) : now.getFullYear();
     return build(yy, Number(us[1]), Number(us[2]));
   }
-  // "May 28 2026" / "Thu May 28 2026" (JS Date stringification from exceljs)
+  // "May 28 2026" / "Thu Feb 30 2026" / "28 May 2026" (JS Date stringification
+  // from exceljs, typed by hand). V8 silently rolls impossible days into the
+  // next month ("Feb 30" -> Mar 2), which would mis-age A/R by days and shift
+  // weekly buckets — extract the literal month name + day and revalidate.
+  const tok = (s: string) => MONTHS.findIndex((n) => n.startsWith(s) || s.startsWith(n));
+  const mn = /\b([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/i.exec(t);
+  if (mn) {
+    const m = tok(mn[1]!.toLowerCase());
+    if (m >= 0) return build(Number(mn[3]), m + 1, Number(mn[2]));
+  }
+  const dm = /\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9}),?\s+(\d{4})\b/i.exec(t);
+  if (dm) {
+    const m = tok(dm[2]!.toLowerCase());
+    if (m >= 0) return build(Number(dm[3]), m + 1, Number(dm[1]));
+  }
   const parsed = new Date(t);
   if (!isNaN(parsed.getTime())) {
     // "Thu May 28 2026 19:00:00" carries a time — compare the CALENDAR day,
     // and return midnight-normalized so downstream day keys are stable
-    const b = build(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
-    return b;
+    return build(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
   }
   return null;
 }
@@ -383,7 +398,9 @@ export function agingGaps(
   for (const { createdAt, report } of reports) {
     const seen = new Set<string>();
     for (const g of report.unaccounted) {
-      const key = `${Math.round(g.from)}-${Math.round(g.to)}`;
+      // exact range, never rounded — fractional-station holes (101.5-203.25
+      // vs 101-203) are different holes and must not merge identities
+      const key = `${g.from}|${g.to}`;
       seen.add(key);
       const existing = tracker.get(key);
       if (existing && existing.daysOpen !== -1) {
@@ -498,11 +515,12 @@ export function weeklyProduction(data: SnapshotData): WeekBucket[] {
   const stations = detectStationColumns(data);
   const byWeek = new Map<number, WeekBucket>();
   for (const r of data.rows) {
+    if (!isFootageChainRow(r, activityCol)) continue; // same chain rule as the ledger and the gap report
     if (stations) {
       const s = parseStation(r[stations.start]);
       const e = parseStation(r[stations.end]);
       if (s === null || e === null || e < s) continue; // not a footage row we can measure
-    } else if (!isFootageChainRow(r, activityCol)) continue;
+    }
     if (isAdderRow(r, activityCol)) continue; // billing overlay
     if (isGapRow(r, activityCol)) continue; // unworked span
     const d = parseCompletedDate(r[dateCol]);
@@ -679,7 +697,6 @@ const GIS_COL_RE = /bore\s*log.*gis|in\s*gis/i;
  *  7-digit number must land in the billed ledger, not silently vanish) */
 const INVOICE_DIGITS_RE = /^\d{3,8}$/;
 const MONTH_PREFIX_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
-const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 /** Values in a GIS column that explicitly say the sub's log is NOT in yet.
  *  Anything else non-blank counts as in-GIS (kept permissive — date stamps,
  *  initials, "y", file names all mean done); blank still blocks because the
@@ -819,49 +836,8 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   return out;
 }
 
-export interface DedupedTabs {
-  /** tab title -> the rows that FIRST appeared on that tab (identities an
-   *  earlier tab already claimed are dropped — first tab wins; tabs iterate
-   *  in sheet-position order, which the callers guarantee) */
-  freshByTab: Map<string, string[][]>;
-  /** tabs whose every non-blank row was a copy — pure compilation tabs. The
-   *  billing/report aggregations skip these entirely: re-deriving analytics
-   *  from a copy would re-add what the dedup just dropped. */
-  pureCopies: Set<string>;
-  /** how many copied rows were dropped sheet-wide */
-  duplicatesDropped: number;
-}
-
-/** Cross-tab dedup — the ONE algorithm every sheet-wide rollup uses (billing
- *  page, billing CSV, weekly report, billable-now badge). Compilation tabs
- *  (Line List, PE-7 copies) copy the working tabs' rows by design; counting
- *  each shot once keys the whole row content (`norm` per cell, NUL-joined —
- *  a pipe separator collides with real cell values). Blank-padding rows are
- *  skipped, never counted as duplicates. */
-export function dedupeTabData(tabs: { title: string; data: SnapshotData }[]): DedupedTabs {
-  const seen = new Set<string>();
-  const freshByTab = new Map<string, string[][]>();
-  const pureCopies = new Set<string>();
-  let duplicatesDropped = 0;
-  for (const t of tabs) {
-    const fresh: string[][] = [];
-    let hadContent = false;
-    for (const r of t.data.rows) {
-      const k = r.map(norm).join("\u0000");
-      if (k === "" || /^\u0000+$/.test(k)) continue; // blank padding
-      hadContent = true;
-      if (seen.has(k)) {
-        duplicatesDropped++;
-        continue;
-      }
-      seen.add(k);
-      fresh.push(r);
-    }
-    freshByTab.set(t.title, fresh);
-    if (hadContent && fresh.length === 0) pureCopies.add(t.title);
-  }
-  return { freshByTab, pureCopies, duplicatesDropped };
-}
+export { dedupeTabData, type DedupedTabs } from "./dedupe";
+import { dedupeTabData } from "./dedupe";
 
 /** Sheet-wide "billable now" count on DEDUPED latest data — the number the
  *  billing dashboard shows, so the sheet-page badge and the money page can

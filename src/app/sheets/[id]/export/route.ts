@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { tabs, notes as notesTable } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges } from "@/lib/pending";
+import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
 import { csvSafe } from "@/lib/csv";
 
@@ -33,12 +33,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const sheetNotes = await db.select().from(notesTable).where(eq(notesTable.spreadsheetId, id));
+  // a compilation tab's pending changes are echoes of the working tabs —
+  // skip them or the typing list asks the office to enter the same shot twice
+  // (the dashboard badge and the billing packet skip copies too)
+  const copyTabIds = await pureCopyTabIds(
+    await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)),
+  );
 
   const rows: string[][] = [
     ["Tab", "Change", "Row ID", "Row", "Column", "Old", "New", "Note", "Seen at"],
   ];
 
   for (const tab of tracked) {
+    if (copyTabIds.has(tab.id)) continue;
     const pending = await getPendingChanges(tab);
     if (!pending) continue;
     const when = absoluteTime(pending.latestAt);
@@ -78,7 +85,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     `# SheetDiff changes-to-enter — generated ${new Date().toISOString()}`,
     `# Sheet: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))}`,
   ];
-  const csv = stamp.join(String.fromCharCode(10)) + String.fromCharCode(10) + Papa.unparse(rows);
+  const csv = stamp.join("\n") + "\n" + Papa.unparse(rows, { newline: "\n" });
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {

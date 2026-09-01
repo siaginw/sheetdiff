@@ -174,8 +174,15 @@ function matchColumns(a: SnapshotData, b: SnapshotData): {
   added: number[]; // B cols with no A counterpart
   removed: number[]; // A cols with no B counterpart
 } {
-  const aWidth = Math.max(a.headers.length, ...a.rows.map((r) => r.length), 0);
-  const bWidth = Math.max(b.headers.length, ...b.rows.map((r) => r.length), 0);
+  // loop, not Math.max(...a.rows.map()) — the spread blows the call stack on
+  // ~130k-row sheets and kills the whole diff for one oversized tab
+  const widthOf = (headers: string[], rows: string[][]): number => {
+    let w = headers.length;
+    for (const r of rows) if (r.length > w) w = r.length;
+    return w;
+  };
+  const aWidth = widthOf(a.headers, a.rows);
+  const bWidth = widthOf(b.headers, b.rows);
   const aToB: (number | null)[] = new Array(aWidth).fill(null);
   const bToA: (number | null)[] = new Array(bWidth).fill(null);
 

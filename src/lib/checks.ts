@@ -96,6 +96,7 @@ export function computeFootage(
   if (!stations) return out;
   const activityCol = detectActivityColumn(data);
   for (const r of data.rows) {
+    if (r.every((v) => norm(v) === "")) continue; // blank padding / dedup-blanked copy rows
     if (isAdderRow(r, activityCol)) continue; // billing overlay
     const s = parseStation(r[stations.start]);
     const e = parseStation(r[stations.end]);
@@ -107,12 +108,13 @@ export function computeFootage(
       }
       continue;
     }
-    if (s === null || e === null || e < s) {
-      out.invalid++;
+    if (e === s && s !== null) {
+      out.handholes++; // structures sit at a station, contribute no footage
       continue;
     }
-    if (e === s) {
-      out.handholes++; // structures sit at a station, contribute no footage
+    if (!isFootageChainRow(r, activityCol)) continue; // not footage vocabulary — the gap report agrees
+    if (s === null || e === null || e < s) {
+      out.invalid++;
       continue;
     }
     out.ft += e - s;

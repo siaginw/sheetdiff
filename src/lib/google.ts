@@ -173,7 +173,27 @@ export async function fetchTabValues(
       { timeout: 60_000 },
     );
     (res.data.valueRanges ?? []).forEach((vr, j) => {
-      out[titles[j] ?? String(j)] = (vr.values ?? []) as string[][];
+      // Google returns one valueRange per requested range, in order — but the
+      // pairing is an assumption, and a reordered/omitted response would
+      // silently cross-assign TAB DATA (tab A's rows stored as tab B's
+      // snapshot). Every valueRange echoes its range; verify the tab name it
+      // names is the one we're about to file it under.
+      const expected = titles[j];
+      const echoed = vr.range ?? "";
+      // titles with apostrophes are echoed SQL-style escaped ('It''s') —
+      // accept either spelling before calling the order wrong
+      const esc = expected?.replace(/'/g, "''");
+      if (
+        expected !== undefined &&
+        echoed !== "" &&
+        !echoed.includes(expected) &&
+        !(esc !== undefined && echoed.includes(esc))
+      ) {
+        throw new Error(
+          `Google returned ranges out of order (asked for ${expected}, got ${echoed}) — aborting the capture rather than storing one tab's rows under another.`,
+        );
+      }
+      out[expected ?? String(j)] = (vr.values ?? []) as string[][];
     });
   }
   return out;

@@ -234,7 +234,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
     expect(lines[0]).toMatch(/^# SheetDiff billing packet — generated /);
     // label = the LATEST MANUAL snapshot of the tracked tabs (the T3 import
     // must not win; both tracked tabs' latest is T2 so tab order can't matter)
-    expect(lines[1]).toBe(`# Snapshot: ${absoluteTime(T2)}`);
+    expect(lines[1]).toBe(`# Snapshot: ${absoluteTime(T2)} · run ba2`);
     // the whole-sheet aggregates: 400 placed, one 200 ft hole, 4 to enter, 1 late
     expect(lines[2]).toBe(
       "# Placed since collection: 400 ft | Open holes: 200 ft | To enter: 4 | Late entries: 1",

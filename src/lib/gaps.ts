@@ -90,7 +90,10 @@ export function computeGapReport(data: SnapshotData): GapReport {
 
   if (members.length === 0) return report;
   const chainStart = members[0]!.start!;
-  const chainEnd = Math.max(...members.map((m) => m.end!));
+  // loop, not Math.max(...members.map()) — the spread blows the stack around
+  // ~140k rows and takes the whole gap report down with it
+  let chainEnd = members[0]!.end!;
+  for (const m of members) if (m.end! > chainEnd) chainEnd = m.end!;
   report.chainStart = chainStart;
   report.chainEnd = chainEnd;
   report.designedSpan = chainEnd - chainStart;

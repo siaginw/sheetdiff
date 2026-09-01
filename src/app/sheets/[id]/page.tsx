@@ -34,7 +34,7 @@ import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
 import { getSheetAccess } from "@/lib/access";
 import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
 import { captureIsStale } from "@/lib/staleness";
-import { snapshotNow, setBaseline } from "@/lib/actions";
+import { snapshotNow, undoBaseline } from "@/lib/actions";
 import { ChecksPanel } from "@/components/sheet/checks-panel";
 import { ImportDialog } from "@/components/sheet/import-dialog";
 import { NoteDialog } from "@/components/sheet/note-dialog";
@@ -94,11 +94,29 @@ export default async function SheetPage({
     pendingByTab.set(t.id, await getPendingChanges(t));
   }
 
+  // every tracked tab's latest data + the sheet's cross-tab dedup — ONE load
+  // for the copy classification, the checks, the billable badge, and the
+  // panels (trackedTabs is position-ordered: first-wins ownership depends on
+  // it). A pure compilation tab's pending changes are echoes of the working
+  // tabs, so every to-enter count below skips it — the badge, the CSVs, the
+  // digest, and the billing packet all skip copies too.
+  const latestSnapsByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
+  for (const t of trackedTabs) {
+    const s = latestSnapsByTab.get(t.id);
+    if (s) latestDataByTab.set(t.id, { title: t.title, data: decodeSnapshot(s.dataBlob) });
+  }
+  const sheetDedup = dedupeTabData([...latestDataByTab.values()]);
+  const copyTabIds = new Set(
+    trackedTabs.filter((t) => sheetDedup.pureCopies.has(t.title)).map((t) => t.id),
+  );
+
   const tabParam = typeof sp.tab === "string" ? sp.tab : null;
   // Default to the first tab WITH pending changes (not just the first tracked
   // tab) — "which tab changed?" is the first question every morning; landing
   // on a quiet tab makes the user hunt pill-by-pill
-  const firstChangedTabId = [...pendingByTab.entries()].find(([, p]) => p && p.counts.unresolved > 0)?.[0];
+  const firstChangedTabId = [...pendingByTab.entries()].find(
+    ([tabId, p]) => p && p.counts.unresolved > 0 && !copyTabIds.has(tabId),
+  )?.[0];
   const activeTab = allTabs.find((t) => t.title === tabParam) ??
     (firstChangedTabId ? allTabs.find((t) => t.id === firstChangedTabId) : null) ??
     allTabs.find((t) => t.tracked) ?? allTabs[0];
@@ -305,31 +323,61 @@ export default async function SheetPage({
   let gapReport: ReturnType<typeof computeGapReport> | null = null;
   let footageDelta: number | null = null;
   let footageBaseLabel = "since previous snapshot";
+  // the active tab's analytics read its OWNED rows (dedup decided on latest
+  // data) — the same numbers the billing page computes for this tab, so no
+  // panel on this page can quote a compilation echo as work
+  const activeFresh = latestData
+    ? {
+        headers: latestData.headers,
+        rows: sheetDedup.freshByTab.get(activeTab.title) ?? [],
+      }
+    : null;
+  // any earlier snapshot of the active tab, filtered to rows it owns
+  const ownedSlice = (blob: Buffer) => {
+    const d = decodeSnapshot(blob);
+    return { headers: d.headers, rows: sheetDedup.ownedRows(new Map([[activeTab.title, d]])).get(activeTab.title) ?? [] };
+  };
   if (latestData) {
-    // ONE query + ONE decode per tab for BOTH checks and TOTALS reconciliation
-    const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
+    // checks run on RAW latest data per tab — duplicate identities on a
+    // compilation tab are worth SEEING, not hiding
     const inputs: TabChecksInput[] = [];
     for (const t of trackedTabs) {
-      const tSnap = latestByTab.get(t.id);
-      if (tSnap) {
-        const data = decodeSnapshot(tSnap.dataBlob);
-        inputs.push({ tabTitle: t.title, data, keyColumn: t.keyColumn ?? null });
-        latestDataByTab.set(t.id, { title: t.title, data });
-      }
+      const entry = latestDataByTab.get(t.id);
+      if (entry) inputs.push({ tabTitle: t.title, data: entry.data, keyColumn: t.keyColumn ?? null });
     }
     checkFindings.push(...runChecks(inputs));
 
+    // a coverage-classified compilation tab can carry a few rows no other
+    // tab shows (reformatted strays) — those are excluded from every
+    // aggregate, so SAY SO instead of hiding the exclusion
+    for (const copyTitle of sheetDedup.pureCopies) {
+      const strays = (sheetDedup.freshByTab.get(copyTitle) ?? []).filter((r) =>
+        r.some((v) => v !== ""),
+      ).length;
+      if (strays > 0) {
+        checkFindings.push({
+          kind: "cross-tab",
+          severity: "warning",
+          tabTitle: copyTitle,
+          message: `compilation tab — ${strays} row${strays === 1 ? "" : "s"} here appear on no other tab and are not counted anywhere; verify the working tabs carry them`,
+          rows: [],
+        });
+      }
+    }
+
     // footage ledger for the ACTIVE tab: total + delta since collection
-    const f = computeFootage(latestData);
-    gapReport = computeGapReport(latestData);
-    if (f.stations) {
-      activeFootage = f;
-      const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
-      const base = (baselineSnap && baselineSnap.dataBlob ? baselineSnap : recent.find((r) => r.dataBlob && r.id !== latest.id)) ?? null;
-      if (base) {
-        const baseFootage = computeFootage(decodeSnapshot(base.dataBlob!));
-        footageDelta = f.ft - baseFootage.ft;
-        footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
+    if (activeFresh) {
+      const f = computeFootage(activeFresh);
+      gapReport = computeGapReport(activeFresh);
+      if (f.stations) {
+        activeFootage = f;
+        const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
+        const base = (baselineSnap && baselineSnap.dataBlob ? baselineSnap : recent.find((r) => r.dataBlob && r.id !== latest.id)) ?? null;
+        if (base) {
+          const baseFootage = computeFootage(ownedSlice(base.dataBlob!));
+          footageDelta = f.ft - baseFootage.ft;
+          footageBaseLabel = baselineSnap ? "since collection" : "since previous snapshot";
+        }
       }
     }
   }
@@ -348,18 +396,24 @@ export default async function SheetPage({
   // the billing dashboard shows, so the top-bar badge can never disagree
   // with the money page
   let billableNowCount = 0;
-  if (latestData) {
-    office = officePipeline(latestData);
-    invoices = invoiceStatus(latestData);
-    hygiene = dateHygiene(latestData);
-    crewBoard = computeCrewBoard(latestData);
+  if (latestData && activeFresh) {
+    office = officePipeline(activeFresh);
+    invoices = invoiceStatus(activeFresh);
+    hygiene = dateHygiene(activeFresh);
+    crewBoard = computeCrewBoard(activeFresh);
     if (latestDataByTab.size > 0) {
       billableNowCount = sheetBillableNow(
         [...latestDataByTab.values()].map((e) => ({ title: e.title, data: e.data })),
       );
     }
     if (recent.length > 1) {
-      const walk = [...recent].filter((sn) => sn.dataBlob).reverse().map((sn) => ({ createdAt: sn.createdAt, data: decodeSnapshot(sn.dataBlob!) }));
+      const walk = [...recent]
+        .filter((sn) => sn.dataBlob)
+        .reverse()
+        .map((sn) => ({
+          createdAt: sn.createdAt,
+          data: sn.id === latest.id ? activeFresh : ownedSlice(sn.dataBlob!),
+        }));
       lateEntries = detectLateEntries(walk);
       agedGaps = agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })));
     }
@@ -375,7 +429,10 @@ export default async function SheetPage({
         for (const t of trackedTabs) {
           const entry = latestDataByTab.get(t.id);
           if (entry) {
-            perTab.set(t.title.toLowerCase(), { title: t.title, ft: computeFootage(entry.data).ft });
+            perTab.set(t.title.toLowerCase(), {
+              title: t.title,
+              ft: computeFootage({ headers: entry.data.headers, rows: sheetDedup.freshByTab.get(t.title) ?? [] }).ft,
+            });
           }
         }
         totalsMismatches = reconcileTotals(totalsData, perTab);
@@ -398,13 +455,15 @@ export default async function SheetPage({
         const workingTabs = [...latestDataByTab.values()]
           .filter((e) => e.title !== permitTab.title)
           .map((e) => ({ title: e.title, data: e.data }));
-        const { freshByTab, pureCopies } = dedupeTabData(workingTabs);
         permits = permitFindings({
           permitTab: permitTab.data,
           totals: totalsData,
           peTabs: workingTabs
-            .filter((t) => !pureCopies.has(t.title))
-            .map((t) => ({ title: t.title, data: { headers: t.data.headers, rows: freshByTab.get(t.title) ?? [] } })),
+            .filter((t) => !sheetDedup.pureCopies.has(t.title))
+            .map((t) => ({
+              title: t.title,
+              data: { headers: t.data.headers, rows: sheetDedup.freshByTab.get(t.title) ?? [] },
+            })),
         });
       }
     }
@@ -419,8 +478,8 @@ export default async function SheetPage({
   // server component where it's safe, so suppress for this line
   // eslint-disable-next-line react-hooks/purity
   const nextRunThreshold = Date.now();
-  const unenteredCount = [...pendingByTab.values()].reduce(
-    (n, p) => n + (p?.counts.unresolved ?? 0),
+  const unenteredCount = [...pendingByTab.entries()].reduce(
+    (n, [tabId, p]) => (copyTabIds.has(tabId) ? n : n + (p?.counts.unresolved ?? 0)),
     0,
   );
 
@@ -452,9 +511,9 @@ export default async function SheetPage({
             <span className="text-foreground">
               <strong>Collection point moved.</strong> Everything before this snapshot is now considered entered.
             </span>
-            <form action={setBaseline} className="shrink-0">
+            <form action={undoBaseline} className="shrink-0">
               <input type="hidden" name="spreadsheetId" value={sheet.id} />
-              <input type="hidden" name="runId" value={sp.undo} />
+              <input type="hidden" name="token" value={sp.undo} />
               <Button type="submit" variant="outline" size="sm">
                 <Undo2 className="size-4" /> Undo — restore previous collection point
               </Button>
@@ -770,6 +829,16 @@ export default async function SheetPage({
                   >
                     <span className={`font-mono text-xs ${isActive ? "" : "opacity-60"}`}>{t.title}</span>
                     {(() => {
+                      if (copyTabIds.has(t.id)) {
+                        return (
+                          <span
+                            className="ml-0.5 font-mono text-[9.5px] text-muted-foreground/70"
+                            title="compilation tab — its rows are counted on the tabs they came from"
+                          >
+                            copy
+                          </span>
+                        );
+                      }
                       const p = pendingByTab.get(t.id);
                       const n = p?.counts.unresolved ?? 0;
                       return n > 0 ? (

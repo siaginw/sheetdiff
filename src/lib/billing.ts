@@ -1,4 +1,5 @@
 import type { LateEntry, AgingGap, OverplacementFinding, OfficePipeline, InvoiceStatus } from "./production";
+import { csvSafe } from "./csv";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
 export interface BillingUnresolvedRow {
@@ -136,10 +137,11 @@ export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boole
   ];
   for (const r of p.rows) {
     const esc = (v: string) => {
-      // formula guard first (same rule as csvSafe — this CSV goes to Excel),
-      // then quote on comma/quote/newline/CR — an unquoted comma SPLITS the
-      // field and the unguarded remainder lands in another cell (fleet-7 HIGH)
-      const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+      // formula guard first (same rule as csvSafe — this CSV goes to Excel,
+      // pure numbers exempt so a -65 ft correction round-trips), then quote
+      // on comma/quote/newline/CR — an unquoted comma SPLITS the field and
+      // the unguarded remainder lands in another cell (fleet-7 HIGH)
+      const safe = csvSafe(v);
       return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
     };
     const KIND_LABELS: Record<BillingRow["kind"], string> = {

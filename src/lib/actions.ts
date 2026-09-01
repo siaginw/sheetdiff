@@ -169,18 +169,19 @@ export async function setBaseline(fd: FormData): Promise<void> {
   // tampered one — it must be a NO-OP. The wipe-then-set below with a bogus
   // runId would clear every baseline and blind the pending resolver, a state
   // the UI can never produce on its own.
-  const runExists =
+  const coveredTabIds =
     runId && tabIds.length > 0
       ? (
           await db
-            .select({ tabId: snapshots.tabId })
+            .selectDistinct({ tabId: snapshots.tabId })
             .from(snapshots)
             .where(
               and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")),
             )
-            .limit(1)
-        ).length > 0
-      : false;
+        ).map((r) => r.tabId)
+      : [];
+  const runExists = coveredTabIds.length > 0;
+  let undoToken: string | null = null;
   if (runExists) {
     // ONE atomic statement, scoped to the tabs the marked run actually covers:
     // a wipe-then-set pair is not a transaction (a mid-flight reader sees zero
@@ -188,23 +189,30 @@ export async function setBaseline(fd: FormData): Promise<void> {
     // can interleave into two baselines, and a global wipe strips baselines
     // from tabs the run predates. The CASE handles "GIS imports can never be
     // the collected baseline" in the same breath.
-    // Remember the CURRENT baseline so the UI can offer undo — "Mark as
-    // collected" is the product's only irreversible destructive action, and
-    // with exactly 2 snapshots (fresh sheets) there's no way back without it
-    const prevBaseline =
-      (
-        await db
-          .selectDistinct({ runId: snapshots.runId })
-          .from(snapshots)
-          .where(
-            and(
-              inArray(snapshots.tabId, tabIds),
-              eq(snapshots.isBaseline, true),
-              ne(snapshots.trigger, "import"),
-            ),
-          )
-          .limit(1)
-      )[0]?.runId ?? null;
+    // Remember the CURRENT per-tab baselines of exactly the covered tabs so
+    // the UI can offer undo — ONE runId for the whole sheet is not enough
+    // when tabs were collected at different runs (a run covering a tab
+    // subset — a tab added later): restoring a single run left those tabs
+    // collected and silently hid un-entered work behind a success flash.
+    // "Mark as collected" is the product's only destructive action, and with
+    // exactly 2 snapshots there is no way back without this.
+    const prevRows = await db
+      .selectDistinct({ tabId: snapshots.tabId, runId: snapshots.runId })
+      .from(snapshots)
+      .where(
+        and(
+          inArray(snapshots.tabId, coveredTabIds),
+          eq(snapshots.isBaseline, true),
+          ne(snapshots.trigger, "import"),
+        ),
+      );
+    const payload = Buffer.from(
+      JSON.stringify({ r: runId, p: prevRows.map((x) => [x.tabId, x.runId]) }),
+      "utf8",
+    ).toString("base64url");
+    // absurdly wide sheets (60+ tabs) would overflow the URL — degrade to no
+    // undo offer rather than a redirect that 414s
+    undoToken = payload.length <= 6000 ? payload : null;
 
     await db
       .update(snapshots)
@@ -220,12 +228,85 @@ export async function setBaseline(fd: FormData): Promise<void> {
       );
 
     // land on the CLEAN since-collection view with the undo token in the URL
-    redirect(
-      `/sheets/${spreadsheetId}?collected=1${prevBaseline && prevBaseline !== runId ? `&undo=${encodeURIComponent(prevBaseline)}` : ""}`,
-    );
+    redirect(`/sheets/${spreadsheetId}?collected=1${undoToken ? `&undo=${encodeURIComponent(undoToken)}` : ""}`);
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
+}
+
+/** Undo the last "Mark as collected": restore the EXACT per-tab baseline
+ *  state the token captured — every tab the marked run covered goes back to
+ *  its previous collection point (or to none, if it had never been
+ *  collected). Validated against the sheet so a stale or tampered token is a
+ *  no-op, never a corruption. */
+export async function undoBaseline(fd: FormData): Promise<void> {
+  const user = await requireUser();
+  const spreadsheetId = str(fd, "spreadsheetId");
+  const token = str(fd, "token");
+  await requireSharedSpreadsheet(spreadsheetId, user);
+  if (!token) redirect(`/sheets/${spreadsheetId}`);
+
+  let parsed: { r?: unknown; p?: unknown };
+  try {
+    parsed = JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
+  } catch {
+    redirect(`/sheets/${spreadsheetId}?error=bad-undo`);
+  }
+  const markedRun = typeof parsed.r === "string" ? parsed.r : null;
+  const pairs = Array.isArray(parsed.p)
+    ? parsed.p.filter(
+        (x): x is [string, string] =>
+          Array.isArray(x) && typeof x[0] === "string" && typeof x[1] === "string",
+      )
+    : [];
+  if (!markedRun) redirect(`/sheets/${spreadsheetId}?error=bad-undo`);
+
+  const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, spreadsheetId));
+  const tabIds = new Set(sheetTabs.map((t) => t.id));
+
+  // the tabs the marked run covered — the ONLY tabs undo touches
+  const covered = (
+    await db
+      .selectDistinct({ tabId: snapshots.tabId })
+      .from(snapshots)
+      .where(and(inArray(snapshots.tabId, [...tabIds]), eq(snapshots.runId, markedRun), ne(snapshots.trigger, "import")))
+  ).map((r) => r.tabId);
+  if (covered.length === 0) redirect(`/sheets/${spreadsheetId}?error=bad-undo`);
+
+  // every pair must be a real non-import run of THIS sheet on THAT tab —
+  // anything else is a stale or tampered token
+  const restore = new Map<string, string>();
+  for (const [tabId, runId] of pairs) {
+    if (!tabIds.has(tabId) || !covered.includes(tabId)) continue;
+    const ok = (
+      await db
+        .select({ tabId: snapshots.tabId })
+        .from(snapshots)
+        .where(and(eq(snapshots.tabId, tabId), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")))
+        .limit(1)
+    ).length > 0;
+    if (ok) restore.set(tabId, runId);
+  }
+
+  // better-sqlite3 transactions are SYNCHRONOUS — an async callback makes
+  // drizzle throw mid-restore and leaves a partially-moved sheet behind
+  db.transaction((tx) => {
+    for (const tabId of covered) {
+      const prevRun = restore.get(tabId);
+      tx.update(snapshots)
+        .set({
+          isBaseline: prevRun
+            ? sql`(run_id = ${prevRun} AND trigger <> 'import')`
+            : sql`0`,
+        })
+        .where(eq(snapshots.tabId, tabId))
+        .run();
+    }
+  });
+
+  revalidatePath(`/sheets/${spreadsheetId}`);
+  revalidatePath("/");
+  redirect(`/sheets/${spreadsheetId}`);
 }
 
 export async function updateSchedule(fd: FormData): Promise<void> {

@@ -77,13 +77,15 @@ export default async function BillingPage({
     tabData.push({ title: tab.title, data });
     dataByTitle.set(tab.title, data);
   }
-  const { freshByTab, pureCopies } = dedupeTabData(tabData);
+  const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
     if (latestSnap.createdAt > latestAtMs) {
       latestAtMs = latestSnap.createdAt;
-      latestLabel = absoluteTime(latestSnap.createdAt);
+      // run id beside the time: if the office disputes a number, the packet
+      // names the exact capture it came from (audit trail)
+      latestLabel = `${absoluteTime(latestSnap.createdAt)} · run ${latestSnap.runId.slice(0, 8)}`;
     }
     if (pureCopies.has(tab.title)) continue;
     const freshData = {
@@ -91,6 +93,13 @@ export default async function BillingPage({
       rows: freshByTab.get(tab.title) ?? [],
     };
     const latestReport = computeGapReport(freshData);
+    // any non-latest snapshot of this tab is filtered to the rows THIS tab
+    // owns (ownership decided on latest data) — a compilation tab's copied
+    // rows must not appear in its baseline either, or the delta goes negative
+    const ownedSlice = (blob: Buffer) => {
+      const d = decodeSnapshot(blob);
+      return { headers: d.headers, rows: ownedRows(new Map([[tab.title, d]])).get(tab.title) ?? [] };
+    };
 
     const baselineRows = await db
       .select()
@@ -100,7 +109,7 @@ export default async function BillingPage({
       .limit(1);
     if (baselineRows[0]) {
       anyBaseline = true;
-      placedSinceFt += latestReport.placedFt - computeGapReport(decodeSnapshot(baselineRows[0].dataBlob)).placedFt;
+      placedSinceFt += latestReport.placedFt - computeGapReport(ownedSlice(baselineRows[0].dataBlob)).placedFt;
     }
 
     const windowSnaps = await db
@@ -112,7 +121,7 @@ export default async function BillingPage({
     if (windowSnaps.length > 0) {
       const walk = [...windowSnaps].reverse().map((s) => ({
         createdAt: s.createdAt,
-        data: s.id === latestSnap.id ? freshData : decodeSnapshot(s.dataBlob),
+        data: s.id === latestSnap.id ? freshData : ownedSlice(s.dataBlob),
       }));
       for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
         allAgedGaps.push({ ...g, tab: tab.title });

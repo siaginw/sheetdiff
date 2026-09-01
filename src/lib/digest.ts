@@ -36,7 +36,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
 
   const out: DigestSheet[] = [];
   for (const sheet of sheets) {
-    const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
+    const sheetTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id)).orderBy(tabs.position);
     const tracked = sheetTabs.filter((t) => t.tracked);
     if (tracked.length === 0) continue;
 
@@ -69,17 +69,27 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       digest.lastSnapshotAgo = relativeTime(sheet.lastSnapshotAt);
     }
 
+    // load every tracked tab's latest data FIRST — the cross-tab dedup needs
+    // the whole sheet before any per-tab number is computed (position order:
+    // first-wins ownership depends on it)
     const latestDataByTab = new Map<string, SnapshotData>();
     for (const tab of tracked) {
-      // latest SHEET snapshot (GIS imports excluded) for checks + footage
       const latestRows = await db
         .select({ dataBlob: snapshots.dataBlob })
         .from(snapshots)
         .where(and(eq(snapshots.tabId, tab.id), ne(snapshots.trigger, "import")))
         .orderBy(desc(snapshots.createdAt))
         .limit(1);
-      const latestData = latestRows[0] ? decodeSnapshot(latestRows[0].dataBlob) : null;
-      if (latestData) latestDataByTab.set(tab.id, latestData);
+      if (latestRows[0]) latestDataByTab.set(tab.id, decodeSnapshot(latestRows[0].dataBlob));
+    }
+    const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
+      const t = tracked.find((x) => x.id === tabId);
+      return { title: t?.title ?? tabId, data };
+    });
+    const deduped = dedupeTabData(tabData);
+
+    for (const tab of tracked) {
+      const latestData = latestDataByTab.get(tab.id) ?? null;
       if (latestData) {
         const checkFindings = runChecks([
           { tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null },
@@ -88,6 +98,12 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
         for (const f of checkFindings.slice(0, 3)) digest.topChecks.push(`${tab.title}: ${f.message}`);
       }
 
+      // a pure compilation tab contributes NOTHING to any digest number —
+      // not changes, not footage, not samples: the working tab's own pending
+      // already lists that work (this is the same rule the billing page and
+      // both CSV exports apply, so the email can never disagree with them)
+      if (deduped.pureCopies.has(tab.title)) continue;
+
       const pending = await getPendingChanges(tab);
       if (!pending || !latestData) continue;
       digest.detail.added += pending.counts.added;
@@ -95,8 +111,15 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       digest.detail.changed += pending.counts.changed;
       digest.unresolved += pending.counts.unresolved;
 
-      // footage delta since collection for this tab
-      const nowF = computeFootage(latestData);
+      // footage delta since collection for this tab — DEDUPED on both sides:
+      // the latest walk's ownership is applied to the baseline too, so a
+      // compilation tab that copied this tab's rows cannot swing the number
+      // (it summed raw per-tab deltas here before and overstated 2x on
+      // sheets that track their Line List)
+      const nowF = computeFootage({
+        headers: latestData.headers,
+        rows: deduped.freshByTab.get(tab.title) ?? [],
+      });
       const baselineRows = await db
         .select({ dataBlob: snapshots.dataBlob })
         .from(snapshots)
@@ -110,7 +133,11 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
         .orderBy(desc(snapshots.createdAt))
         .limit(1);
       if (baselineRows[0]) {
-        const baseF = computeFootage(decodeSnapshot(baselineRows[0].dataBlob));
+        const baseData = decodeSnapshot(baselineRows[0].dataBlob);
+        const baseF = computeFootage({
+          headers: baseData.headers,
+          rows: deduped.ownedRows(new Map([[tab.title, baseData]])).get(tab.title) ?? [],
+        });
         if (nowF.stations && baseF.stations) digest.footageDelta += nowF.ft - baseF.ft;
       }
 
@@ -136,12 +163,9 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
 
     // weekly position: this week's dated footage + WoW + placed/designed/remaining
     // from TOTALS — the numbers Erin actually reports upward on Monday.
-    // DEDUPED cross-tab (compilation tabs would double every number).
-    const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
-      const t = tracked.find((x) => x.id === tabId);
-      return { title: t?.title ?? tabId, data };
-    });
-    const deduped = dedupeTabData(tabData);
+    // DEDUPED cross-tab (compilation tabs would double every number) — the
+    // same deduped view computed above, so the email's numbers are the
+    // billing page's numbers.
     let lastWeekStart: number | null = null;
     const prodTabsFresh: SnapshotData[] = []; // deduped station tabs — the quiet-log clock
     {

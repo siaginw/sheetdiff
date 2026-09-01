@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { tabs } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges, hasCollectedBaseline } from "@/lib/pending";
+import { getPendingChanges, hasCollectedBaseline, pureCopyTabIds } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
 import { csvSafe } from "@/lib/csv";
 
@@ -42,8 +42,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   let anyBaseline = false;
   let latestLabel = "unknown";
   let latestAtMs = 0;
+  // a compilation tab re-keys work the working tabs already queue — skip it
+  // or the typing list double-counts a shot (the badge and billing skip copies)
+  const copyTabIds = await pureCopyTabIds(await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)));
 
   for (const tab of tracked) {
+    if (copyTabIds.has(tab.id)) continue;
     const pending = await getPendingChanges(tab);
     if (!pending) {
       // null is ALSO the quiet-day short-circuit ("collected, nothing new
@@ -125,7 +129,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     table.push(s.header);
     table.push(...s.lines);
   }
-  const csv = stamp.join("\n") + "\n" + Papa.unparse(table);
+  const csv = stamp.join("\n") + "\n" + Papa.unparse(table, { newline: "\n" });
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {

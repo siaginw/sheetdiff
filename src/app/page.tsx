@@ -19,7 +19,7 @@ import { getSessionUser } from "@/lib/session";
 import { googleConfigured } from "@/lib/google";
 import { relativeTime, scheduleLabel } from "@/lib/format";
 import { captureIsStale } from "@/lib/staleness";
-import { getPendingChanges } from "@/lib/pending";
+import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
 import { listAccessibleSpreadsheets } from "@/lib/access";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -51,6 +51,10 @@ interface SheetStatus {
 async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
   const status: SheetStatus = { changes: 0, unresolved: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
   const tracked = tabRows.filter((t) => t.tracked);
+  // compilation tabs' pending changes are echoes of the working tabs — the
+  // badge counts work to enter, and the same shot listed twice is one entry
+  // (the billing page and both CSVs skip copies too, so all surfaces agree)
+  const copyTabIds = await pureCopyTabIds(tabRows);
 
   // resolve baseline existence INDEPENDENTLY of the pending resolver — the
   // quiet-day short-circuit and latest===baseline both return null, but the
@@ -71,6 +75,7 @@ async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<Sh
     const pending = await getPendingChanges(tab);
     if (!pending) continue;
     status.latestAt = Math.max(status.latestAt ?? 0, pending.latestAt);
+    if (copyTabIds.has(tab.id)) continue;
     status.detail.added += pending.counts.added;
     status.detail.removed += pending.counts.removed;
     status.detail.changed += pending.counts.changed;
