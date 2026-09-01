@@ -394,6 +394,10 @@ export default async function SheetPage({
   // warning count must be sheet-wide and ack-aware — the same pending resolver
   // the CSV export and dashboard use (pendingByTab, computed above), never the
   // viewed tab's raw diff rows
+  // Date.now() is impure during render per the React Compiler — this is a
+  // server component where it's safe, so suppress for this line
+  // eslint-disable-next-line react-hooks/purity
+  const nextRunThreshold = Date.now();
   const unenteredCount = [...pendingByTab.values()].reduce(
     (n, p) => n + (p?.counts.unresolved ?? 0),
     0,
@@ -439,7 +443,7 @@ export default async function SheetPage({
             </h1>
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
-              {sheet.nextRunAt ? `${sheet.nextRunAt > Date.now() ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : " · run overdue"}` : ""}
+              {sheet.nextRunAt ? (sheet.nextRunAt > nextRunThreshold ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : " · run overdue") : ""}
             {sheet.captureFailStreak > 0 ? (
               <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>
                 · captures failing ({sheet.captureFailStreak}×)
