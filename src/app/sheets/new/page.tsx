@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getSessionUser } from "@/lib/session";
-import { parseSpreadsheetId, fetchSpreadsheetMeta, fetchTabValues, getUserClient } from "@/lib/google";
+import { parseSpreadsheetId, fetchSpreadsheetMeta, fetchTabValues, getUserClient, googleConfigured } from "@/lib/google";
 import { toSnapshotData } from "@/lib/snapshots";
 import { detectKeyColumn } from "@/lib/diff/engine";
 import { colLetter } from "@/lib/diff/normalize";
@@ -46,6 +46,13 @@ export default async function NewSheetPage({
     const googleId = parseSpreadsheetId(url);
     if (!googleId) {
       loadError = "That doesn't look like a Google Sheets link. Paste the full URL, e.g. https://docs.google.com/spreadsheets/d/…";
+    } else if (!googleConfigured()) {
+      // error taxonomy: missing server credentials is NOT a sharing problem.
+      // A demo user (or one who signed in before the env was wiped) can reach
+      // this page while Google is unconfigured — the generic "is it shared?"
+      // message sends them chasing the wrong fix.
+      loadError =
+        "Google isn't set up on this server yet, so SheetDiff can't read any spreadsheet. Ask whoever runs this instance to set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env (see .env.example) and restart.";
     } else {
       try {
         const client = await getUserClient(user.id);

@@ -198,6 +198,29 @@ describe("billing page: it renders (the corruption 500'd invisibly)", () => {
     expect(text).toContain("no collection point yet — footage since is unknown");
   });
 
+  it("the placed-since card carries the ft unit (Fleet-16 UX LOW-3)", async () => {
+    state.userId = "owner";
+    const el = await render(COPY_SHEET);
+    // find the Card element by its label prop — its VALUE is the assertion
+    // ("200 ft", not the bare "200" that read as a row count)
+    let value: string | undefined;
+    const walk = (node: unknown): void => {
+      if (node == null || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        for (const n of node) walk(n);
+        return;
+      }
+      const props = (node as { props?: Record<string, unknown> }).props;
+      if (props && props.label === "placed since collection") {
+        value = props.value as string;
+        return;
+      }
+      for (const v of Object.values(props ?? {})) walk(v);
+    };
+    walk(el);
+    expect(value).toBe("200 ft");
+  });
+
   it("guards access: signed out redirects, a stranger 404s", async () => {
     state.userId = null;
     await expect(render(COPY_SHEET)).rejects.toThrow("REDIRECT");

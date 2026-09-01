@@ -35,6 +35,11 @@ export interface DigestSheet {
   placedFt: number | null;
   designedFt: number | null;
   remainingFt: number | null;
+  /** permit exposure from the tracker join — null when the sheet carries no
+   *  Permit Tracker tab (vocabulary-gated, like every other join) */
+  permitCounts: { unapprovedCrossings: number; designedNoPermit: number } | null;
+  /** stoppage-log context for the digest week — null when there is no log */
+  stoppage: { weekCount: number; exemplar: string; quietDaysBehind: number | null } | null;
   /** "3d ago" — stale captures are a pipeline problem, not "all up to date" */
   lastSnapshotAgo: string | null;
   /** schedule is off — the sheet isn't capturing by choice, so an old snapshot is expected */
@@ -140,6 +145,36 @@ export function DigestEmail({
                 ) : null}
               </Text>
 
+              {/* permit + stoppage highlights — the same detectors the sheet and
+                  report pages run, two or three lines beside the weekly position */}
+              {s.permitCounts && s.permitCounts.unapprovedCrossings + s.permitCounts.designedNoPermit > 0 ? (
+                <div style={{ background: "#fff8c5", border: "1px solid #d4a72c", borderRadius: 6, padding: "6px 12px", margin: "0 0 8px" }}>
+                  {s.permitCounts.unapprovedCrossings > 0 ? (
+                    <Text style={{ fontSize: 12, margin: "3px 0", color: "#4d3800" }}>
+                      ⚠ {s.permitCounts.unapprovedCrossings} crossing{s.permitCounts.unapprovedCrossings === 1 ? "" : "s"} placed under permits the tracker hasn&rsquo;t approved
+                    </Text>
+                  ) : null}
+                  {s.permitCounts.designedNoPermit > 0 ? (
+                    <Text style={{ fontSize: 12, margin: "3px 0", color: "#4d3800" }}>
+                      ⚠ {s.permitCounts.designedNoPermit} package{s.permitCounts.designedNoPermit === 1 ? "" : "s"} designed with no permit listed
+                    </Text>
+                  ) : null}
+                </div>
+              ) : null}
+              {s.stoppage && (s.stoppage.quietDaysBehind !== null || s.stoppage.weekCount > 0) ? (
+                <div style={{ background: "#f0f6ff", borderRadius: 6, padding: "6px 12px", margin: "0 0 8px" }}>
+                  {s.stoppage.quietDaysBehind !== null ? (
+                    <Text style={{ fontSize: 12, margin: "3px 0", color: "#0969da" }}>
+                      ⚠ stoppage log looks quiet — {s.stoppage.quietDaysBehind} day{s.stoppage.quietDaysBehind === 1 ? "" : "s"} behind the newest completed work. Is the log being kept?
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: 12, margin: "3px 0", color: "#0969da" }}>
+                      ⛔ {s.stoppage.weekCount} stoppage{s.stoppage.weekCount === 1 ? "" : "s"} logged this week{s.stoppage.exemplar ? ` — ${s.stoppage.exemplar}` : ""}
+                    </Text>
+                  )}
+                </div>
+              ) : null}
+
               {s.sampleChanges.length > 0 ? (
                 <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none" }}>
                   {s.sampleChanges.slice(0, 8).map((c, i) => (
@@ -181,6 +216,12 @@ export function DigestEmail({
           <Link href={appUrl} style={{ fontSize: 13, color: "#0969da" }}>
             Open SheetDiff to review and mark as collected
           </Link>
+          <Text style={{ fontSize: 11, color: "#8c959f", margin: "12px 0 0" }}>
+            Notation: <span style={{ color: "#1a7f37" }}>+N</span> rows added,{" "}
+            <span style={{ color: "#cf222e" }}>−N</span> removed,{" "}
+            <span style={{ color: "#9a6700" }}>~N</span> changed — since the last collected
+            snapshot.
+          </Text>
           <Text style={{ fontSize: 11, color: "#8c959f", margin: "12px 0 0" }}>
             Sent by your local SheetDiff instance while it&rsquo;s running.{" "}
             <Link href={`${appUrl}/`} style={{ color: "#8c959f" }}>

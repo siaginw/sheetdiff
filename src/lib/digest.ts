@@ -3,10 +3,21 @@ import nodemailer from "nodemailer";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "./db";
 import { tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
-import { decodeSnapshot } from "./snapshots";
+import { decodeSnapshot, latestNonImportSnapshots } from "./snapshots";
 import type { SnapshotData } from "./diff/engine";
 import { runChecks, computeFootage } from "./checks";
-import { weeklyProduction, aggregateWeekly, dedupeTabData, detectOverplacement } from "./production";
+import {
+  weeklyProduction,
+  aggregateWeekly,
+  dedupeTabData,
+  detectOverplacement,
+  detectStoppageTab,
+  isStoppageTabTitle,
+  stoppageWeeks,
+  quietStoppageLog,
+} from "./production";
+import { detectPermitTab, isPermitTabTitle, permitFindings } from "./permits";
+import { detectStationColumns } from "./detect";
 import { getPendingChanges } from "./pending";
 import { listAccessibleSpreadsheets } from "./access";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
@@ -45,6 +56,8 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       placedFt: null,
       designedFt: null,
       remainingFt: null,
+      permitCounts: null,
+      stoppage: null,
       lastSnapshotAgo: null,
       paused: sheet.scheduleKind === "off",
     };
@@ -123,47 +136,61 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     // weekly position: this week's dated footage + WoW + placed/designed/remaining
     // from TOTALS — the numbers Erin actually reports upward on Monday.
     // DEDUPED cross-tab (compilation tabs would double every number).
+    const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
+      const t = tracked.find((x) => x.id === tabId);
+      return { title: t?.title ?? tabId, data };
+    });
+    const deduped = dedupeTabData(tabData);
+    let lastWeekStart: number | null = null;
+    const prodTabsFresh: SnapshotData[] = []; // deduped station tabs — the quiet-log clock
     {
-      const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
-        const t = tracked.find((x) => x.id === tabId);
-        return { title: t?.title ?? tabId, data };
-      });
-      const deduped = dedupeTabData(tabData);
       const weeklyByTab: { weeks: ReturnType<typeof weeklyProduction>; placedFt: number }[] = [];
       for (const [title, rows] of deduped.freshByTab) {
         const original = tabData.find((td) => td.title === title);
-        if (original) weeklyByTab.push({ weeks: weeklyProduction({ headers: original.data.headers, rows }), placedFt: 0 });
+        if (!original) continue;
+        // zero-week guard: a DATED but station-less tab (a log, a tracker) can
+        // own the newest date on the sheet while measuring 0 ft — its empty
+        // bucket becomes "this week: 0 ft" and buries real production in the
+        // prior week. The weekly position comes from station tabs only, the
+        // same rule the report page applies.
+        if (!detectStationColumns(original.data)) continue;
+        const freshData = { headers: original.data.headers, rows };
+        if (!deduped.pureCopies.has(title)) prodTabsFresh.push(freshData);
+        weeklyByTab.push({ weeks: weeklyProduction(freshData), placedFt: 0 });
       }
       if (weeklyByTab.length > 0) {
         const agg = aggregateWeekly(weeklyByTab);
         if (agg.weeks.length > 0) {
           digest.weekFt = agg.weeks[agg.weeks.length - 1]!.ft;
           digest.weekDeltaFt = agg.weeks.length > 1 ? agg.weeks[agg.weeks.length - 1]!.ft - agg.weeks[agg.weeks.length - 2]!.ft : null;
+          lastWeekStart = agg.weeks[agg.weeks.length - 1]!.weekStart;
         }
       }
     }
 
+    const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
     // placed / designed / remaining from a TOTALS-like tab
+    let totalsData: SnapshotData | null = null;
     {
-      const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
       const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title) && t.tracked);
       if (totalsTab) {
         const totalsSnap = (await db.select().from(snapshots)
           .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
           .orderBy(desc(snapshots.createdAt)).limit(1))[0];
         if (totalsSnap) {
-          const totalsData = decodeSnapshot(totalsSnap.dataBlob);
-          const over = detectOverplacement(totalsData, 0);
+          const totals = decodeSnapshot(totalsSnap.dataBlob);
+          totalsData = totals;
+          const over = detectOverplacement(totals, 0);
           // infer designed/placed from the TOTALS structure: sum the Designed
           // and Placed columns when present
-          const designedCol = totalsData.headers.findIndex((h) => /designed/i.test(h));
-          const placedCol = totalsData.headers.findIndex((h) => /placed/i.test(h) && !/designed/i.test(h));
+          const designedCol = totals.headers.findIndex((h) => /designed/i.test(h));
+          const placedCol = totals.headers.findIndex((h) => /placed/i.test(h) && !/designed/i.test(h));
           if (designedCol >= 0 && placedCol >= 0) {
             let designed = 0;
             let placed = 0;
-            for (const row of totalsData.rows) {
-              const d = parseFloat((row[designedCol] ?? "").replace(/[^d.-]/g, ""));
-              const p = parseFloat((row[placedCol] ?? "").replace(/[^d.-]/g, ""));
+            for (const row of totals.rows) {
+              const d = parseFloat((row[designedCol] ?? "").replace(/[^\d.-]/g, ""));
+              const p = parseFloat((row[placedCol] ?? "").replace(/[^\d.-]/g, ""));
               if (Number.isFinite(d)) designed += d;
               if (Number.isFinite(p)) placed += p;
             }
@@ -174,6 +201,64 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
             }
           }
           void over; // over-placement is already surfaced by the checks panel
+        }
+      }
+    }
+
+    // permit highlights — the SAME detectors and deduped data the sheet page
+    // runs: crossings placed under permits the tracker hasn't approved, and
+    // designed footage with no permit path at all. No Permit Tracker = no
+    // line in the email (vocabulary-gated, like every other join).
+    {
+      const candidates = allTabs.filter((t) => isPermitTabTitle(t.title));
+      if (candidates.length > 0) {
+        const snapsByTab = await latestNonImportSnapshots(candidates.map((t) => t.id));
+        const candData: { title: string; data: SnapshotData }[] = [];
+        for (const t of candidates) {
+          const s = snapsByTab.get(t.id);
+          if (s) candData.push({ title: t.title, data: decodeSnapshot(s.dataBlob) });
+        }
+        const permitTab = detectPermitTab(candData);
+        if (permitTab) {
+          const workingTabs = tabData.filter((t) => t.title !== permitTab.title);
+          const permitFresh = deduped.freshByTab;
+          const findings = permitFindings({
+            permitTab: permitTab.data,
+            totals: totalsData,
+            peTabs: workingTabs
+              .filter((t) => !deduped.pureCopies.has(t.title))
+              .map((t) => ({ title: t.title, data: { headers: t.data.headers, rows: permitFresh.get(t.title) ?? [] } })),
+          });
+          digest.permitCounts = {
+            unapprovedCrossings: findings.filter((f) => f.kind === "placed-under-unapproved").length,
+            designedNoPermit: findings.filter((f) => f.kind === "designed-no-permit").length,
+          };
+        }
+      }
+    }
+
+    // stoppage context for the digest week — the SAME log join the weekly
+    // report runs: "N stoppages (reason)" beside this week's footage, plus
+    // the quiet-log guard when the log trails the newest completed work.
+    {
+      const candidates = allTabs.filter((t) => isStoppageTabTitle(t.title));
+      if (candidates.length > 0) {
+        const snapsByTab = await latestNonImportSnapshots(candidates.map((t) => t.id));
+        const candData: { title: string; data: SnapshotData }[] = [];
+        for (const t of candidates) {
+          const s = snapsByTab.get(t.id);
+          if (s) candData.push({ title: t.title, data: decodeSnapshot(s.dataBlob) });
+        }
+        const stoppageTab = detectStoppageTab(candData);
+        if (stoppageTab) {
+          const weeks = stoppageWeeks(stoppageTab.data);
+          const quiet = quietStoppageLog(weeks, prodTabsFresh);
+          const thisWeek = lastWeekStart !== null ? weeks.get(lastWeekStart) ?? null : null;
+          digest.stoppage = {
+            weekCount: thisWeek?.count ?? 0,
+            exemplar: thisWeek?.exemplar ?? "",
+            quietDaysBehind: quiet ? quiet.daysBehind : null,
+          };
         }
       }
     }

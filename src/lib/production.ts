@@ -550,7 +550,11 @@ export function aggregateWeekly(tabs: { weeks: WeekBucket[]; placedFt: number }[
 /* ------------------------------------------------------------------ */
 
 const STOPPAGE_TITLE_RE = /stoppage|shut\s*down|delay\s*log/i;
-const STOPPAGE_DATE_RE = /^date$/i;
+/** "Date" plus the variants real stoppage logs type — "Date of Stoppage",
+ *  "Stop Date", "Stoppage Date", "Date Stopped". Deliberately NOT broadened
+ *  to any date column: "Date Complete" is production vocabulary and must
+ *  never turn a production tab into a stoppage log. */
+const STOPPAGE_DATE_RE = /^date$|date\s+of\s+stop|stop(page)?\s*date|date\s+stopped/i;
 const STOPPAGE_DESC_RE = /description|reason|cause|notes/i;
 
 /** Title-only prefilter so pages can avoid decoding blobs of unrelated tabs;
@@ -581,6 +585,10 @@ export interface StoppageWeek {
   count: number;
   /** one example reason — enough to jog a superintendent's memory */
   exemplar: string;
+  /** newest ACTUAL entry date in this bucket, epoch ms — the quiet-log clock
+   *  runs on entry dates, not Monday keys (a log kept Friday is 4 days newer
+   *  than its bucket; bucket math overstated "days behind" by up to 6) */
+  newestEntryMs: number;
 }
 
 /** Bucket the stoppage log's dated rows into the SAME Monday buckets
@@ -604,8 +612,9 @@ export function stoppageWeeks(data: SnapshotData): Map<number, StoppageWeek> {
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const dow = (day.getDay() + 6) % 7; // Monday = 0 — same math as weeklyProduction
     const monday = day.getTime() - dow * 86_400_000;
-    const bucket = byWeek.get(monday) ?? { weekStart: monday, count: 0, exemplar: desc };
+    const bucket = byWeek.get(monday) ?? { weekStart: monday, count: 0, exemplar: desc, newestEntryMs: d.getTime() };
     bucket.count += 1;
+    if (d.getTime() > bucket.newestEntryMs) bucket.newestEntryMs = d.getTime();
     if (desc !== "" && bucket.exemplar === "") bucket.exemplar = desc;
     byWeek.set(monday, bucket);
   }
@@ -631,7 +640,10 @@ export function quietStoppageLog(
   toleranceDays = 14,
 ): QuietStoppageLog | null {
   if (stoppages.size === 0) return null;
-  const newestStoppageMs = Math.max(...stoppages.keys());
+  // the log's clock: the newest ACTUAL entry date, never the newest Monday
+  // bucket — a log kept Friday is days newer than its bucket key, and bucket
+  // math overstated the trail by up to 6 days
+  const newestStoppageMs = Math.max(...[...stoppages.values()].map((w) => w.newestEntryMs));
   let newestCompletionMs = 0;
   let newestCompletionRaw = "";
   for (const data of productionTabs) {

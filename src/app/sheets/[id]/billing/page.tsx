@@ -195,7 +195,7 @@ export default async function BillingPage({
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Card
             label="placed since collection"
-            value={sinceFtKnown ? ft(placedSinceFt) : "—"}
+            value={sinceFtKnown ? `${ft(placedSinceFt)} ft` : "—"}
             sub={sinceFtKnown && placedSinceFt < 0 ? "negative = corrections/removals since the last collection" : undefined}
             icon={<Camera className="size-3.5" />}
           />

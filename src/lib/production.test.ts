@@ -539,4 +539,40 @@ describe("stoppage join (weekly report explains quiet weeks)", () => {
     expect(q.newestCompletion).toBe("8/26/2026");
     expect(quietStoppageLog(new Map(), stale)).toBeNull(); // no log at all — nothing to judge
   });
+
+  it("widened date headers: 'Date of Stoppage', 'Stop Date' etc. still evidence-gate the join", () => {
+    const variants = [
+      ["Date of Stoppage", "Description"],
+      ["Stop Date", "Reason"],
+      ["Stoppage Date", "Notes"],
+      ["Date Stopped", "Cause"],
+    ];
+    for (const headers of variants) {
+      const t = { title: "Work Stoppages", data: snap(headers, [["8/20/2026", "utility locate late"]]) };
+      expect(detectStoppageTab([t])).toBe(t); // title + Date + Description vocabulary
+      const weeks = stoppageWeeks(t.data);
+      expect(weeks.get(new Date(2026, 7, 17).getTime())?.count).toBe(1); // 8/20 buckets into week of 8/17
+    }
+    // production vocabulary must NOT activate the join: "Date Complete" is a
+    // placed-footage column, not a log date
+    expect(
+      detectStoppageTab([{ title: "Work Stoppages", data: snap(["Date Complete", "Description"], []) }]),
+    ).toBeNull();
+  });
+
+  it("quiet-log guard measures the newest ENTRY date, not the Monday bucket", () => {
+    // a log kept Friday 8/21 (bucket Monday 8/17) against work completed 8/27:
+    // 6 days behind by entry date — bucket math claimed 10
+    const weeks = stoppageWeeks(snap(SH, [
+      ["8/19/2026", "rock"],
+      ["8/21/2026", "waiting on permit"], // newest entry in the same bucket
+    ]));
+    const prod = [snap(PH, [["Plow", "0", "500", "8/27/2026"]])];
+    expect(quietStoppageLog(weeks, prod)).toBeNull(); // 6 days — current, no nag
+    // pushed past the 14-day tolerance from the SAME bucket: entry date decides
+    const stale = stoppageWeeks(snap(SH, [["8/21/2026", "waiting on permit"]]));
+    const q = quietStoppageLog(stale, [snap(PH, [["Plow", "0", "500", "9/8/2026"]])], 10)!;
+    expect(q.daysBehind).toBe(18); // 8/21 -> 9/8, not 8/17 -> 9/8 (22)
+    expect(q.newestStoppage).toBe("2026-08-21"); // the entry, not its Monday
+  });
 });

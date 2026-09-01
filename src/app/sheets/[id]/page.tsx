@@ -537,6 +537,7 @@ export default async function SheetPage({
                       <Link
                         href={`/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}&from=${fromId ?? ""}&to=${s.id}`}
                         className="group block rounded-md px-2 py-1.5 transition-colors hover:bg-muted/70"
+                        aria-label={`Snapshot ${absoluteTime(s.createdAt)} — ${isImport ? "GIS import" : s.trigger === "manual" ? "manual" : "scheduled"}, ${s.rowCount} rows${st ? `, +${st.add} added, −${st.rem} removed, ~${st.chg} changed` : ""}`}
                       >
                         {/* commit dot */}
                         <span
@@ -580,9 +581,21 @@ export default async function SheetPage({
                             </span>
                           ) : st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">
-                              {st.add > 0 && <span className="text-diff-add-fg">+{st.add}</span>}
-                              {st.rem > 0 && <span className="text-diff-del-fg">−{st.rem}</span>}
-                              {st.chg > 0 && <span className="text-diff-move-fg">~{st.chg}</span>}
+                              {st.add > 0 && (
+                                <span className="text-diff-add-fg" title={`${st.add} row${st.add === 1 ? "" : "s"} added since the previous snapshot`}>
+                                  +{st.add}
+                                </span>
+                              )}
+                              {st.rem > 0 && (
+                                <span className="text-diff-del-fg" title={`${st.rem} row${st.rem === 1 ? "" : "s"} removed since the previous snapshot`}>
+                                  −{st.rem}
+                                </span>
+                              )}
+                              {st.chg > 0 && (
+                                <span className="text-diff-move-fg" title={`${st.chg} row${st.chg === 1 ? "" : "s"} changed since the previous snapshot`}>
+                                  ~{st.chg}
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span className="text-muted-foreground/50">{isImport ? "" : "no changes"}</span>
