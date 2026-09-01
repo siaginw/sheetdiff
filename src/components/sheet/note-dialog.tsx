@@ -51,7 +51,7 @@ export function NoteDialog({
               type="button"
               aria-label={existingNote ? "Edit note" : "Add note"}
               title={existingNote ? `Note: ${existingNote}` : "Add note"}
-              className={`rounded-md p-1 transition-colors ${
+              className={`rounded-md p-2 transition-colors ${
                 existingNote
                   ? "text-diff-move-fg"
                   : "text-muted-foreground/50 hover:bg-muted hover:text-foreground"
