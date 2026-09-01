@@ -103,7 +103,7 @@ export function buildBillingPacket(input: {
     for (const r of [...o.pipeline.stuck, ...o.pipeline.aging].slice(0, 20)) {
       rows.push({
         kind: "to-enter",
-        detail: `Row ${r.row} (${r.activity}) completed ${r.completedOn} — ${r.daysWaiting}d unentered downstream`,
+        detail: `Row ${r.row} (${r.activity}) completed ${r.completedOn} — ${r.daysWaiting} days not entered in the office system`,
         meta: `per the sheet's "${o.pipeline.enteredColumn}" column (${o.tab})`,
       });
     }

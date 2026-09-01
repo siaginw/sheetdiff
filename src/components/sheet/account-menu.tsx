@@ -31,6 +31,7 @@ export function AccountMenu({
   digestTime,
   digestDay,
   smtpReady,
+  ownsSheets = true,
   members,
 }: {
   name: string | null;
@@ -40,6 +41,8 @@ export function AccountMenu({
   digestTime: string;
   digestDay: number | null;
   smtpReady: boolean;
+  /** true when this user owns at least one sheet — Share is an owner action */
+  ownsSheets?: boolean;
   members: { id: string; email: string }[];
 }) {
   const [digestOpen, setDigestOpen] = useState(false);
@@ -72,8 +75,8 @@ export function AccountMenu({
           <DropdownMenuItem onClick={() => setDigestOpen(true)}>
             <Mail /> Digest email…
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShareOpen(true)}>
-            <UserPlus /> Share access…
+          <DropdownMenuItem onClick={ownsSheets ? () => setShareOpen(true) : undefined}>
+            <UserPlus /> {ownsSheets ? "Share access…" : "Shared with you"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem>

@@ -77,7 +77,7 @@ export function MarkCollectedButton({
             <DialogDescription>
               Everything changed since the current collection point will be considered entered —
               including {unenteredCount === 1 ? "this change" : "these changes"} on tabs you may not
-              be viewing. Export the worklist CSV first if InEight still needs {unenteredCount === 1 ? "it" : "them"}.
+              be viewing. Download the typing list first (More options → Typing list) if InEight still needs {unenteredCount === 1 ? "it" : "them"}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4">

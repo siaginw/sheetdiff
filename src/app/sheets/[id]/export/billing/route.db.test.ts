@@ -299,13 +299,13 @@ describe("billing route: office-entry backlog reaches the packet", () => {
     const body = (await res.text()).split("\n").slice(4);
     // stuck + aging rows, attributed to the sheet's own entered column and tab
     // (the entered-column name appears ONLY in the office-backlog meta)
-    expect(body.some((l) => l.includes("Stuck Bore") && l.includes("unentered downstream") && l.includes("Entered in InEight"))).toBe(true);
-    expect(body.some((l) => l.includes("Aging Bore") && l.includes("unentered downstream") && l.includes("Entered in InEight"))).toBe(true);
+    expect(body.some((l) => l.includes("Stuck Bore") && l.includes("not entered in the office system") && l.includes("Entered in InEight"))).toBe(true);
+    expect(body.some((l) => l.includes("Aging Bore") && l.includes("not entered in the office system") && l.includes("Entered in InEight"))).toBe(true);
     // the normal-bucket row and the already-entered row never become office
     // lines (the fresh row still shows as a NEW to-enter row from the diff —
     // just never with the unentered-downstream office meta)
-    expect(body.some((l) => l.includes("Fresh Plow") && l.includes("unentered downstream"))).toBe(false);
-    expect(body.some((l) => l.includes("Done Plow") && l.includes("unentered downstream"))).toBe(false);
+    expect(body.some((l) => l.includes("Fresh Plow") && l.includes("not entered in the office system"))).toBe(false);
+    expect(body.some((l) => l.includes("Done Plow") && l.includes("not entered in the office system"))).toBe(false);
   });
 });
 

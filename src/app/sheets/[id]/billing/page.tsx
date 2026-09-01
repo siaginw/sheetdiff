@@ -62,7 +62,7 @@ export default async function BillingPage({
   const invoicesByTab: { tab: string; status: InvoiceStatus }[] = [];
   const overplacements: OverplacementFinding[] = [];
   let toEnterCount = 0;
-  const pendingRows: { status: string; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
+  const pendingRows: { status: string; values: string[]; cells: { header: string; from: string; to: string }[]; tab?: string }[] = [];
 
   // compilation tabs (Line List copies working tabs) would double-count every
   // hole, billable row, and office backlog entry on the money page — the
@@ -127,7 +127,7 @@ export default async function BillingPage({
     if (pending) {
       toEnterCount += pending.counts.unresolved;
       for (const r of pending.unresolved) {
-        pendingRows.push({ status: r.status, values: r.values, cells: r.cells.map((c) => ({ header: c.header, from: c.from, to: c.to })) });
+        pendingRows.push({ status: r.status, values: r.values, cells: r.cells.map((c) => ({ header: c.header, from: c.from, to: c.to })), tab: tab.title });
       }
     }
   }

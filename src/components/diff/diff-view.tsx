@@ -478,7 +478,7 @@ export function DiffView({
             <input type="hidden" name="tabId" value={tabId} />
             <button
               type="submit"
-              title={`Mark all ${unackCount} unresolved ${unackCount === 1 ? "change" : "changes"} on this tab as entered in the office system (the pending set is recomputed server-side)`}
+              title={`Mark all ${unackCount} unresolved ${unackCount === 1 ? "change" : "changes"} on this tab as entered in the office system — removes them from the typing list and the daily email`}
               className="flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <CheckCircle2 className="size-3.5" />
@@ -643,7 +643,7 @@ export function DiffView({
                   {c.status === "added" ? " +" : ""}
                 </div>
               ))}
-              <div className="py-2 text-center font-mono text-[10px] font-medium text-muted-foreground" title="Mark as entered / add a note">act</div>
+              <div className="py-2 text-center font-mono text-[10px] font-medium text-muted-foreground" title="Mark as entered / add a note">entered?</div>
             </div>
             <div style={{ height: tableVirtualizer.getTotalSize(), position: "relative" }}>
               {tableVirtualizer.getVirtualItems().map((vr) => {

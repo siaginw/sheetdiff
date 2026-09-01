@@ -28,8 +28,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   "no-refresh-token":
     "Google didn't return a refresh token. Revoke the app in your Google account permissions and try connecting again.",
   "demo-disabled":
-    "The demo login is off. Set ENABLE_DEMO=1 in .env and run `npm run seed-demo` to explore the demo data (never enable this on a real deployment).",
-  "app-secret-missing": "Server configuration error: APP_SECRET is missing or too short. Run `npm run setup` to fix it.",
+    "The demo login is off on this server. Whoever runs SheetDiff can enable it to let people explore with sample data.",
+  "app-secret-missing": "This server isn't configured completely — whoever runs SheetDiff needs to finish setup (see the README).",
   "oauth-failed": "Google sign-in failed. Please try again.",
     "demo-not-seeded":
       "The demo data isn't loaded. Whoever runs this server needs to run 'npm run seed-demo' first.",
@@ -237,7 +237,7 @@ function Landing({ error }: { error: string | null }) {
             <span className="text-diff-del-fg">.</span>
           </h1>
           <p className="mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-            SheetDiff snapshots your team&rsquo;s sheets and shows every change like a code review
+            SheetDiff snapshots your team&rsquo;s sheets and shows every change the way Word shows tracked changes
             — so nothing slips past the person who collects the data.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -300,11 +300,11 @@ function Landing({ error }: { error: string | null }) {
           {[
             ["snapshot", "Hourly, daily or weekly captures. Filters left on by teammates can never corrupt one — the API sees through them."],
             ["diff", "Added rows, removed rows, changed cells as old → new. Sorts and moves don't cry wolf — rows match by their key column."],
-            ["collect", "One click sets the baseline. The dashboard answers the only question that matters: what changed since the last pull?"],
+            ["collect", "One click marks everything as pulled. The dashboard answers the only question that matters: what changed since the last pull?"],
           ].map(([term, text]) => (
             <div key={term}>
               <p className="font-mono text-xs font-semibold text-foreground">
-                <span className="text-diff-hunk-fg">@@</span> {term}
+                {term}
               </p>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
             </div>
@@ -331,6 +331,8 @@ export default async function Home({
   if (!user) return <Landing error={error} />;
 
   const sheets = await listAccessibleSpreadsheets(user);
+  // does this user OWN anything, or are they a pure viewer on someone else's sheets?
+  const ownSheets = sheets.filter((s) => s.userId === user.id);
 
   const statuses = new Map<string, SheetStatus>();
   for (const sheet of sheets) {
@@ -353,7 +355,7 @@ export default async function Home({
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Your sheets</h1>
             <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              {sheets.length} tracked · baselines starred
+              {sheets.length} tracked · ★ = last collection point
             </p>
           </div>
           <Button render={<Link href="/sheets/new" />}>
@@ -363,7 +365,7 @@ export default async function Home({
 
         {sheets.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-graph-paper py-20 text-center">
-            <p className="font-mono text-sm font-medium">$ waiting for first sheet…</p>
+            <p className="font-mono text-sm font-medium">No sheets tracked yet</p>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">
               Paste a Google Sheets link and SheetDiff will snapshot it and diff every change from
               here on.
@@ -391,7 +393,7 @@ export default async function Home({
                       <p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
                         <span className="truncate">
                           {scheduleLabel(sheet).toLowerCase()} · snapshot {relativeTime(sheet.lastSnapshotAt)}
-                          {!st.baselineAt && " · no baseline yet"}
+                          {!st.baselineAt && " · nothing marked as collected yet"}
                         </span>
                         {captureIsStale(sheet) ? (
                           <span
@@ -413,7 +415,7 @@ export default async function Home({
                           <Link
                             href={`/sheets/${sheet.id}`}
                             className="flex items-center gap-2.5 font-mono text-xs"
-                            title={`${st.changes} change${st.changes === 1 ? "" : "s"} since collection ${relativeTime(st.baselineAt)} · ${st.unresolved} not yet entered downstream`}
+                            title={`${st.changes} change${st.changes === 1 ? "" : "s"} since collection ${relativeTime(st.baselineAt)} · ${st.unresolved} not yet entered in the office system`}
                           >
                             <span className="flex gap-1.5 font-semibold">
                               {d.added > 0 && <span className="text-diff-add-fg">+{d.added}</span>}

@@ -65,13 +65,13 @@ export function DigestEmail({
         {staleSheets.length > 0
           ? `⚠ ${staleSheets.length} sheet${staleSheets.length === 1 ? "" : "s"} may have stale data${totalUnresolved > 0 ? ` · ${totalUnresolved} to enter` : ""}`
           : totalUnresolved > 0
-            ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} waiting to be collected`
+            ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to enter in the office system`
             : "all sheets up to date since collection"}
       </Preview>
       <Body style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", margin: 0, padding: "24px 0", background: "#f6f8fa" }}>
         <Container style={{ maxWidth: 560, margin: "0 auto" }}>
           <Text style={{ fontSize: 12, color: "#57606a", margin: "0 0 8px", fontFamily: "ui-monospace, monospace" }}>
-            sheetdiff · daily digest
+            sheetdiff · change digest
           </Text>
           <Heading as="h1" style={{ fontSize: 20, margin: "0 0 4px", color: "#1f2328" }}>
             Good morning{name ? `, ${name}` : ""}

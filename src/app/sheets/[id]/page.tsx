@@ -439,7 +439,7 @@ export default async function SheetPage({
             </h1>
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
-              {sheet.nextRunAt ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : ""}
+              {sheet.nextRunAt ? `${sheet.nextRunAt > Date.now() ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : " · run overdue"}` : ""}
             {sheet.captureFailStreak > 0 ? (
               <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>
                 · captures failing ({sheet.captureFailStreak}×)
@@ -519,7 +519,7 @@ export default async function SheetPage({
             {timeline.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {activeTab.tracked
-                  ? "No snapshots yet."
+                  ? "No snapshots yet — click Snapshot now to take the first one."
                   : "This tab isn't tracked — enable it in tab settings."}
               </div>
             ) : (
@@ -557,7 +557,7 @@ export default async function SheetPage({
                             {relativeTime(s.createdAt)}
                           </span>
                           <span className="font-mono text-[10.5px] text-muted-foreground/80">
-                            {isImport ? "GIS import" : s.trigger === "manual" ? "manual" : "auto"}
+                            {isImport ? "GIS import" : s.trigger === "manual" ? "manual" : "scheduled"}
                           </span>
                           {s.isBaseline ? (
                             <span className="flex items-center gap-1 rounded-full bg-diff-move-bg px-1.5 py-px font-mono text-[10px] font-medium text-diff-move-fg">
@@ -760,7 +760,7 @@ export default async function SheetPage({
                   <>
                     <p className="font-medium">No snapshot yet</p>
                     <p className="max-w-sm text-sm text-muted-foreground">
-                      Take the first snapshot to start versioning this tab.
+                      Take the first snapshot — after that, every change your team makes shows up here.
                     </p>
                   </>
                 ) : (
