@@ -245,9 +245,7 @@ function Landing({ error }: { error: string | null }) {
               </Button>
             ) : (
               <div className="rounded-lg border border-dashed bg-card/80 p-4 text-sm text-muted-foreground">
-                Finish setup first: run <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">npm run setup</code> and
-                add your Google credentials to <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">.env</code> (see
-                README).
+                Sign-in isn't available yet — the administrator needs to finish setting up this instance.
               </div>
             )}
             <span className="font-mono text-xs text-muted-foreground">

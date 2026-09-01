@@ -6,7 +6,7 @@ import { tabs, snapshots, notes as notesTable, users, type User } from "./db/sch
 import { decodeSnapshot } from "./snapshots";
 import type { SnapshotData } from "./diff/engine";
 import { runChecks, computeFootage } from "./checks";
-import { weeklyProduction, aggregateWeekly } from "./production";
+import { weeklyProduction, aggregateWeekly, dedupeTabData, detectOverplacement } from "./production";
 import { getPendingChanges } from "./pending";
 import { listAccessibleSpreadsheets } from "./access";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
@@ -121,22 +121,59 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     digest.changes = digest.detail.added + digest.detail.removed + digest.detail.changed;
 
     // weekly position: this week's dated footage + WoW + placed/designed/remaining
-    // from TOTALS — the numbers Erin actually reports upward on Monday
+    // from TOTALS — the numbers Erin actually reports upward on Monday.
+    // DEDUPED cross-tab (compilation tabs would double every number).
     {
-      const weeklyByTab = tracked
-        .map((t) => {
-          const latestBlob = latestDataByTab.get(t.id);
-          return latestBlob ? { weeks: weeklyProduction(latestBlob), placedFt: 0 } : null;
-        })
-        .filter((x): x is { weeks: ReturnType<typeof weeklyProduction>; placedFt: number } => x !== null);
+      const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
+        const t = tracked.find((x) => x.id === tabId);
+        return { title: t?.title ?? tabId, data };
+      });
+      const deduped = dedupeTabData(tabData);
+      const weeklyByTab: { weeks: ReturnType<typeof weeklyProduction>; placedFt: number }[] = [];
+      for (const [title, rows] of deduped.freshByTab) {
+        const original = tabData.find((td) => td.title === title);
+        if (original) weeklyByTab.push({ weeks: weeklyProduction({ headers: original.data.headers, rows }), placedFt: 0 });
+      }
       if (weeklyByTab.length > 0) {
         const agg = aggregateWeekly(weeklyByTab);
-        const weeks = agg.weeks;
-        if (weeks.length > 0) {
-          const thisWeek = weeks[weeks.length - 1]!;
-          const lastWeek = weeks[weeks.length - 2] ?? null;
-          digest.weekFt = thisWeek.ft;
-          digest.weekDeltaFt = lastWeek ? thisWeek.ft - lastWeek.ft : null;
+        if (agg.weeks.length > 0) {
+          digest.weekFt = agg.weeks[agg.weeks.length - 1]!.ft;
+          digest.weekDeltaFt = agg.weeks.length > 1 ? agg.weeks[agg.weeks.length - 1]!.ft - agg.weeks[agg.weeks.length - 2]!.ft : null;
+        }
+      }
+    }
+
+    // placed / designed / remaining from a TOTALS-like tab
+    {
+      const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
+      const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title) && t.tracked);
+      if (totalsTab) {
+        const totalsSnap = (await db.select().from(snapshots)
+          .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
+          .orderBy(desc(snapshots.createdAt)).limit(1))[0];
+        if (totalsSnap) {
+          const totalsData = decodeSnapshot(totalsSnap.dataBlob);
+          const over = detectOverplacement(totalsData, 0);
+          // infer designed/placed from the TOTALS structure: sum the Designed
+          // and Placed columns when present
+          const designedCol = totalsData.headers.findIndex((h) => /designed/i.test(h));
+          const placedCol = totalsData.headers.findIndex((h) => /placed/i.test(h) && !/designed/i.test(h));
+          if (designedCol >= 0 && placedCol >= 0) {
+            let designed = 0;
+            let placed = 0;
+            for (const row of totalsData.rows) {
+              const d = parseFloat((row[designedCol] ?? "").replace(/[^d.-]/g, ""));
+              const p = parseFloat((row[placedCol] ?? "").replace(/[^d.-]/g, ""));
+              if (Number.isFinite(d)) designed += d;
+              if (Number.isFinite(p)) placed += p;
+            }
+            if (designed > 0) {
+              digest.designedFt = Math.round(designed);
+              digest.placedFt = Math.round(placed);
+              digest.remainingFt = Math.round(Math.max(designed - placed, 0));
+            }
+          }
+          void over; // over-placement is already surfaced by the checks panel
         }
       }
     }

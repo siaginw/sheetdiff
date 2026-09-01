@@ -84,8 +84,14 @@ export function buildPermitIndex(data: SnapshotData): Map<string, PermitRecord> 
 /** A permit status that allows work: Approved/Issued/Released… Blank counts
  *  as NOT approved — absence of a status can't wave work through (the same
  *  rule the GIS check applies to billing). */
+export const PERMIT_NEGATIVE_RE = /denied|revoked|suspend|reject|pending|nots|held|withdraw|expired|return/i;
+
 export function permitIsApproved(status: string): boolean {
-  return PERMIT_APPROVED_RE.test(status);
+  // deny-list FIRST: sheet-controlled status text saying "Not Issued",
+  // "Denied", "Pending" must never read as approved — the approve vocabulary
+  // is broad ("issu" matches "Not Issued") and would fail open
+  if (PERMIT_NEGATIVE_RE.test(status)) return false;
+  return /approv|issu|releas|grant|clear|accept/i.test(status);
 }
 
 export type PermitFindingKind = "designed-no-permit" | "placed-under-unapproved" | "submitted-aging";
