@@ -245,7 +245,7 @@ function Landing({ error }: { error: string | null }) {
               </Button>
             ) : (
               <div className="rounded-lg border border-dashed bg-card/80 p-4 text-sm text-muted-foreground">
-                Sign-in isn't available yet — the administrator needs to finish setting up this instance.
+                Sign-in isn&rsquo;t available yet — the administrator needs to finish setting up this instance.
               </div>
             )}
             <span className="font-mono text-xs text-muted-foreground">
