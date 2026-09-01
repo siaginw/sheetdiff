@@ -127,7 +127,11 @@ CSV worklist export, and the digest, so the three can never disagree.
   the zip guard is three-layered: declared-size sum, per-entry trial-inflation
   of EVERY central-directory entry (descriptors included) against a shared
   budget, and EOCD entry-count-lie rejection).
-- **Billing packet** (`billing.ts` + route) — placed footage since collection, open holes flagged *do not invoice*, over-placement, office-entry backlog, invoice-ledger BILLABLE rows + missed-run chases, the to-enter worklist, and late entries in one CSV stamped with snapshot provenance.
+- **Billing packet** (`billing.ts` + route) — placed footage since collection, open holes
+  flagged *do not invoice*, over-placement, office-entry backlog, invoice-ledger
+  BILLABLE rows + missed-run chases, the to-enter worklist, and late entries in
+  one CSV stamped with snapshot provenance. Cross-tab dedup via `dedupeTabData`
+  (compilation tabs count once).
   open holes flagged *do not invoice*, over-placed packages (Placed beyond
   Designed) flagged the same way, the to-enter worklist, late entries —
   one CSV stamped with snapshot provenance, formula-injection-guarded, aggregated
@@ -145,7 +149,7 @@ floor of 2) plus verified SQLite backups to `data/backups/` (keep 14). If
 
 ## HTTP surface & access control
 
-Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export` (worklist CSV), `/sheets/[id]/export/queue` (entry-queue CSV), `/sheets/[id]/export/billing` (billing packet CSV)
+Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export` (worklist CSV), `/export/queue` (entry-queue CSV), `/export/billing` (billing packet CSV)
 (worklist CSV), `/sheets/[id]/export/billing` (billing packet CSV),
 `/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/sheets/[id]/billing` (billing day dashboard), `/api/health`.
 
@@ -183,6 +187,7 @@ role via `getSheetAccess`.
 | `src/lib/google.ts`, `session.ts`, `crypto.ts` | OAuth+reads, sessions, keys/AEAD |
 | `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup |
 | `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts` | Station/column detection, helpers, shared capture-staleness rule |
+| `src/lib/stoppages.ts`, `permits.ts` | Stoppage-week join, permit-status join (header-gated, silent no-op) |
 | `src/lib/emails/digest.tsx` | Digest email template (react-email) |
 | `src/app/…` | Pages, export/auth/health routes |
 | `src/components/diff/diff-view.tsx`, `src/components/sheet/*` | Diff UI, sheet panels |

@@ -4,7 +4,9 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "./db";
 import { tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
 import { decodeSnapshot } from "./snapshots";
+import type { SnapshotData } from "./diff/engine";
 import { runChecks, computeFootage } from "./checks";
+import { weeklyProduction, aggregateWeekly } from "./production";
 import { getPendingChanges } from "./pending";
 import { listAccessibleSpreadsheets } from "./access";
 import { DigestEmail, type DigestSheet } from "./emails/digest";
@@ -38,6 +40,11 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       topChecks: [],
       notes: [],
       footageDelta: 0,
+      weekFt: null,
+      weekDeltaFt: null,
+      placedFt: null,
+      designedFt: null,
+      remainingFt: null,
       lastSnapshotAgo: null,
       paused: sheet.scheduleKind === "off",
     };
@@ -48,6 +55,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       digest.lastSnapshotAgo = relativeTime(sheet.lastSnapshotAt);
     }
 
+    const latestDataByTab = new Map<string, SnapshotData>();
     for (const tab of tracked) {
       // latest SHEET snapshot (GIS imports excluded) for checks + footage
       const latestRows = await db
@@ -57,6 +65,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
         .orderBy(desc(snapshots.createdAt))
         .limit(1);
       const latestData = latestRows[0] ? decodeSnapshot(latestRows[0].dataBlob) : null;
+      if (latestData) latestDataByTab.set(tab.id, latestData);
       if (latestData) {
         const checkFindings = runChecks([
           { tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null },
@@ -110,6 +119,27 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     }
 
     digest.changes = digest.detail.added + digest.detail.removed + digest.detail.changed;
+
+    // weekly position: this week's dated footage + WoW + placed/designed/remaining
+    // from TOTALS — the numbers Erin actually reports upward on Monday
+    {
+      const weeklyByTab = tracked
+        .map((t) => {
+          const latestBlob = latestDataByTab.get(t.id);
+          return latestBlob ? { weeks: weeklyProduction(latestBlob), placedFt: 0 } : null;
+        })
+        .filter((x): x is { weeks: ReturnType<typeof weeklyProduction>; placedFt: number } => x !== null);
+      if (weeklyByTab.length > 0) {
+        const agg = aggregateWeekly(weeklyByTab);
+        const weeks = agg.weeks;
+        if (weeks.length > 0) {
+          const thisWeek = weeks[weeks.length - 1]!;
+          const lastWeek = weeks[weeks.length - 2] ?? null;
+          digest.weekFt = thisWeek.ft;
+          digest.weekDeltaFt = lastWeek ? thisWeek.ft - lastWeek.ft : null;
+        }
+      }
+    }
 
     const sheetNotes = await db
       .select()

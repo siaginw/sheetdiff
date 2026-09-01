@@ -28,6 +28,13 @@ export interface DigestSheet {
   notes: { body: string; when: string }[];
   /** total footage change since collection, when station columns exist */
   footageDelta: number;
+  /** this week's dated footage + week-over-week delta, when dates exist */
+  weekFt: number | null;
+  weekDeltaFt: number | null;
+  /** placed / designed / remaining from TOTALS, when it exists */
+  placedFt: number | null;
+  designedFt: number | null;
+  remainingFt: number | null;
   /** "3d ago" — stale captures are a pipeline problem, not "all up to date" */
   lastSnapshotAgo: string | null;
   /** schedule is off — the sheet isn't capturing by choice, so an old snapshot is expected */
@@ -107,6 +114,21 @@ export function DigestEmail({
                   <span style={{ color: "#1a7f37" }}>✓ up to date since collection</span>
                 )}
                 {s.paused ? <span style={{ color: "#57606a" }}> · paused</span> : null}
+                {s.weekFt !== null ? (
+                  <span style={{ color: "#57606a" }}>
+                    {" · this week "}{s.weekFt.toLocaleString("en-US")} ft
+                    {s.weekDeltaFt !== null && s.weekDeltaFt !== 0 ? (
+                      <span style={{ color: s.weekDeltaFt > 0 ? "#1a7f37" : "#cf222e" }}>
+                        {" ("}{s.weekDeltaFt > 0 ? "+" : "−"}{Math.abs(s.weekDeltaFt).toLocaleString("en-US")}{")"}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+                {s.remainingFt !== null && s.placedFt !== null && s.designedFt ? (
+                  <span style={{ color: "#57606a" }}>
+                    {" · "}{s.placedFt.toLocaleString("en-US")}/{s.designedFt.toLocaleString("en-US")} ft placed · {s.remainingFt.toLocaleString("en-US")} ft remaining
+                  </span>
+                ) : null}
                 {s.footageDelta !== 0 ? (
                   <>
                     {" · "}
