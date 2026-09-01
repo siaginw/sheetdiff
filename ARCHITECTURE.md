@@ -127,15 +127,24 @@ CSV worklist export, and the digest, so the three can never disagree.
   the zip guard is three-layered: declared-size sum, per-entry trial-inflation
   of EVERY central-directory entry (descriptors included) against a shared
   budget, and EOCD entry-count-lie rejection).
-- **Billing packet** (`billing.ts` + route) — placed footage since collection, open holes
-  flagged *do not invoice*, over-placement, office-entry backlog, invoice-ledger
-  BILLABLE rows + missed-run chases, the to-enter worklist, and late entries in
-  one CSV stamped with snapshot provenance. Cross-tab dedup via `dedupeTabData`
-  (compilation tabs count once).
-  open holes flagged *do not invoice*, over-placed packages (Placed beyond
-  Designed) flagged the same way, the to-enter worklist, late entries —
-  one CSV stamped with snapshot provenance, formula-injection-guarded, aggregated
-  across every tracked tab.
+- **Cross-tab dedup** (`dedupe.ts`) — the ONE algorithm every sheet-wide
+  rollup uses. Rows key on work identity (activity + PARSED stations, so a
+  compilation tab's "2+14" matches the working tab's "214"), content-key
+  fallback for station-less tabs. Ownership is decided once on latest data
+  (first tab in position order wins) and the same ownership is applied to
+  baseline and window snapshots via `ownedRows()`, so a compilation tab can
+  never swing placed-since negative. A tab whose keyed rows are ≥95% owned by
+  earlier tabs (≥20 rows) is a pure copy — skipped by every rollup and every
+  to-enter count, with its strays surfaced as a check finding. Output is
+  position-preserving: dropped rows become blanks, "Row N" stays the sheet's
+  true row number.
+- **Billing packet** (`billing.ts` + page + route) — placed footage since
+  collection, open holes flagged *do not invoice*, over-placement, office-entry
+  backlog, invoice-ledger BILLABLE rows + missed-run chases, the to-enter
+  worklist, and late entries in one CSV stamped with snapshot provenance (time
+  + run id). Everything reads the DATA clock (the latest snapshot), so the
+  page and the CSV can never disagree and re-exports are byte-identical.
+  Formula-injection-guarded, aggregated across every tracked tab, deduped.
 
 ## Scheduling, digest, maintenance (`scheduler.ts`, `digest.ts`, `maintenance.ts`)
 
@@ -181,6 +190,7 @@ role via `getSheetAccess`.
 | `src/lib/pending.ts` | Baseline→pending resolver with quiet-day short-circuit |
 | `src/lib/sync.ts` | Ack resolution + introduction walk |
 | `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts` | Pure analytics |
+| `src/lib/dedupe.ts` | Identity-keyed cross-tab dedup + ownership filter |
 | `src/lib/billing.ts` | Billing packet builder + CSV |
 | `src/lib/import.ts` | GIS CSV/XLSX import (bomb-guarded) |
 | `src/lib/actions.ts`, `access.ts` | Server actions, owner/viewer gates |

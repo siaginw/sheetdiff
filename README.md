@@ -42,12 +42,44 @@ on the dashboard.
 - **Audit workflow.** Attach notes explaining *why* things changed; tick changes off as
   *entered downstream*; download the unresolved changes as a CSV worklist; diff a GIS export
   (CSV/XLSX) against the sheet; get a daily digest email with everything still waiting to be
-  collected.
+  entered in the office system.
 - **Footage ledger.** Per-tab footage totals from your station columns, with the change since
   last collection — when a correction quietly moves your totals, you see the number move.
 - **Scheduled or manual snapshots.** Hourly / daily at a time / weekly, or "Snapshot now".
 - **GitHub-style UI.** Red/green `−/+` lines, changed-value annotations, diffstat blocks, a
   git-log timeline, code/table layouts, dark mode.
+
+## Accounting-grade accuracy
+
+The numbers on a billing packet can cost real money, so v0.4 was hardened by a
+five-agent audit that hand-verified every computation path — including a forensic
+pass against a real 36-package production tracker — and then fixed everything it
+found. The guarantees, each enforced by a permanent test suite:
+
+- **One number, every surface.** The dashboard badge, the sheet page, all three
+  CSV exports, the billing page, the weekly report, and the digest email are
+  pinned to agree — a seeded fixture asserts every surface shows the same
+  hand-computed counts, footage, holes, and billable rows, and that acking one
+  row drops every surface by exactly one.
+- **Compilation tabs can't double-bill.** Real trackers carry a "Line List" that
+  re-lists the working tabs, sometimes reformatted (`2+14` for `214`, retyped
+  crews). Rows are deduplicated by work identity — parsed stations, not cell
+  text — with ownership applied consistently to baselines and history, so the
+  same shot is counted exactly once everywhere. On the real tracker this took a
+  +98% overbilling configuration to exactly the working tabs' numbers.
+- **Byte-identical exports.** Timestamps, aging, and filenames derive from the
+  data (the latest snapshot), never the export moment. Re-exporting unchanged
+  data produces identical bytes — diff two exports to prove nothing changed.
+- **Never silent.** Impossible dates ("Feb 30") surface as unreadable instead of
+  rolling into March; keyed ledger entries that match no known bucket are shown
+  rather than dropped; negative footage (corrections) reports honestly with a
+  note; unknown footage says "COULD NOT DETERMINE", never a confident zero.
+- **Undo you can trust.** "Mark as collected" remembers each tab's previous
+  collection point and restores it exactly — acks, notes, and every number come
+  back with it.
+- **Hostile-input safe.** Formula-injection-guarded CSVs, zip-bomb-guarded
+  imports, 130k-row sheets, NaN/Infinity stations, NUL bytes, DST and
+  year boundaries — all fuzzed, all handled.
 
 ## Quick start
 
@@ -220,6 +252,13 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 - **Per-change acknowledgment** — hover any changed/added/removed row and click ✓ to mark it
   *entered downstream* (InEight or wherever). The dashboard counts what's still to enter;
   if a row changes again after being acknowledged, it re-flags itself automatically.
+- **"Mark as collected" + exact undo** — one click re-baselines the whole sheet and drops
+  every to-enter count to zero; the banner that follows offers *Undo*, which restores each
+  tab's previous collection point exactly (acks and notes survive either way).
+- **Compilation-tab aware** — tabs that re-list other tabs (a "Line List") are tagged
+  `copy` and counted zero times: every rollup, every to-enter count, and the digest read
+  the working tabs. The few reformatted rows a copy carries that no working tab shows
+  appear as a check finding instead of vanishing.
 - **Checks (the gap linter)** — every snapshot runs station-continuity, duplicate-shot, and
   cross-tab checks: `2 ft gap: row 3 ends at 15741 but row 4 starts at 15743`,
   `"S3" appears 2× — duplicate shot?`, `"S5" appears in PE4 and PE7`. Station formats
@@ -243,7 +282,9 @@ supports it via `dkim: { domainName, keySelector, privateKey }` transport option
 - **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take. The **invoice ledger** reads your sheet's own "Entered in InEight" + "Invoice #" columns: what's billable right now (aged, with footage), what's billed under which invoice number, and runs already missed.
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice),
   over-placement warnings (TOTALS Placed beyond Designed), the office-entry backlog per the
-  sheet's own "entered" column, the to-enter worklist, and late entries in one CSV.
+  sheet's own "entered" column, the to-enter worklist, and late entries in one CSV —
+  stamped with its snapshot and run id, and byte-identical on re-export (every timestamp
+  and age derives from the data, never the download).
 - **Monitoring.** Set `HEALTHCHECK_PING_URL` (see `.env.example`) to a free healthchecks.io monitor and get alerted if snapshots ever silently stop.
 
 **When the app seems quiet:** check `docker compose logs sheetdiff` for `[scheduler]` errors (most common: revoked Google token — re-authenticate via the app), verify `curl localhost:3000/api/health` shows `"ok":true` (a non-zero `staleCaptures` means scheduled snapshots are overdue — the pages still render from old data, so this is often the first visible sign), check disk space (`data/backups/` grows), and confirm the container is running (`docker ps`). To restore: stop the container, copy the newest `data/backups/sheetdiff-YYYY-MM-DD.db` over `data/sheetdiff.db` (delete the `-wal` and `-shm` siblings), restart.

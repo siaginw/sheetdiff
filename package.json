@@ -1,6 +1,6 @@
 {
   "name": "sheetdiff",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -61,7 +61,7 @@
   },
   "license": "MIT",
   "keywords": "google-sheets version-control diff audit snapshots construction utilities spreadsheet",
-  "description": "GitHub-style version tracking for Google Sheets — snapshots, diffs, gap linting, and audit workflows for teams whose data gets collected downstream",
+  "description": "GitHub-style version tracking for Google Sheets \u2014 snapshots, diffs, gap linting, and audit workflows for teams whose data gets collected downstream",
   "engines": {
     "node": ">=22"
   },

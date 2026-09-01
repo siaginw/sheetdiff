@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.4.0 — 2026-08-30
+
+**The accounting-grade release.** A five-agent accuracy audit (number
+correctness, adversarial fuzz, data integrity, cross-surface invariants, and
+a forensic pass against a real 36-package production tracker) verified every
+computation path end to end — and found the dedup layer between the tabs and
+the money numbers was not safe for high-dollar use. Measured on the real
+tracker, tracking the compilation tab alongside the working tabs produced
+910,210 ft of placed footage where the true number was 459,472 ft (+98%).
+Everything the audit found is fixed, and the fixes are enforced by a new
+permanent invariant suite that seeds one sheet and asserts every surface —
+dashboard, sheet page, three CSVs, billing page, report, digest — shows the
+SAME numbers, hand-computed independently from the seed data.
+
+- **Identity-keyed cross-tab dedup** (`src/lib/dedupe.ts`). Rows key on work
+  identity (activity + parsed stations — survey notation "2+14", thousands
+  separators, and retyped crews all match the working tab's "214"), with a
+  content-key fallback for station-less tabs. Ownership is decided once on
+  latest data and applied to baselines and window walks too, which makes both
+  the double-count and the "-25,000 ft placed since collection right after
+  collecting" bug structurally impossible. Compilation tabs (≥95% owned
+  content) are skipped by every rollup AND every to-enter count — one
+  classifier, so no two surfaces can ever disagree; their reformatted strays
+  surface as a check finding instead of vanishing. Verified against the real
+  tracker: PE-only and PE+Line-List configurations now export IDENTICAL
+  billing packets.
+- **Byte-identical exports.** Every stamp, aging day-count, and filename date
+  derives from the DATA clock (the latest snapshot), never the export moment —
+  the same data re-exports to identical bytes, and the billing page reads the
+  same clock so the screen and the file cannot disagree.
+- **Exact undo.** "Mark as collected" captures the per-tab baseline state in
+  a validated token; the new `undoBaseline` restores it in one transaction.
+  Mixed per-tab baselines (a tab added later) used to restore only some tabs
+  and silently hide un-entered work behind a success flash.
+- **Never-silent dates and stations.** "Feb 30 2026" (any month-name form,
+  weekday-prefixed or day-first) is unreadable, not March 2nd — it used to
+  mis-age A/R by days. Stations beyond 1e9 ft are not stations; two absurd
+  cells can no longer sum to Infinity footage. 130k-row sheets no longer
+  crash the diff, capture, or gap report (`Math.max(...spread)` → loops).
+- **CSV hardening.** LF end to end (a CRLF/LF mix used to leave `15743` on
+  re-import), pure numbers exempt from the formula guard (`-65` ft
+  corrections round-trip), billing packets stamped with their run id.
+- **Complete invoice ledger.** 1–2 digit invoice numbers land in the billed
+  ledger; anything keyed downstream that matches no recognizable bucket is
+  SURFACED (row, value, column) instead of silently vanishing.
+- **Capture integrity.** A reordered Google batchGet response aborts the
+  capture instead of storing one tab's rows under another tab.
+- **One placed definition.** The footage ledger, weekly buckets, and the gap
+  report's money number all use the same chain rule.
+
+Suite: **353 tests** (24 new, including the cross-surface invariant suite and
+a real-file acceptance harness). Node 22+.
+
 ## 0.3.1 — 2026-08-30
 
 **Requires Node.js 22+** (better-sqlite3 v13 is N-API-based and unsupported on
