@@ -33,7 +33,7 @@ const { getPendingChanges } = await import("./pending");
 const { setAck } = await import("./sync");
 const { buildDigestSheets, sendDigestTo } = await import("./digest");
 
-const NOW = new Date("2026-08-30T12:00:00").getTime();
+const NOW = Date.now();
 const GRID_A0 = [["ID", "Qty"], ["1", "40"]];
 const GRID_A1 = [["ID", "Qty"], ["1", "40"], ["2", "10"]]; // added row
 const GRID_B0 = [["ID", "Qty"], ["9", "5"]];
