@@ -142,7 +142,14 @@ export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boole
       const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
       return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
     };
-    lines.push([r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(","));
+    const KIND_LABELS: Record<BillingRow["kind"], string> = {
+    footage: "FOOTAGE",
+    hole: "DO NOT INVOICE",
+    "to-enter": "TO ENTER",
+    late: "LATE ENTRY",
+    over: "OVER-PLACED",
+  };
+    lines.push([KIND_LABELS[r.kind] ?? r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(","));
   }
   return lines.join("\n");
 }

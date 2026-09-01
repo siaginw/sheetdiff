@@ -31,6 +31,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "The demo login is off. Set ENABLE_DEMO=1 in .env and run `npm run seed-demo` to explore the demo data (never enable this on a real deployment).",
   "app-secret-missing": "Server configuration error: APP_SECRET is missing or too short. Run `npm run setup` to fix it.",
   "oauth-failed": "Google sign-in failed. Please try again.",
+    "demo-not-seeded":
+      "The demo data isn't loaded. Whoever runs this server needs to run 'npm run seed-demo' first.",
   "oauth-state-mismatch": "Sign-in session expired. Please try again.",
   "oauth-missing-code": "Sign-in was incomplete. Please try again.",
 };
@@ -258,6 +260,33 @@ function Landing({ error }: { error: string | null }) {
                 <code className="rounded bg-muted px-1.5 py-0.5">npm run seed-demo</code>
               )}
             </span>          </div>
+        </section>
+
+        {/* trust strip: the questions every first-time visitor has */}
+        <section className="mt-8 rounded-xl border bg-card p-5 sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <p className="font-mono text-xs font-semibold text-foreground">Self-hosted and free</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Runs on your own machine — your sheet data never leaves it. No signup,
+                no subscription, about 10 minutes of one-time setup.
+              </p>
+            </div>
+            <div>
+              <p className="font-mono text-xs font-semibold text-foreground">Read-only, forever</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Connects to Google with a view-only key. It can look at your sheets;
+                it cannot edit, add, or delete anything in them.
+              </p>
+            </div>
+            <div>
+              <p className="font-mono text-xs font-semibold text-foreground">Your team changes nothing</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                They keep typing in the same Google Sheet. SheetDiff just watches —
+                no add-on to install, no new tool to learn.
+              </p>
+            </div>
+          </div>
         </section>
 
         <section className="mt-4">

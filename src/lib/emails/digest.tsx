@@ -63,7 +63,7 @@ export function DigestEmail({
       <Head />
       <Preview>
         {staleSheets.length > 0
-          ? `⚠ ${staleSheets.length} sheet${staleSheets.length === 1 ? "" : "s"} may have stale data${totalUnresolved > 0 ? ` · ${totalUnresolved} to collect` : ""}`
+          ? `⚠ ${staleSheets.length} sheet${staleSheets.length === 1 ? "" : "s"} may have stale data${totalUnresolved > 0 ? ` · ${totalUnresolved} to enter` : ""}`
           : totalUnresolved > 0
             ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} waiting to be collected`
             : "all sheets up to date since collection"}

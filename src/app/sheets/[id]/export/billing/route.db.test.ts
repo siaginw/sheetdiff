@@ -243,15 +243,15 @@ describe("billing route: packet assembly across every tracked tab", () => {
 
     const body = lines.slice(4);
     // footage summary row
-    expect(body).toContain("footage,Placed footage since last collection,400,");
+    expect(body).toContain("FOOTAGE,Placed footage since last collection,400,");
     // the open hole, with its do-not-invoice note tagged with its tab (days-open
     // grows with the wall clock — match, don't pin)
-    expect(body.some((l) => /^hole,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(bill-a\)$/.test(l))).toBe(true);
+    expect(body.some((l) => /^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(bill-a\)$/.test(l))).toBe(true);
     // tab A's crew fix is on the worklist, tagged with its tab
-    expect(body).toContain("to-enter,Crew #: CREW A -> CREW Z,,enter in office system (bill-a)");
+    expect(body).toContain("TO ENTER,Crew #: CREW A -> CREW Z,,enter in office system (bill-a)");
     // NEW rows from both tabs carry the tab tag too (to-enter count 4 = 1
     // change + 2 additions on tab A, 1 addition on tab B)
-    expect(body.filter((l) => l.startsWith("to-enter")).map((l) => l.trimEnd().split(",").pop())).toEqual([
+    expect(body.filter((l) => l.startsWith("TO ENTER")).map((l) => l.trimEnd().split(",").pop())).toEqual([
       "enter in office system (bill-a)",
       "enter in office system (bill-a)",
       "enter in office system (bill-a)",
@@ -261,7 +261,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
     // timezone-adjacent — match, don't pin). The detail contains a comma, so
     // it ships as ONE quoted field — this regex used to match the SPLIT
     // output of the quoting bug itself.
-    expect(body.some((l) => /^late,"Row 3 \(Bore\) dated 8\/10\/2026, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
+    expect(body.some((l) => /^LATE ENTRY,"Row 3 \(Bore\) dated 8\/10\/2026, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
   });
 
   it("an ack on the tab-A change drops exactly that row from the worklist", async () => {
@@ -322,9 +322,9 @@ describe("billing route: a copy tab must not double the CSV (the dead seenRows r
     expect(lines[2]).toBe(
       "# Placed since collection: 200 ft | Open holes: 200 ft | To enter: 1 | Late entries: 0",
     );
-    const holeLines = lines.filter((l) => l.startsWith("hole,"));
+    const holeLines = lines.filter((l) => l.startsWith("DO NOT INVOICE,"));
     expect(holeLines).toHaveLength(1);
     // the hole is attributed to the FIRST tab in position order, never the copy
-    expect(holeLines[0]).toMatch(/^hole,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(cd-a\)$/);
+    expect(holeLines[0]).toMatch(/^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(cd-a\)$/);
   });
 });

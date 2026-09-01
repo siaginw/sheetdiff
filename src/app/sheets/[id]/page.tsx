@@ -723,6 +723,18 @@ export default async function SheetPage({
                     }`}
                   >
                     <span className={`font-mono text-xs ${isActive ? "" : "opacity-60"}`}>{t.title}</span>
+                    {(() => {
+                      const p = pendingByTab.get(t.id);
+                      const n = p?.counts.unresolved ?? 0;
+                      return n > 0 ? (
+                        <span
+                          className="ml-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-diff-move-fg/15 px-1 font-mono text-[9.5px] font-semibold text-diff-move-fg"
+                          title={`${n} change${n === 1 ? "" : "s"} to enter on this tab`}
+                        >
+                          {n}
+                        </span>
+                      ) : null;
+                    })()}
                     {!t.tracked ? <span className="font-mono text-[10px] text-muted-foreground/60">off</span> : null}
                   </Link>
                 );

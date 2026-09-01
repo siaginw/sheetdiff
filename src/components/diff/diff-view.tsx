@@ -88,7 +88,7 @@ function RowActions({
         <button
           type="submit"
           aria-label={acked ? "Mark as not yet entered" : "Mark as entered in the office system"}
-          title={acked ? "Entered downstream — click to un-resolve" : "Mark as entered in the downstream system"}
+          title={acked ? "Entered in the office system — click to undo" : "Mark as entered in the office system"}
           className={`rounded-md p-2 transition-colors ${
             acked
               ? "text-diff-add-fg"

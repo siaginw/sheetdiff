@@ -175,7 +175,7 @@ export default async function BillingPage({
           </Link>
           <div className="flex items-center gap-2">
             <a
-              href={`${sheet.id}/export/billing`}
+              href={`/sheets/${sheet.id}/export/billing`}
               className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
             >
               <Download className="size-4" /> CSV
@@ -249,7 +249,7 @@ export default async function BillingPage({
         ) : null}
 
         {toEnterList.length > 0 ? (
-          <Section title="To enter downstream" tone="move" icon={<Timer className="size-4" />}>
+          <Section title="Still to enter in the office system" tone="move" icon={<Timer className="size-4" />}>
             {toEnterList.slice(0, 15).map((r, i) => (
               <Row key={i} row={r} />
             ))}

@@ -187,7 +187,7 @@ describe("entry queue export", () => {
     const lines = await csvLines("sh1");
     const removed = lines.find((l) => l.startsWith("A,REMOVED"));
     expect(removed).toBeDefined();
-    expect(removed!).toContain("DELETE DOWNSTREAM: s1 | 40");
+    expect(removed!).toContain("DELETE IN OFFICE SYSTEM: s1 | 40");
   });
 
   it("a formula HEADER is neutralized like a formula value", async () => {

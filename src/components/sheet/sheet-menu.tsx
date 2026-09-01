@@ -42,20 +42,20 @@ export function SheetMenu({
           }
         />
         <DropdownMenuContent align="end">
-          <DropdownMenuItem render={<a href={`${spreadsheetId}/export/queue`} />}>
-            <Download /> Entry queue — one row per shot (CSV)
+          <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/export/queue`} />}>
+            <Download /> Typing list — one row per shot (for the office system)
           </DropdownMenuItem>
-          <DropdownMenuItem render={<a href={`${spreadsheetId}/report`} />}>
+          <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/report`} />}>
             <CalendarRange /> Weekly production report
           </DropdownMenuItem>
-          <DropdownMenuItem render={<a href={`${spreadsheetId}/billing`} />}>
+          <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/billing`} />}>
             <ReceiptText /> Billing day dashboard
           </DropdownMenuItem>
-          <DropdownMenuItem render={<a href={`${spreadsheetId}/export`} />}>
-            <Download /> Changes to enter, cell by cell (CSV)
+          <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/export`} />}>
+            <Download /> Every edit, cell by cell (detailed CSV)
           </DropdownMenuItem>
-          <DropdownMenuItem render={<a href={`${spreadsheetId}/export/billing`} />}>
-            <Download /> Billing-day packet (CSV)
+          <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/export/billing`} />}>
+            <Download /> Billing-day summary (CSV)
           </DropdownMenuItem>
           <DropdownMenuItem render={<a href={sheetUrl} target="_blank" rel="noreferrer" />}>
             <ExternalLink /> Open in Google Sheets

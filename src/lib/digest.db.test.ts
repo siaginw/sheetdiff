@@ -110,14 +110,14 @@ describe("digest subject priority (staleness outranks the count)", () => {
     const user = (await db.select().from(users).where(eq(users.id, "u1")))[0]!;
     await sendDigestTo({ ...user, lastDigestAt: 0 });
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.subject).toBe("SheetDiff: 2 changes to collect");
+    expect(sent[0]!.subject).toBe("SheetDiff: 2 changes to enter");
 
     // stale: lastSnapshotAt pushed past the daily 48h window
     sent.length = 0;
     await db.update(spreadsheets).set({ lastSnapshotAt: NOW - 72 * 3_600_000 }).where(eq(spreadsheets.id, "sh1"));
     await sendDigestTo({ ...user, lastDigestAt: 0 });
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.subject).toBe("SheetDiff: ⚠ 1 sheet may be stale · 2 to collect");
+    expect(sent[0]!.subject).toBe("SheetDiff: ⚠ 1 sheet may be stale · 2 to enter");
     // and the sheet entry itself is flagged with its age
     const sheets = await buildDigestSheets("u1", NOW);
     expect(sheets[0]!.lastSnapshotAgo).toBeTruthy();

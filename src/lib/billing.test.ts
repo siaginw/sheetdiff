@@ -62,8 +62,8 @@ describe("buildBillingPacket", () => {
       now: 1,
     });
     const csv = billingPacketCsv(p);
-    const holeLine = csv.split("\n").find((l) => l.startsWith("hole,"))!;
-    const enterLine = csv.split("\n").find((l) => l.startsWith("to-enter,"))!;
+    const holeLine = csv.split("\n").find((l) => l.startsWith("DO NOT INVOICE,"))!;
+    const enterLine = csv.split("\n").find((l) => l.startsWith("TO ENTER,"))!;
     // quote-aware field count stays 4 — a naive comma split would see 5+
     const fields = (line: string) => {
       const out: string[] = [];
@@ -103,7 +103,7 @@ describe("buildBillingPacket", () => {
     expect(over.meta).toMatch(/do not invoice/i);
     const csv = billingPacketCsv(p);
     // detail carries a thousands-separator comma, so it ships as ONE quoted field
-    expect(csv).toContain('over,"US2-PE-002: placed 52,994 ft vs 52,041 ft designed",953,');
+    expect(csv).toContain('OVER-PLACED,"US2-PE-002: placed 52,994 ft vs 52,041 ft designed",953,');
   });
 });
 

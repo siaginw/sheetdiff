@@ -185,9 +185,9 @@ describe("billing page: it renders (the corruption 500'd invisibly)", () => {
     const text = pageText(await render(COPY_SHEET));
     // the worklist row (sheet-controlled activity text containing BILLABLE)
     expect(text).toContain("NEW row: BILLABLE Bore");
-    // it lands under To enter downstream — substring classification would
+    // it lands under Still to enter in the office system — substring classification would
     // have misfiled it into the invoice-ledger Billable section
-    expect(text).toContain("To enter downstream");
+    expect(text).toContain("Still to enter in the office system");
     // the real billable row (from the invoice ledger) is the only one there
     expect(text).toContain("Billable — complete, in GIS, never entered");
   });

@@ -79,6 +79,53 @@ cross-tab check to catch. It also seeds a demo *viewer* — sign in at `/auth/de
 to see exactly what a shared teammate (your data collector) sees. `ENABLE_DEMO` is opt-in and
 should stay off on any real deployment.
 
+## FAQ
+
+**Is it free?** Yes — MIT license, no paid tier, no per-seat pricing. The only optional
+cost is a ~$5/month VPS if you want it always on.
+
+**Can it break or slow down my sheet?** No. SheetDiff uses Google's read-only scope
+(`spreadsheets.readonly`) — the same view a "Viewer" collaborator has. It cannot edit
+cells, and reads happen a few times a day through Google's API, so your team never
+feels it.
+
+**Who can see my data?** Whoever runs the machine it's on. Snapshots, notes, and Google
+tokens live in one folder (`data/`) on that machine. Nothing is sent anywhere else.
+
+**Do my crews need to change how they work?** No. They keep typing into the same shared
+sheet. SheetDiff watches from outside — no add-on to install, no new tool to learn.
+
+**What happens if I stop the server?** Nothing is lost. Every snapshot is already on
+disk. Scheduled snapshots and digest emails pause while it's off and resume when it's
+back (it captures the current state; it does not backfill missed hours).
+
+**How far back does the history go?** By default the newest 200 snapshots per tab plus
+every baseline ("collected") snapshot are kept — roughly 6 months daily or 8 days
+hourly. Set `SHEETDIFF_KEEP_SNAPSHOTS=0` to keep everything forever.
+
+**Can I track multiple sheets?** As many as you like — each gets its own schedule,
+timeline, and badge.
+
+**What if Google changes something?** SheetDiff reads through the public, stable Sheets
+API v4 that thousands of tools depend on. If it ever breaks, every snapshot you've
+already taken stays safe in your local database. Set `HEALTHCHECK_PING_URL` to get
+alerted the moment captures stop.
+
+**Can I get my data out?** Always. Everything lives in one SQLite file in `data/`, and
+worklists/billing export to CSV from the UI. The software is MIT-licensed — it never
+expires and there's no account to cancel.
+
+**Do I need a Google Cloud account?** Just your normal Google account (a free Gmail
+works) — you'll create a free one-time OAuth "client" so SheetDiff can read sheets
+as you. Google doesn't charge for this.
+
+**What's a "redirect URI"?** It tells Google where to send you after you log in.
+Copy-paste `http://localhost:3000/auth/callback` exactly. If you later serve SheetDiff
+at a real domain, add that domain's `/auth/callback` and set `GOOGLE_REDIRECT_URI`.
+
+**Why read-only?** SheetDiff is a camera, not an editor. Read-only means the worst it
+can ever do is look.
+
 ## Privacy
 
 Self-hosted means YOU hold the data — snapshots, tokens, notes, everything lives in

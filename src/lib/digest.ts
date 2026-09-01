@@ -306,9 +306,9 @@ export async function sendDigestTo(user: User): Promise<DigestSendResult> {
       // staleness outranks the count: a count computed from data the app
       // itself flags as stale must not be the headline
       staleCount > 0
-        ? `SheetDiff: ⚠ ${staleCount} sheet${staleCount === 1 ? "" : "s"} may be stale${totalUnresolved > 0 ? ` · ${totalUnresolved} to collect` : ""}`
+        ? `SheetDiff: ⚠ ${staleCount} sheet${staleCount === 1 ? "" : "s"} may be stale${totalUnresolved > 0 ? ` · ${totalUnresolved} to enter` : ""}`
         : totalUnresolved > 0
-          ? `SheetDiff: ${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to collect`
+          ? `SheetDiff: ${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to enter`
           : "SheetDiff: all sheets up to date",
     html,
   });

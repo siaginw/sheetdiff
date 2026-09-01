@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   const sub = asViewer ? "viewer-fake-sub" : "smoke-fake-sub";
   const rows = await db.select().from(users).where(eq(users.googleSub, sub)).limit(1);
   const demo = rows[0];
-  if (!demo) return NextResponse.redirect(new URL("/?error=oauth-failed", url.origin));
+  if (!demo) return NextResponse.redirect(new URL("/?error=demo-not-seeded", url.origin));
 
   const res = NextResponse.redirect(new URL("/", url.origin));
   res.cookies.set(SESSION_COOKIE, signSession(demo.id), {

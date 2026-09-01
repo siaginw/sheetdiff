@@ -147,11 +147,11 @@ describe("setBaseline shared gate", () => {
 
   it("GIS imports can never become the baseline; the manual run can; degenerate runIds are a NO-OP", async () => {
     signIn("owner-1");
-    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-import" }));
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-import" })).catch(() => {});
     const afterImport = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(afterImport.filter((r) => r.trigger === "import").every((r) => !r.isBaseline)).toBe(true);
 
-    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-manual" }));
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-manual" })).catch(() => {});
     const afterManual = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(afterManual.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
 
@@ -159,8 +159,8 @@ describe("setBaseline shared gate", () => {
     // must NOT wipe every baseline — a state the UI can never produce, which
     // was previously reachable by tampering the form
     signIn("viewer-1");
-    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "" }));
-    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-from-another-sheet" }));
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "" })).catch(() => {});
+    await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-from-another-sheet" })).catch(() => {});
     const untouched = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(untouched.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
   });
@@ -241,7 +241,7 @@ describe("setBaseline cross-run scoping (fleet-9)", () => {
     await seedSnapshot("tab-late", "run-late", "manual", true, 200, [["ID"], ["9"]]);
 
     signIn("owner-1");
-    await setBaseline(fd({ spreadsheetId: "sheet-scoped", runId: "run-early" }));
+    await setBaseline(fd({ spreadsheetId: "sheet-scoped", runId: "run-early" })).catch(() => {});
     const rows = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-a", "tab-late"]));
     // tab-a's run-early snapshot is now the baseline...
     expect(rows.find((r) => r.tabId === "tab-a")!.isBaseline).toBe(true);

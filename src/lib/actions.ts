@@ -203,6 +203,9 @@ export async function setBaseline(fd: FormData): Promise<void> {
   }
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
+  // land on the CLEAN since-collection view — revalidating alone keeps the
+  // old ?from/?to params and shows yesterday's diff right after collecting
+  redirect(`/sheets/${spreadsheetId}`);
 }
 
 export async function updateSchedule(fd: FormData): Promise<void> {

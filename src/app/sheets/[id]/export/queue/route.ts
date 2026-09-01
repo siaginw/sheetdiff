@@ -78,7 +78,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
           csvSafe(tab.title),
           "REMOVED",
           "",
-          `DELETE DOWNSTREAM: ${csvSafe(row.values.filter(Boolean).join(" | ") || "(blank row)")}`,
+          `DELETE IN OFFICE SYSTEM: ${csvSafe(row.values.filter(Boolean).join(" | ") || "(blank row)")}`,
         ];
       }
       const changedCols = row.status === "changed" ? row.cells.map((c) => c.header).join("|") : "";
