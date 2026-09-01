@@ -108,7 +108,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const stamp = [
-    `# SheetDiff entry queue — one row per shot, oldest first — generated ${new Date().toISOString()}`,
+    // the DATA clock, never the export moment — byte-identical re-exports
+    `# SheetDiff entry queue — one row per shot, oldest first — data as of ${new Date(latestAtMs || Date.now()).toISOString()}`,
     `# Snapshot: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))} · ${latestLabel}`,
   ];
 
@@ -131,7 +132,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const csv = stamp.join("\n") + "\n" + Papa.unparse(table, { newline: "\n" });
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date(latestAtMs || Date.now()).toISOString().slice(0, 10);
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

@@ -370,6 +370,24 @@ describe("invoiceStatus (the office's own billing ledger)", () => {
   const mk = (a: string, s: string, e: string, c: string, ent: string, inv: string, gis: string) =>
     [a, s, e, c, ent, inv, gis];
 
+  it("short invoice numbers land in the billed ledger; unrecognizable markers are SURFACED, never dropped", () => {
+    const data = snap(H, [
+      mk("Plow", "0", "500", "2026-08-29", "", "12", "Yes"), // 2-digit invoice # — billed ledger
+      mk("Bore", "500", "900", "2026-08-28", "", "7", "Yes"), // 1-digit invoice # — billed ledger
+      mk("Plow", "900", "1000", "2026-08-27", "1", "", "Yes"), // bare "1" in the ENTERED column — ambiguous, surfaced
+      mk("Plow", "1000", "1100", "2026-08-26", "", "check with Dana", "Yes"), // text in Invoice # — surfaced
+    ]);
+    const st = invoiceStatus(data, NOW);
+    expect(st.billedByInvoice).toContainEqual({ invoice: "12", rows: 1 });
+    expect(st.billedByInvoice).toContainEqual({ invoice: "7", rows: 1 });
+    // nothing keyed-but-unknown silently vanished — both odd markers surface
+    expect(st.unclassifiedCount).toBe(2);
+    expect(st.unclassified.map((u) => u.value).sort()).toEqual(["1", "check with Dana"]);
+    expect(st.unclassified.every((u) => u.row > 0 && u.column !== "")).toBe(true);
+    // and none of them fell through to billable-now
+    expect(st.billableNow).toHaveLength(0);
+  });
+
   it("billable-now: completed + in-GIS + never entered, aged by Date Complete", () => {
     const data = snap(H, [
       mk("Plow", "0", "500", "2026-08-29", "", "", "Yes"), // 1d — billable

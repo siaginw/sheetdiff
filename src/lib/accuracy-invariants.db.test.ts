@@ -100,19 +100,23 @@ let UNDO_TOKEN: string | null = null;
 /* ------------------------------------------------------------------ */
 
 const DAY = 86_400_000;
-const T0 = Date.UTC(2026, 7, 10); // run0 — the collected baseline
-const T1 = T0 + 5 * DAY; // run1 — mid-window changes
-const T2 = T0 + 10 * DAY; // run2 — latest, more changes
+// The anchors FLOAT: T2 trails real-now by a second so the billing surfaces'
+// DATA clock (the latest snapshot) and the sheet page's live clock agree by
+// construction — fixed historical anchors would drift apart as real time
+// passes and flip the aging buckets these tests pin.
+const T2 = Date.now() - 1_000; // run2 — latest, more changes
+const T1 = T2 - 5 * DAY; // run1 — mid-window changes
+const T0 = T2 - 10 * DAY; // run0 — the collected baseline
 
 const SHEET = "acc-sheet";
 const TAB_A = "acc-a"; // the working production tab
 const TAB_B = "acc-b"; // the compilation tab: an exact copy of A's latest
 const TAB_T = "acc-tot"; // TOTALS: designed/placed/permit columns
 
-/** "M/D/YYYY" n days before the test runs — keeps office/backlog ages and
- *  invoice-run month markers deterministic on any future run date. */
+/** "M/D/YYYY" n days before the LATEST SNAPSHOT — the data clock every
+ * aging surface reads, so the buckets stay deterministic forever. */
 const dayStr = (daysAgo: number) => {
-  const d = new Date(Date.now() - daysAgo * DAY);
+  const d = new Date(T2 - daysAgo * DAY);
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 };
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -575,6 +579,16 @@ describe("invariants 1–7: one seeded sheet, every number agrees", () => {
     const body = await csvBody(worklistCsvGet);
     expect(body).toContain("waiting on crew timesheet"); // M1's Added line carries its note
     expect(pageText(await renderSheet())).toContain("crew rename batch");
+  });
+
+  it("re-exporting unchanged data is BYTE-IDENTICAL (idempotent, audit-diffable)", async () => {
+    // every timestamp, age, and filename date rides the DATA clock — the
+    // same snapshots must produce the same bytes on every export, forever
+    for (const get of [worklistCsvGet, queueCsvGet, billingCsvGet]) {
+      const a = await csvBody(get);
+      const b = await csvBody(get);
+      expect(a).toBe(b);
+    }
   });
 
   it("CSV exports are LF-consistent end to end — no stray CR survives a machine re-parse", async () => {

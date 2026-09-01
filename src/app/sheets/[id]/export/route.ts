@@ -44,10 +44,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     ["Tab", "Change", "Row ID", "Row", "Column", "Old", "New", "Note", "Seen at"],
   ];
 
+  let dataAsOf = 0;
   for (const tab of tracked) {
     if (copyTabIds.has(tab.id)) continue;
     const pending = await getPendingChanges(tab);
     if (!pending) continue;
+    dataAsOf = Math.max(dataAsOf, pending.latestAt);
     const when = absoluteTime(pending.latestAt);
     // rowKeys are only unique within a tab — scope notes accordingly
     const noteByRow = new Map(
@@ -80,14 +82,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
   }
 
-  // provenance stamps: every export names the snapshot it came from
+  // provenance stamps: every export names the DATA it came from and when
+  // that data was captured — never the export moment, so the same data
+  // exports to byte-identical files every time (audit diffing, idempotency)
   const stamp = [
-    `# SheetDiff changes-to-enter — generated ${new Date().toISOString()}`,
+    `# SheetDiff changes-to-enter — data as of ${new Date(dataAsOf || Date.now()).toISOString()}`,
     `# Sheet: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))}`,
   ];
   const csv = stamp.join("\n") + "\n" + Papa.unparse(rows, { newline: "\n" });
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date(dataAsOf || Date.now()).toISOString().slice(0, 10);
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

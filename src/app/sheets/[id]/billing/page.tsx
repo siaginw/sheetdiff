@@ -77,6 +77,13 @@ export default async function BillingPage({
     tabData.push({ title: tab.title, data });
     dataByTitle.set(tab.title, data);
   }
+  // the DATA clock — the same one the CSV export uses: ages, stamps, and the
+  // packet all read the latest snapshot time, never the render moment, so the
+  // screen and the file can never disagree and re-renders are deterministic
+  const dataAsOf = Math.max(
+    0,
+    ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
+  ) || Date.now();
   const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
@@ -123,14 +130,14 @@ export default async function BillingPage({
         createdAt: s.createdAt,
         data: s.id === latestSnap.id ? freshData : ownedSlice(s.dataBlob),
       }));
-      for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
+      for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })), dataAsOf)) {
         allAgedGaps.push({ ...g, tab: tab.title });
       }
       if (walk.length > 1) for (const e of detectLateEntries(walk)) allLate.push(e);
     }
 
-    officeByTab.push({ tab: tab.title, pipeline: officePipeline(freshData) });
-    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(freshData) });
+    officeByTab.push({ tab: tab.title, pipeline: officePipeline(freshData, dataAsOf) });
+    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(freshData, dataAsOf) });
 
     const pending = await getPendingChanges(tab);
     if (pending) {
@@ -157,6 +164,7 @@ export default async function BillingPage({
     invoices: invoicesByTab,
     overplacement: overplacements,
     snapshotLabel: latestLabel,
+    now: dataAsOf,
   });
 
   // classify by KIND + meta prefix, never by detail-substring (sheet-controlled

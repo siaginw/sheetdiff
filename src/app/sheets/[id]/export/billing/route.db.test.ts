@@ -88,9 +88,18 @@ async function seedSnapshot(id: string, tabId: string, runId: string, trigger: "
 }
 
 const DAY = 86_400_000;
-const T0 = Date.UTC(2026, 7, 25); // baseline
-const T1 = T0 + 2 * DAY; // mid (tab A)
-const T2 = T0 + 4 * DAY; // latest
+// floating anchor: T2 trails real-now so the route's DATA clock (latest
+// snapshot) and the seeded daysAgo() dates agree by construction
+const T2 = Date.now() - 1_000; // latest
+const T1 = T2 - 2 * DAY; // mid (tab A)
+const T0 = T2 - 4 * DAY; // baseline
+/** "M/D/YYYY" n days before the LATEST SNAPSHOT — completion dates ride the
+ * same floating anchor the route's DATA clock reads, so late-entry aging is
+ * deterministic on any future run date. */
+const d = (daysBeforeT2: number) => {
+  const x = new Date(T2 - daysBeforeT2 * DAY);
+  return `${x.getMonth() + 1}/${x.getDate()}/${x.getFullYear()}`;
+};
 const T3 = T0 + 5 * DAY; // GIS import — excluded everywhere
 
 const H = ["Activity", "Start STA", "End STA", "Crew #", "Date Complete"];
@@ -114,40 +123,40 @@ beforeAll(async () => {
   // latest adds a LATE bore 900-1000 dated 8/10/2026. Chain hole 500-700 opens
   // at T1 and is still open at T2 (200 ft).
   await seedSnapshot("ba-base", TAB_A, "ba0", "manual", true, T0,
-    grid(["Plow", "0", "500", "CREW A", "8/20/2026"]));
+    grid(["Plow", "0", "500", "CREW A", d(9)]));
   await seedSnapshot("ba-mid", TAB_A, "ba1", "manual", false, T1,
     grid(
-      ["Plow", "0", "500", "CREW Z", "8/20/2026"], // crew changed vs baseline
-      ["Bore", "700", "900", "HAIDER 1", "8/26/2026"], // entered same-week: NOT late
+      ["Plow", "0", "500", "CREW Z", d(9)], // crew changed vs baseline
+      ["Bore", "700", "900", "HAIDER 1", d(3)], // entered same-week: NOT late
     ));
   await seedSnapshot("ba-last", TAB_A, "ba2", "manual", false, T2,
     grid(
-      ["Plow", "0", "500", "CREW Z", "8/20/2026"],
-      ["Bore", "700", "900", "HAIDER 1", "8/26/2026"],
-      ["Bore", "900", "1000", "HAIDER 1", "8/10/2026"], // entered 2+ weeks late
+      ["Plow", "0", "500", "CREW Z", d(9)],
+      ["Bore", "700", "900", "HAIDER 1", d(3)],
+      ["Bore", "900", "1000", "HAIDER 1", d(19)], // entered 2+ weeks late
     ));
   await seedSnapshot("ba-import", TAB_A, "ba3", "import", false, T3,
-    grid(["Plow", "0", "9999", "X", "8/25/2026"])); // must never leak in
+    grid(["Plow", "0", "9999", "X", d(4)])); // must never leak in
 
   // Tab B: contiguous chain, one new bore since baseline (no holes, no lates).
   await seedSnapshot("bb-base", TAB_B, "bb0", "manual", true, T0,
-    grid(["Plow", "0", "1000", "CREW B", "8/19/2026"]));
+    grid(["Plow", "0", "1000", "CREW B", d(10)]));
   await seedSnapshot("bb-last", TAB_B, "bb1", "manual", false, T2,
     grid(
-      ["Plow", "0", "1000", "CREW B", "8/19/2026"],
-      ["Bore", "1000", "1100", "CREW C", "8/28/2026"],
+      ["Plow", "0", "1000", "CREW B", d(10)],
+      ["Bore", "1000", "1100", "CREW C", d(1)],
     ));
 
   // Untracked tab with wild numbers — must contribute nothing.
   await seedSnapshot("bg-last", TAB_GAMMA, "bg0", "manual", true, T2,
-    grid(["Plow", "0", "5000", "G", "8/25/2026"]));
+    grid(["Plow", "0", "5000", "G", d(4)]));
 
   // A sheet with snapshots but NO baseline (sinceFt unknowable) and a sheet
   // whose tabs are all untracked (400).
   await seedSheet("no-base", "owner", "No Baseline");
   await seedTab("nb-1", "no-base");
-  await seedSnapshot("nb-1a", "nb-1", "nb0", "manual", false, T0, grid(["Plow", "0", "100", "C", "8/20/2026"]));
-  await seedSnapshot("nb-1b", "nb-1", "nb1", "manual", false, T2, grid(["Plow", "0", "200", "C", "8/28/2026"]));
+  await seedSnapshot("nb-1a", "nb-1", "nb0", "manual", false, T0, grid(["Plow", "0", "100", "C", d(9)]));
+  await seedSnapshot("nb-1b", "nb-1", "nb1", "manual", false, T2, grid(["Plow", "0", "200", "C", d(1)]));
 
   await seedSheet("no-tabs", "owner", "No Tracked Tabs");
   await seedTab("nt-1", "no-tabs", false);
@@ -180,15 +189,15 @@ beforeAll(async () => {
   await seedSheet("csv-copy", "owner", "CSV Copy Tracker");
   await db.insert(tabs).values({ id: "cd-a", spreadsheetId: "csv-copy", title: "cd-a", position: 0, tracked: true, keyColumn: 0 });
   await db.insert(tabs).values({ id: "cd-b", spreadsheetId: "csv-copy", title: "cd-b", position: 1, tracked: true, keyColumn: 0 });
-  await seedSnapshot("cc-a-base", "cd-a", "cc0", "manual", true, T0, grid(["Plow", "0", "500", "CREW A", "8/20/2026"]));
+  await seedSnapshot("cc-a-base", "cd-a", "cc0", "manual", true, T0, grid(["Plow", "0", "500", "CREW A", d(9)]));
   await seedSnapshot("cc-a-last", "cd-a", "cc1", "manual", false, T2, grid(
-    ["Plow", "0", "500", "CREW A", "8/20/2026"],
-    ["Bore", "700", "900", "CREW A", "8/28/2026"], // opens the 500-700 hole, +200 ft since baseline
+    ["Plow", "0", "500", "CREW A", d(9)],
+    ["Bore", "700", "900", "CREW A", d(1)], // opens the 500-700 hole, +200 ft since baseline
   ));
-  await seedSnapshot("cc-b-base", "cd-b", "cc2", "manual", true, T1, grid(["Plow", "0", "500", "CREW A", "8/20/2026"]));
+  await seedSnapshot("cc-b-base", "cd-b", "cc2", "manual", true, T1, grid(["Plow", "0", "500", "CREW A", d(9)]));
   await seedSnapshot("cc-b-last", "cd-b", "cc3", "manual", false, T3, grid(
-    ["Plow", "0", "500", "CREW A", "8/20/2026"],
-    ["Bore", "700", "900", "CREW A", "8/28/2026"],
+    ["Plow", "0", "500", "CREW A", d(9)],
+    ["Bore", "700", "900", "CREW A", d(1)],
   ));
 });
 
@@ -231,7 +240,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
 
     const csv = await res.text();
     const lines = csv.split("\n");
-    expect(lines[0]).toMatch(/^# SheetDiff billing packet — generated /);
+    expect(lines[0]).toMatch(/^# SheetDiff billing packet — data as of /);
     // label = the LATEST MANUAL snapshot of the tracked tabs (the T3 import
     // must not win; both tracked tabs' latest is T2 so tab order can't matter)
     expect(lines[1]).toBe(`# Snapshot: ${absoluteTime(T2)} · run ba2`);
@@ -261,7 +270,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
     // timezone-adjacent — match, don't pin). The detail contains a comma, so
     // it ships as ONE quoted field — this regex used to match the SPLIT
     // output of the quoting bug itself.
-    expect(body.some((l) => /^LATE ENTRY,"Row 3 \(Bore\) dated 8\/10\/2026, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
+    expect(body.some((l) => /^LATE ENTRY,"Row 3 \(Bore\) dated \d+\/\d+\/\d+, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
   });
 
   it("an ack on the tab-A change drops exactly that row from the worklist", async () => {

@@ -693,9 +693,12 @@ export function quietStoppageLog(
 const INVOICE_NUM_RE = /invoice\s*#|invoice\s*no|inv\s*#/i;
 const MONTH_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$/i;
 const GIS_COL_RE = /bore\s*log.*gis|in\s*gis/i;
-/** invoice numbers: 3–8 digits (the office's own numbering is 4–5 today, but a
- *  7-digit number must land in the billed ledger, not silently vanish) */
+/** invoice numbers: 3–8 digits in the entered column (a bare "1"/"2" there is
+ *  too ambiguous to file as an invoice number), 1–8 in the Invoice # column
+ *  itself — that column exists to carry invoice numbers, so a 2-digit office
+ *  numbering must land in the billed ledger, not silently vanish */
 const INVOICE_DIGITS_RE = /^\d{3,8}$/;
+const INVOICE_COL_DIGITS_RE = /^\d{1,8}$/;
 const MONTH_PREFIX_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
 /** Values in a GIS column that explicitly say the sub's log is NOT in yet.
  *  Anything else non-blank counts as in-GIS (kept permissive — date stamps,
@@ -737,6 +740,10 @@ export interface InvoiceStatus {
   billedByInvoice: { invoice: string; rows: number }[];
   /** month-named markers for a run that has already happened */
   missedRun: { invoice: string; rows: number }[];
+  /** keyed downstream but matching no bucket we recognize (odd vocabulary,
+   *  stray text in a ledger column) — shown, never silently dropped */
+  unclassified: { row: number; value: string; column: string }[];
+  unclassifiedCount: number;
 }
 
 /** Read the office's own billing ledger: "Entered in InEight" (dates once
@@ -753,6 +760,8 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
     oldestAgeDays: null,
     billedByInvoice: [],
     missedRun: [],
+    unclassified: [],
+    unclassifiedCount: 0,
   };
   let enteredCol: number | null = null;
   for (let i = 0; i < data.headers.length; i++) {
@@ -794,8 +803,23 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
           else invCounts.set(`queued: ${marker}`, (invCounts.get(`queued: ${marker}`) ?? 0) + 1);
         }
       } else {
-        const numeric = INVOICE_DIGITS_RE.test(entered) ? entered : INVOICE_DIGITS_RE.test(invoice) ? invoice : "";
-        if (numeric !== "") invCounts.set(numeric, (invCounts.get(numeric) ?? 0) + 1);
+        const numeric = INVOICE_DIGITS_RE.test(entered)
+          ? entered
+          : INVOICE_COL_DIGITS_RE.test(invoice)
+            ? invoice
+            : "";
+        if (numeric !== "") {
+          invCounts.set(numeric, (invCounts.get(numeric) ?? 0) + 1);
+        } else {
+          // keyed downstream, but the marker matches no bucket we know —
+          // SURFACE it (capped) instead of letting it vanish from the ledger
+          const enteredRecognized = MONTH_RE.test(entered) || INVOICE_DIGITS_RE.test(entered);
+          const from = enteredRecognized ? invoice : entered !== "" ? entered : invoice;
+          if (out.unclassified.length < 20) {
+            out.unclassified.push({ row: i + 1, value: from, column: entered !== "" ? out.enteredColumn ?? "" : out.invoiceColumn ?? "" });
+          }
+          out.unclassifiedCount++;
+        }
       }
       return;
     }

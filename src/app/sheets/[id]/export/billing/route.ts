@@ -72,6 +72,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     tabData.push({ title: tab.title, data });
     dataByTitle.set(tab.title, data);
   }
+  // the DATA clock: every timestamp, age, and the filename date derive from
+  // the latest snapshot, never the export moment — the same data must export
+  // to byte-identical files every time (audit diffing, idempotency)
+  const dataAsOf = Math.max(
+    0,
+    ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
+  ) || Date.now();
   const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
@@ -125,7 +132,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         createdAt: s.createdAt,
         data: s.id === latestSnap.id ? latestData : ownedSlice(s.dataBlob),
       }));
-        for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })))) {
+        for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })), dataAsOf)) {
           allAgedGaps.push({ ...g, tab: tab.title });
         }
         if (walk.length > 1) {
@@ -133,9 +140,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         }
       }
 
-    // the office-entry backlog comes from the sheet's own entered-column
-    officeByTab.push({ tab: tab.title, pipeline: officePipeline(latestData) });
-    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(latestData) });
+    // the office-entry backlog comes from the sheet's own entered-column —
+    // aged against the DATA clock so re-exports are byte-identical
+    officeByTab.push({ tab: tab.title, pipeline: officePipeline(latestData, dataAsOf) });
+    invoicesByTab.push({ tab: tab.title, status: invoiceStatus(latestData, dataAsOf) });
 
     const pending = await getPendingChanges(tab);
     if (pending) {
@@ -160,13 +168,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     office: officeByTab,
     invoices: invoicesByTab,
     snapshotLabel: latestLabel,
+    now: dataAsOf,
   });
 
   // when the number is unknowable (no tab had a baseline), say so — never a confident 0
   const csv = billingPacketCsv(packet, { sinceFtKnown: anyBaselineFound });
 
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date(dataAsOf).toISOString().slice(0, 10);
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

@@ -130,7 +130,7 @@ export function buildBillingPacket(input: {
 /** CSV export of the billing packet, stamped with its snapshot provenance. */
 export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boolean }): string {
   const lines: string[] = [
-    `# SheetDiff billing packet — generated ${new Date(p.generatedAt).toISOString()}`,
+    `# SheetDiff billing packet — data as of ${new Date(p.generatedAt).toISOString()} (byte-identical on re-export)`,
     `# Snapshot: ${p.snapshotLabel}`,
     `# Placed since collection: ${opts?.sinceFtKnown === false ? "COULD NOT DETERMINE — verify collection marker" : p.placedSinceFt.toLocaleString("en-US") + " ft"} | Open holes: ${p.openHoleFt.toLocaleString("en-US")} ft | To enter: ${p.toEnterCount} | Late entries: ${p.lateCount}`,
     `Kind,Detail,Ft,Note`,

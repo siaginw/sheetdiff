@@ -26,7 +26,7 @@ function Section({
   );
 }
 
-function Line({ tone, children }: { tone?: "danger" | "warn" | "muted" | "good"; children: React.ReactNode }) {
+function Line({ tone, title, children }: { tone?: "danger" | "warn" | "muted" | "good"; title?: string; children: React.ReactNode }) {
   const cls =
     tone === "danger"
       ? "bg-diff-del-bg text-diff-del-fg"
@@ -35,7 +35,11 @@ function Line({ tone, children }: { tone?: "danger" | "warn" | "muted" | "good";
         : tone === "good"
           ? "bg-diff-add-bg text-diff-add-fg"
           : "bg-muted/60 text-foreground/80";
-  return <p className={`rounded-md px-2 py-1 font-mono text-xs ${cls}`}>{children}</p>;
+  return (
+    <p className={`rounded-md px-2 py-1 font-mono text-xs ${cls}`} title={title}>
+      {children}
+    </p>
+  );
 }
 
 /**
@@ -182,7 +186,7 @@ export function ProductionPanel({
         </Section>
       ) : null}
 
-      {invoices && invoices.enteredColumn && (invoices.billableNow.length > 0 || invoices.billedByInvoice.length > 0 || invoices.missedRun.length > 0) ? (
+      {invoices && invoices.enteredColumn && (invoices.billableNow.length > 0 || invoices.billedByInvoice.length > 0 || invoices.missedRun.length > 0 || invoices.unclassifiedCount > 0) ? (
         <Section icon={<Receipt className="size-3.5" />} title={`Invoice ledger (per the sheet's “${invoices.enteredColumn}” column)`}>
           {invoices.missedRun.map((m) => (
             <Line key={`missed-${m.invoice}`} tone="danger">
@@ -212,6 +216,12 @@ export function ProductionPanel({
             </Line>
           ))}
           {invoices.billedByInvoice.length > 5 && <Line tone="muted">+{invoices.billedByInvoice.length - 5} more ledger lines…</Line>}
+          {invoices.unclassified.slice(0, 3).map((u) => (
+            <Line key={`uncls-${u.row}`} tone="warn" title={`A value in the ledger column that is neither an invoice number nor a month-named run. The row is treated as entered; classify it so the ledger rollup can count it.`}>
+              row {u.row} keyed “{u.value}” in {u.column} — not an invoice # or month run we recognize
+            </Line>
+          ))}
+          {invoices.unclassifiedCount > 3 && <Line tone="muted">+{invoices.unclassifiedCount - 3} more keyed-but-unrecognized…</Line>}
         </Section>
       ) : null}
 
