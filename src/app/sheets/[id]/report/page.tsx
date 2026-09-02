@@ -53,14 +53,14 @@ export default async function ReportPage({
   // never an inline reimplementation. A tab left with no fresh rows is a pure
   // copy: SKIP it — a bare `return` here used to blank the whole report the
   // moment any tracked tab duplicated another's rows.
-  const tabData: { title: string; data: SnapshotData }[] = [];
+  const tabData: { title: string; data: SnapshotData; keyColumn?: number | null }[] = [];
   for (const tab of trackedTabs) {
     const snap = latestByTab.get(tab.id);
     if (!snap) continue;
     const data = decodeSnapshot(snap.dataBlob);
     if (!computeFootage(data).stations) continue;
     latestAt = Math.max(latestAt ?? 0, snap.createdAt);
-    tabData.push({ title: tab.title, data });
+    tabData.push({ title: tab.title, data, keyColumn: tab.keyColumn });
   }
   const { freshByTab, pureCopies, duplicatesDropped } = dedupeTabData(tabData);
   const prodTabs: SnapshotData[] = []; // fresh (deduped) data — the quiet-log clock

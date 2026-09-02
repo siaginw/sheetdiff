@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.0 — 2026-09-02
+
+**Works with any sheet.** SheetDiff's core loop was always sheet-agnostic;
+the identity layer wasn't. Row identity now runs through a smart hierarchy —
+your chosen key column (validated: populated + unique, or ignored), then
+activity+stations, then an auto-detected ID column (vocabulary widened:
+Order, Part, Invoice, Asset, Serial, Email, Client, Customer, Account,
+Request, Case, Batch, Lot, License, Permit), then whole-row content — with
+content registered alongside every tier so verbatim copies match regardless
+of how each side keyed. The identity tier is decided ONCE on latest data and
+applied to baselines and window walks; per-slice resolution could key the
+same row differently at different times and inflate placed-since (caught by
+a fixture while shipping this).
+
+- Same key twice in one tab = two rows, not a duplicate (two warehouse lines,
+  one SKU); across tabs it still counts once.
+- Generic sheets are honest about the math: the billing page/CSV says
+  "COULD NOT DETERMINE — no collection marker or no station columns
+  (row-based sheet)" instead of a confident 0 ft; the to-enter worklist,
+  acks, digest, and copy-tab detection work identically.
+- New acceptance suite: a generic inventory sheet (no stations, no
+  construction vocabulary) — copy classification via auto-detected SKU
+  column, every count surface agreeing, honest billing output.
+- Construction path re-verified against the real tracker: PE-only and
+  PE+Line-List configurations still export identical billing packets.
+- Wording: "one row per entry" (was "per shot") in the typing list and its
+  menu label; the tab-settings dialog explains what "Match rows by" drives.
+
+Suite: **361 tests**. Node 22+.
+
 ## 0.4.0 — 2026-08-30
 
 **The accounting-grade release.** A five-agent accuracy audit (number
@@ -39,7 +69,8 @@ SAME numbers, hand-computed independently from the seed data.
   mis-age A/R by days. Stations beyond 1e9 ft are not stations; two absurd
   cells can no longer sum to Infinity footage. 130k-row sheets no longer
   crash the diff, capture, or gap report (`Math.max(...spread)` → loops).
-- **CSV hardening.** LF end to end (a CRLF/LF mix used to leave `15743` on
+- **CSV hardening.** LF end to end (a CRLF/LF mix used to leave `15743
+` on
   re-import), pure numbers exempt from the formula guard (`-65` ft
   corrections round-trip), billing packets stamped with their run id.
 - **Complete invoice ledger.** 1–2 digit invoice numbers land in the billed

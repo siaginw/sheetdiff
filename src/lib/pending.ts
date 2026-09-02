@@ -203,10 +203,10 @@ export async function pureCopyTabIds(tabRows: Tab[]): Promise<Set<string>> {
   const tracked = tabRows.filter((t) => t.tracked).sort((a, b) => a.position - b.position);
   if (tracked.length === 0) return new Set();
   const latestByTab = await latestNonImportSnapshots(tracked.map((t) => t.id));
-  const grids: { title: string; data: SnapshotData }[] = [];
+  const grids: { title: string; data: SnapshotData; keyColumn?: number | null }[] = [];
   for (const t of tracked) {
     const snap = latestByTab.get(t.id);
-    if (snap) grids.push({ title: t.title, data: rememberSnapshot(snap.id, snap.dataBlob) });
+    if (snap) grids.push({ title: t.title, data: rememberSnapshot(snap.id, snap.dataBlob), keyColumn: t.keyColumn });
   }
   if (grids.length === 0) return new Set();
   const { pureCopies } = dedupeTabData(grids);

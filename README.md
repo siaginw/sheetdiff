@@ -4,6 +4,13 @@ SheetDiff snapshots your team's Google Sheets and shows **GitHub-style diffs** b
 snapshots — added rows, removed rows, changed cells as `old → new` — so the people who *collect*
 your data always know what changed since they last pulled it.
 
+**It works with any sheet.** Inventory, budgets, pipelines, logs, production trackers — the
+core loop (snapshots → diffs → "what do I still need to enter?" → audit trail) is sheet-agnostic,
+with smart row identifiers detected automatically. Utility construction was the proving ground, so
+those sheets get extra math for free (footage chains, gap reports, billing packets) — every one of
+those features activates only when your sheet carries the vocabulary for it, and stays out of the
+way when it doesn't.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ![The sheet page — diff since last collection, with the billing-day badge](docs/img/diff-dark.png)
@@ -48,6 +55,32 @@ on the dashboard.
 - **Scheduled or manual snapshots.** Hourly / daily at a time / weekly, or "Snapshot now".
 - **GitHub-style UI.** Red/green `−/+` lines, changed-value annotations, diffstat blocks, a
   git-log timeline, code/table layouts, dark mode.
+
+## Works with any sheet — smart identifiers, honest math
+
+The same mechanism that matches "the 14800–15743 plow" across two snapshots on a construction
+tracker matches "SKU A-100" on an inventory sheet or "Ticket 4021" on a support log. Every row
+gets an identity through a hierarchy that needs **zero configuration**:
+
+1. **Your choice** — pick a "Match rows by" column per tab (Tab settings → Match rows by). A pick
+   that can't actually identify rows (values repeat or are blank) is validated and ignored, so a
+   bad choice can't corrupt counts.
+2. **Work identity** — activity + parsed station ranges, on sheets that carry stations
+   (`164+82` ≡ `16,482` ≡ `16482`).
+3. **Auto-detected ID column** — any column whose header says identifier (`ID`, `SKU`, `Ticket #`,
+   `Order`, `Email`, `PO`, `Asset`, … — [the full vocabulary][vocab]) and whose values are
+   populated and unique.
+4. **Whole-row content** — always available as the fallback; also registered alongside the other
+   tiers so a verbatim copy of a tab matches no matter how each side keyed its rows.
+
+[vocab]: https://github.com/siaginw/sheetdiff/blob/main/src/lib/diff/engine.ts
+
+That identity drives **everything**: diffing, acknowledgment tracking, compilation-tab detection
+(a "Master List" that re-lists your working tab is tagged `copy` and counted zero times), and the
+to-enter counts that agree across every surface. And the math stays honest on sheets without
+stations — the billing packet says *"COULD NOT DETERMINE — no station columns (row-based sheet)"*
+instead of a confident `0 ft`, while the to-enter worklist, late entries, and office backlog (if
+your sheet tracks an "entered" column) work exactly the same as on a tracker.
 
 ## Accounting-grade accuracy
 

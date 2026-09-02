@@ -97,7 +97,7 @@ export interface DiffOptions {
   toWhen?: number | null;
 }
 
-const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit|shot)$/;
+const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit|shot|order|part|invoice|asset|serial|email|client|customer|account|request|case|batch|lot|license|permit)$/;
 
 /**
  * Auto-detect the column that identifies rows. A column qualifies when its

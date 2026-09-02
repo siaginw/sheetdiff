@@ -146,3 +146,103 @@ describe("dedupeTabData — work identity, not cell text", () => {
     expect(out.freshByTab.get("C")).toEqual([["Bore", "0", "501", "A", "8/1/2026"]]);
   });
 });
+
+describe("dedupeTabData — smart identifiers on ANY sheet", () => {
+  const INV = ["SKU", "Item", "Qty", "Location"];
+
+  it("an inventory sheet keyed by SKU detects a reformatted compilation copy", () => {
+    // no stations anywhere — identity comes from the auto-detected key column
+    const stock = snap(INV, [
+      ["A-100", "Pump 2in", "4", "Yard 1"],
+      ["B-220", "Valve 6in", "12", "Yard 2"],
+      ["C-330", "Coupler", "40", "Trailer 3"],
+    ]);
+    const masterList = snap(["Part", "Description", "On Hand", "Yard"], [
+      ["a-100", "Pump 2\"", "4", "Yard 1"], // retyped description, same key
+      ["B-220", "Valve 6in", "12", "Yard 2"],
+      ["C-330", "Coupler", "40", "Trailer 3"],
+    ]);
+    const out = dedupeTabData([
+      { title: "Stock", data: stock, keyColumn: null },
+      { title: "Master List", data: masterList, keyColumn: null },
+    ]);
+    expect(out.pureCopies).toEqual(new Set(["Master List"]));
+    expect(out.duplicatesDropped).toBe(3);
+  });
+
+  it("the same key twice in ONE tab is two rows, not a duplicate", () => {
+    // two warehouse lines for one SKU — both kept (unlike station work
+    // identity, where the same shot listed twice is one shot)
+    const stock = snap(INV, [
+      ["A-100", "Pump 2in", "4", "Yard 1"],
+      ["A-100", "Pump 2in", "2", "Trailer 3"],
+      ["B-220", "Valve 6in", "12", "Yard 2"],
+    ]);
+    const other = snap(INV, [["Z-999", "Widget", "1", "Yard 9"]]);
+    const out = dedupeTabData([
+      { title: "Stock", data: stock, keyColumn: null },
+      { title: "Other", data: other, keyColumn: null },
+    ]);
+    expect(out.duplicatesDropped).toBe(0);
+    expect(out.freshByTab.get("Stock")).toHaveLength(3);
+    expect(out.pureCopies.size).toBe(0);
+    // a later tab re-listing the rows still dedups — note the tier mismatch:
+    // Stock's SKU values repeat, so Stock keyed by CONTENT while Copy (unique
+    // keys) keyed by COLUMN; the verbatim rows still match through the dual
+    // identity. (Known edge: a REFORMATTED copy of a repeat-keyed tab whose
+    // values also changed matches on neither tier and is kept — merging on a
+    // non-unique value would collide rows that merely share a date.)
+    const copy = snap(INV, [
+      ["A-100", "Pump 2in", "4", "Yard 1"],
+      ["B-220", "Valve 6in", "12", "Yard 2"],
+    ]);
+    const out2 = dedupeTabData([
+      { title: "Stock", data: stock, keyColumn: null },
+      { title: "Copy", data: copy, keyColumn: null },
+    ]);
+    expect(out2.freshByTab.get("Copy")).toEqual([
+      ["", "", "", ""],
+      ["", "", "", ""],
+    ]);
+    expect(out2.pureCopies).toEqual(new Set(["Copy"]));
+  });
+
+  it("an invalid explicit key column degrades to the next tier instead of colliding rows", () => {
+    // someone picked "Activity" as the key, but activities repeat — the
+    // choice is ignored (validated like auto-detection: populated + unique)
+    const H = ["Activity", "Start STA", "End STA"];
+    const t1 = snap(H, [
+      ["Plow", "0", "500"],
+      ["Bore", "700", "900"],
+      ["Bore", "900", "1000"], // "Bore" repeats — column 0 cannot identify
+    ]);
+    const t2 = snap(H, [
+      ["Plow", "0", "1000"],
+      ["Bore", "1000", "1100"],
+    ]);
+    const out = dedupeTabData([
+      { title: "A", data: t1, keyColumn: 0 },
+      { title: "B", data: t2, keyColumn: 0 },
+    ]);
+    // without the guard, "plow"/"bore" collide cross-tab and B becomes a copy
+    expect(out.pureCopies.size).toBe(0);
+    expect(out.duplicatesDropped).toBe(0);
+  });
+
+  it("identity tier is decided on LATEST data and applied to every slice", () => {
+    // the cross-time trap: a 2-row tab where the override looks valid at
+    // latest. The baseline (1 row, any column is "unique") must key the SAME
+    // way, or the baseline row vanishes and placed-since inflates.
+    const H = ["Activity", "Start STA", "End STA"];
+    const latest = snap(H, [
+      ["Plow", "0", "500"],
+      ["Bore", "500", "900"], // activities distinct at latest: override valid
+    ]);
+    const baseline = snap(H, [["Plow", "0", "500"]]);
+    const out = dedupeTabData([{ title: "A", data: latest, keyColumn: 0 }]);
+    const owned = out.ownedRows(new Map([["A", baseline]]));
+    // the baseline plow row keys k:plow at latest AND k:plaw at the slice —
+    // same tier, same namespace, still owned by A
+    expect((owned.get("A") ?? [])[0]).toEqual(["Plow", "0", "500"]);
+  });
+});

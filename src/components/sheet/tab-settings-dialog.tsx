@@ -106,6 +106,11 @@ export function TabSettingsDialog({
                 </SelectContent>
               </Select>
             </div>
+            <p className="-mt-2 text-[11px] leading-snug text-muted-foreground">
+              Used for diffs <em>and</em> for spotting tabs that copy other tabs. Pick a column whose
+              value identifies a row (unique, filled in) — anything else falls back to smart
+              detection, so a bad pick can&apos;t corrupt counts.
+            </p>
             <div className="grid grid-cols-4 items-center gap-2">
               <Label htmlFor="track-tab" className="text-right text-sm">Tracked</Label>
               <div className="col-span-3 flex items-center gap-2">

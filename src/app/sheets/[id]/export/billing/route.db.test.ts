@@ -295,7 +295,7 @@ describe("billing route: unknowable footage says so, never a confident 0", () =>
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\n");
     expect(lines[2]).toBe(
-      "# Placed since collection: COULD NOT DETERMINE — verify collection marker | Open holes: 0 ft | To enter: 0 | Late entries: 0",
+      "# Placed since collection: COULD NOT DETERMINE — no collection marker or no station columns (row-based sheet) | Open holes: 0 ft | To enter: 0 | Late entries: 0",
     );
   });
 });

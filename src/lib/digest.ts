@@ -84,7 +84,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     }
     const tabData = [...latestDataByTab.entries()].map(([tabId, data]) => {
       const t = tracked.find((x) => x.id === tabId);
-      return { title: t?.title ?? tabId, data };
+      return { title: t?.title ?? tabId, data, keyColumn: t?.keyColumn ?? null };
     });
     const deduped = dedupeTabData(tabData);
 

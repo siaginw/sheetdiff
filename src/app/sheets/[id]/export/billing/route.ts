@@ -7,6 +7,7 @@ import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { computeGapReport } from "@/lib/gaps";
+import { detectStationColumns } from "@/lib/detect";
 import { agingGaps, detectLateEntries, detectOverplacement, officePipeline, invoiceStatus, dedupeTabData, type LateEntry, type AgingGap, type OverplacementFinding, type OfficePipeline } from "@/lib/production";
 import { buildBillingPacket, billingPacketCsv } from "@/lib/billing";
 import { absoluteTime } from "@/lib/format";
@@ -53,13 +54,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const allLateEntries: LateEntry[] = [];
   let totalSinceFt = 0;
   let anyBaselineFound = false;
+  let anyStations = false; // footage math exists at all (station columns)
   let latestLabel = "unknown";
   let latestAtMs = 0;
 
   // compilation tabs double every finding — dedupe rows cross-tab BEFORE any
   // per-tab aggregation via the shared helper (the dashboard page does the
   // same; the CSV and the screen must never disagree on billing day)
-  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot> }[] = [];
+  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot>; keyColumn?: number | null }[] = [];
   const dataByTitle = new Map<string, ReturnType<typeof decodeSnapshot>>();
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
@@ -69,7 +71,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // (gunzip + JSON.parse is synchronous event-loop work; the same blob was
     // decoded four times per tab here before)
     const data = decodeSnapshot(latestSnap.dataBlob);
-    tabData.push({ title: tab.title, data });
+    tabData.push({ title: tab.title, data, keyColumn: tab.keyColumn });
     dataByTitle.set(tab.title, data);
   }
   // the DATA clock: every timestamp, age, and the filename date derive from
@@ -94,6 +96,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       headers: dataByTitle.get(tab.title)!.headers,
       rows: freshByTab.get(tab.title) ?? [],
     };
+    if (detectStationColumns(latestData)) anyStations = true;
     const latestReport = computeGapReport(latestData);
     // non-latest snapshots filtered to rows THIS tab owns — the page does the
     // same, and the CSV and the screen must never disagree on billing day
@@ -172,7 +175,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   });
 
   // when the number is unknowable (no tab had a baseline), say so — never a confident 0
-  const csv = billingPacketCsv(packet, { sinceFtKnown: anyBaselineFound });
+  const csv = billingPacketCsv(packet, { sinceFtKnown: anyBaselineFound && anyStations });
 
   const safeTitle = sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date(dataAsOf).toISOString().slice(0, 10);

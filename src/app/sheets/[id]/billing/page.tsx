@@ -18,6 +18,7 @@ import { getSheetAccess } from "@/lib/access";
 import { getPendingChanges } from "@/lib/pending";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { computeGapReport } from "@/lib/gaps";
+import { detectStationColumns } from "@/lib/detect";
 import {
   agingGaps,
   detectLateEntries,
@@ -54,6 +55,7 @@ export default async function BillingPage({
 
   let placedSinceFt = 0;
   let anyBaseline = false;
+  let anyStations = false; // footage math exists at all (station columns)
   let latestLabel = "unknown";
   let latestAtMs = 0;
   const allAgedGaps: (AgingGap & { tab?: string })[] = [];
@@ -68,13 +70,13 @@ export default async function BillingPage({
   // hole, billable row, and office backlog entry on the money page — the
   // shared cross-tab dedup (same algorithm as the CSV export and the weekly
   // report) keys each row once; a pure copy tab contributes nothing
-  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot> }[] = [];
+  const tabData: { title: string; data: ReturnType<typeof decodeSnapshot>; keyColumn?: number | null }[] = [];
   const dataByTitle = new Map<string, ReturnType<typeof decodeSnapshot>>();
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
     if (!latestSnap) continue;
     const data = decodeSnapshot(latestSnap.dataBlob);
-    tabData.push({ title: tab.title, data });
+    tabData.push({ title: tab.title, data, keyColumn: tab.keyColumn });
     dataByTitle.set(tab.title, data);
   }
   // the DATA clock — the same one the CSV export uses: ages, stamps, and the
@@ -103,6 +105,7 @@ export default async function BillingPage({
       headers: dataByTitle.get(tab.title)!.headers,
       rows: freshByTab.get(tab.title) ?? [],
     };
+    if (detectStationColumns(freshData)) anyStations = true;
     const latestReport = computeGapReport(freshData);
     // any non-latest snapshot of this tab is filtered to the rows THIS tab
     // owns (ownership decided on latest data) — a compilation tab's copied
@@ -181,7 +184,10 @@ export default async function BillingPage({
   const toEnterList = packet.rows.filter(
     (r) => r.kind === "to-enter" && !r.meta?.startsWith("invoice when entered") && !r.meta?.startsWith("per the sheet"),
   );
-  const sinceFtKnown = anyBaseline;
+  // footage-since is only knowable when BOTH a collection point exists AND
+  // the sheet carries station columns — a generic sheet (no stations) must
+  // say so instead of confidently reporting "0 ft"
+  const sinceFtKnown = anyBaseline && anyStations;
   const billableCount = invoicesByTab.reduce((n, i) => n + i.status.billableNow.length, 0);
 
   return (
@@ -209,7 +215,11 @@ export default async function BillingPage({
           <h1 className="text-2xl font-semibold tracking-tight">{sheet.title}</h1>
           <p className="mt-1 font-mono text-xs text-muted-foreground">
             billing day · snapshot {latestLabel}
-            {sinceFtKnown ? "" : " · no collection point yet — footage since is unknown"}
+            {sinceFtKnown
+              ? ""
+              : !anyStations
+                ? " · no station columns — this sheet tracks rows, not footage; the to-enter counts below are the numbers that matter"
+                : " · no collection point yet — footage since is unknown"}
           </p>
         </header>
 
@@ -217,7 +227,13 @@ export default async function BillingPage({
           <Card
             label="placed since collection"
             value={sinceFtKnown ? `${ft(placedSinceFt)} ft` : "—"}
-            sub={sinceFtKnown && placedSinceFt < 0 ? "negative = corrections/removals since the last collection" : undefined}
+            sub={
+              sinceFtKnown && placedSinceFt < 0
+                ? "negative = corrections/removals since the last collection"
+                : !anyStations
+                  ? "row-based sheet — footage math is station sheets only"
+                  : undefined
+            }
             icon={<Camera className="size-3.5" />}
           />
           <Card

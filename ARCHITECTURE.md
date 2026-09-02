@@ -128,9 +128,13 @@ CSV worklist export, and the digest, so the three can never disagree.
   of EVERY central-directory entry (descriptors included) against a shared
   budget, and EOCD entry-count-lie rejection).
 - **Cross-tab dedup** (`dedupe.ts`) — the ONE algorithm every sheet-wide
-  rollup uses. Rows key on work identity (activity + PARSED stations, so a
-  compilation tab's "2+14" matches the working tab's "214"), content-key
-  fallback for station-less tabs. Ownership is decided once on latest data
+  rollup uses, on ANY sheet. Row identity runs a smart hierarchy: the tab's
+  chosen key column (validated populated+unique, else ignored), activity +
+  PARSED stations (a compilation tab's "2+14" matches the working tab's
+  "214"), an auto-detected ID column (SKU/ticket/email vocabulary), then
+  whole-row content — with the content key registered alongside every tier
+  so verbatim copies match however each side keyed. The tier is decided once
+  on latest data and applied to every slice. Ownership is decided once on latest data
   (first tab in position order wins) and the same ownership is applied to
   baseline and window snapshots via `ownedRows()`, so a compilation tab can
   never swing placed-since negative. A tab whose keyed rows are ≥95% owned by

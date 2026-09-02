@@ -1,4 +1,5 @@
 import type { SnapshotData } from "./diff/engine";
+import { detectKeyColumn } from "./diff/engine";
 import { normalizeKey } from "./diff/normalize";
 import { detectActivityColumn, detectStationColumns, parseStation } from "./detect";
 
@@ -28,23 +29,86 @@ import { detectActivityColumn, detectStationColumns, parseStation } from "./dete
 /** control bytes never appear in a key part — they are the separators */
 const CTRL = /[\u0000-\u0008]/g;
 
-const detectCache = new WeakMap<SnapshotData, { stations: { start: number; end: number } | null; activity: number | null }>();
+export interface DedupTabInput {
+  title: string;
+  data: SnapshotData;
+  /** the sheet owner's chosen key column for this tab, or null to smart-detect */
+  keyColumn?: number | null;
+}
+
+const detectCache = new WeakMap<
+  SnapshotData,
+  { stations: { start: number; end: number } | null; activity: number | null; keyCol: number | null }
+>();
 function columnsOf(data: SnapshotData) {
   let c = detectCache.get(data);
   if (!c) {
-    c = { stations: detectStationColumns(data), activity: detectActivityColumn(data) };
+    c = {
+      stations: detectStationColumns(data),
+      activity: detectActivityColumn(data),
+      // auto-detected identity column (ID/SKU/ticket/name...): only consulted
+      // when the row has no station identity — station sheets keep their
+      // proven activity+stations composite as the identity
+      keyCol: detectKeyColumn(data),
+    };
     detectCache.set(data, c);
   }
   return c;
 }
 
-/** Work identity of a row on its tab: activity + parsed stations when the
- *  stations parse (survey/comma/plain all normalize to the same number), the
- *  whole row's normalized content otherwise. Blank padding -> "" (no key). */
-export function dedupeRowKey(data: SnapshotData, row: string[]): string {
-  const { stations, activity } = columnsOf(data);
+/**
+ * Row identity — the SMART IDENTIFIER hierarchy, in priority order:
+ *
+ *   1. the tab's explicitly configured key column (owner's choice)
+ *   2. work identity: activity + PARSED stations (survey/comma/plain all
+ *      normalize to the same number) — the construction-sheet composite
+ *   3. the auto-detected key column — an ID/SKU/ticket/name-like column that
+ *      is populated and unique (only reached when the row has no stations)
+ *   4. the whole row's normalized content
+ *
+ * This is what makes cross-tab dedup work on ANY sheet: an inventory sheet
+ * keyed by SKU, a pipeline keyed by "Company", a log keyed by "Ticket #"
+ * all get copy-tab detection for free, with zero configuration. Blank
+ * padding -> "" (no key).
+ */
+/**
+ * Validate an explicitly chosen key column the same way auto-detection
+ * validates its own: a real identifier is populated on ~every row and UNIQUE.
+ * An invalid choice (someone picked "Activity", values repeat) degrades to
+ * the next identity tier instead of colliding unrelated rows — this is what
+ * makes "set an identifier" safe to get wrong.
+ */
+const overrideCache = new WeakMap<SnapshotData, Map<number, boolean>>();
+export function effectiveKeyColumn(data: SnapshotData, override?: number | null): number | null {
+  if (override == null) return null;
+  let m = overrideCache.get(data);
+  if (!m) {
+    m = new Map();
+    overrideCache.set(data, m);
+  }
+  const hit = m.get(override);
+  if (hit !== undefined) return hit ? override : null;
+  const values = data.rows.map((r) => normalizeKey(r[override]));
+  const nonEmpty = values.filter((v) => v !== "");
+  const ok =
+    nonEmpty.length > 0 &&
+    nonEmpty.length >= data.rows.length * 0.9 &&
+    new Set(nonEmpty).size === nonEmpty.length;
+  m.set(override, ok);
+  return ok ? override : null;
+}
+
+export function dedupeRowKey(data: SnapshotData, row: string[], keyColumnOverride?: number | null): string {
+  const { stations, activity, keyCol } = columnsOf(data);
   const content = () =>
     row.map((c) => normalizeKey(c).replace(CTRL, "")).join("\u0001");
+  // the override must be a RESOLVED column (run through effectiveKeyColumn on
+  // the LATEST data) — validity is decided once per sheet, never per slice,
+  // or the same row would key differently at different times
+  if (keyColumnOverride != null && keyColumnOverride >= 0) {
+    const v = normalizeKey(row[keyColumnOverride]).replace(CTRL, "");
+    if (v !== "") return `k${v}`;
+  }
   if (stations) {
     const s = parseStation(row[stations.start]);
     const e = parseStation(row[stations.end]);
@@ -53,7 +117,21 @@ export function dedupeRowKey(data: SnapshotData, row: string[]): string {
       return `i${act}\u0001${s}\u0001${e}`;
     }
   }
+  if (keyCol !== null) {
+    const v = normalizeKey(row[keyCol]).replace(CTRL, "");
+    if (v !== "") return `k${v}`;
+  }
   const c = content();
+  return c.replace(/^\u0001+$/, "") === "" ? "" : `c${c}`;
+}
+
+/** The row's content identity — ALWAYS computed, whatever tier the primary
+ *  identity resolved to. Registering both lets a verbatim copy match even
+ *  when the two tabs resolved DIFFERENT tiers (the working tab's key values
+ *  repeat — two warehouse lines, one SKU — so it keys by content while the
+ *  compilation copy, unique keys, keys by column). */
+function rowContentKey(row: string[]): string {
+  const c = row.map((x) => normalizeKey(x).replace(CTRL, "")).join("\u0001");
   return c.replace(/^\u0001+$/, "") === "" ? "" : `c${c}`;
 }
 
@@ -90,30 +168,53 @@ export interface DedupedTabs {
 const COPY_COVERAGE = 0.95;
 const COPY_MIN_KEYED = 20;
 
-export function dedupeTabData(tabs: { title: string; data: SnapshotData }[]): DedupedTabs {
+export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
   const ownerByKey = new Map<string, string>();
   const freshByTab = new Map<string, string[][]>();
   const pureCopies = new Set<string>();
   let duplicatesDropped = 0;
+  const resolvedKeyCol = new Map<string, number | null>();
   for (const t of tabs) {
     const out: string[][] = [];
     let hadContent = false;
     let owned = 0;
     let keyed = 0;
+    // the identity tier is decided HERE, on the latest data, once — an
+    // invalid override (values repeat, so the column can't identify rows)
+    // degrades to the next tier instead of colliding unrelated rows
+    const effCol = effectiveKeyColumn(t.data, t.keyColumn ?? null);
+    resolvedKeyCol.set(t.title, effCol);
+    // key-namespace identities (k…) dedup ACROSS tabs only: the same key
+    // twice within one tab can be two legitimate rows (two warehouse rows
+    // for one SKU), so they both stay — unlike station work identity (i…),
+    // where the same activity+range twice in one tab is one shot listed twice
+    const seenInTab = new Set<string>();
     for (const r of t.data.rows) {
-      const k = dedupeRowKey(t.data, r);
-      if (k === "") {
+      const k = dedupeRowKey(t.data, r, effCol);
+      const c = rowContentKey(r);
+      if (k === "" && c === "") {
         out.push(r); // blank padding — no identity, keeps its position
         continue;
       }
       hadContent = true;
       keyed++;
-      if (ownerByKey.has(k)) {
+      const dupInTab = k !== "" && k[0] === "k" && seenInTab.has(k);
+      seenInTab.add(k);
+      // dual identity: a row owned by an earlier tab under EITHER its tier
+      // key or its content key is a copy — the tier can differ between the
+      // working tab (key values repeat -> content tier) and its compilation
+      // copy (unique keys -> column tier), and verbatim copies must match
+      // whichever way each side resolved. Within ONE tab: key-namespace
+      // repeats are second rows (kept), every other namespace's repeat is
+      // the same work listed twice (dropped).
+      const owner = ownerByKey.get(k) ?? ownerByKey.get(c);
+      if (!dupInTab && owner !== undefined && (owner !== t.title || k[0] !== "k")) {
         duplicatesDropped++;
         out.push(blank(r.length));
         continue;
       }
-      ownerByKey.set(k, t.title);
+      if (k !== "" && !ownerByKey.has(k)) ownerByKey.set(k, t.title);
+      if (c !== "" && !ownerByKey.has(c)) ownerByKey.set(c, t.title);
       out.push(r);
       owned++;
     }
@@ -125,6 +226,7 @@ export function dedupeTabData(tabs: { title: string; data: SnapshotData }[]): De
       }
     }
   }
+  const tabByTitle = new Map(tabs.map((t) => [t.title, t] as const));
   const order = tabs.map((t) => t.title);
   const ownedRows = (slice: Map<string, SnapshotData>): Map<string, string[][]> => {
     const result = new Map<string, string[][]>();
@@ -133,27 +235,40 @@ export function dedupeTabData(tabs: { title: string; data: SnapshotData }[]): De
       const data = slice.get(title);
       if (!data) continue;
       const out: string[][] = [];
+      const keyCol = resolvedKeyCol.get(title) ?? null;
+      const seenHere = new Set<string>();
       for (const r of data.rows) {
-        const k = dedupeRowKey(data, r);
-        if (k === "") {
+        const k = dedupeRowKey(data, r, keyCol);
+        const c = rowContentKey(r);
+        if (k === "" && c === "") {
           out.push(r);
           continue;
         }
-        const owner = ownerByKey.get(k);
+        // dual identity, same rule as the latest walk (cross-tier copies)
+        const owner = ownerByKey.get(k) ?? ownerByKey.get(c);
         if (owner === undefined) {
           // work the latest walk never saw (removed since) — first tab in
-          // this slice carries it, so a removal still nets out per tab
-          if (seenInSlice.has(k)) {
+          // this slice carries it, so a removal still nets out per tab;
+          // key-namespace repeats within one tab are second rows, kept
+          if (seenInSlice.has(k) && !(k !== "" && k[0] === "k" && !seenHere.has(k))) {
             out.push(blank(r.length));
             continue;
           }
-          seenInSlice.add(k);
+          if (k !== "") {
+            seenInSlice.add(k);
+            seenHere.add(k);
+          }
+          if (c !== "") seenInSlice.add(c);
           out.push(r);
           continue;
         }
         if (owner === title) {
-          seenInSlice.add(k); // same rule as the latest walk for consistency
-          out.push(r);
+          if (k !== "") {
+            seenInSlice.add(k); // same rule as the latest walk for consistency
+            seenHere.add(k);
+          }
+          if (c !== "") seenInSlice.add(c);
+          out.push(r); // key-namespace: the tab keeps EVERY row it owns
         } else {
           out.push(blank(r.length));
         }

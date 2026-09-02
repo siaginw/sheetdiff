@@ -83,7 +83,7 @@ export default async function SheetPage({
   if (allTabs.length === 0) notFound();
 
   const trackedTabs = allTabs.filter((t) => t.tracked);
-  const latestDataByTab = new Map<string, { title: string; data: ReturnType<typeof decodeSnapshot> }>();
+  const latestDataByTab = new Map<string, { title: string; data: ReturnType<typeof decodeSnapshot>; keyColumn?: number | null }>();
 
   // The pending resolver for every tracked tab — computed ONCE at the top,
   // BEFORE activeTab selection (so the default tab can be the first one with
@@ -103,7 +103,7 @@ export default async function SheetPage({
   const latestSnapsByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
   for (const t of trackedTabs) {
     const s = latestSnapsByTab.get(t.id);
-    if (s) latestDataByTab.set(t.id, { title: t.title, data: decodeSnapshot(s.dataBlob) });
+    if (s) latestDataByTab.set(t.id, { title: t.title, data: decodeSnapshot(s.dataBlob), keyColumn: t.keyColumn });
   }
   const sheetDedup = dedupeTabData([...latestDataByTab.values()]);
   const copyTabIds = new Set(

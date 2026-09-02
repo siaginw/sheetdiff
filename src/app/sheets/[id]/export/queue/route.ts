@@ -109,7 +109,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   const stamp = [
     // the DATA clock, never the export moment — byte-identical re-exports
-    `# SheetDiff entry queue — one row per shot, oldest first — data as of ${new Date(latestAtMs || Date.now()).toISOString()}`,
+    `# SheetDiff entry queue — one row per entry, oldest first — data as of ${new Date(latestAtMs || Date.now()).toISOString()}`,
     `# Snapshot: ${csvSafe(sheet.title.replace(/[\r\n]+/g, " "))} · ${latestLabel}`,
   ];
 

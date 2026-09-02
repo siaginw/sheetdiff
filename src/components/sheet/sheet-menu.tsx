@@ -43,7 +43,7 @@ export function SheetMenu({
         />
         <DropdownMenuContent align="end">
           <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/export/queue`} />}>
-            <Download /> Typing list — one row per shot (for the office system)
+            <Download /> Typing list — one row per entry (for the office system)
           </DropdownMenuItem>
           <DropdownMenuItem render={<a href={`/sheets/${spreadsheetId}/report`} />}>
             <CalendarRange /> Weekly production report
