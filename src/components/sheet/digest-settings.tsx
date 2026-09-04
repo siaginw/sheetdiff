@@ -62,7 +62,7 @@ export function DigestSettingsDialog({
   );
 }
 
-function DigestBody({
+export function DigestBody({
   digestEmail,
   digestTime,
   digestDay,

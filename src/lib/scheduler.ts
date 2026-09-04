@@ -1,6 +1,7 @@
 import { and, eq, isNotNull, lte, ne } from "drizzle-orm";
 import { db } from "./db";
 import { spreadsheets, type Spreadsheet } from "./db/schema";
+import { logger } from "./logger";
 import { captureSnapshot, computeNextRun } from "./snapshots";
 
 /**
@@ -17,7 +18,7 @@ export function startScheduler() {
   const timer = setInterval(tick, TICK_MS);
   timer.unref?.();
   globalForScheduler.__sheetdiffScheduler = timer;
-  console.log("[scheduler] started (checking every minute)");
+  logger.info("[scheduler] started (checking every minute)");
   void tick();
 }
 
@@ -64,17 +65,20 @@ async function tickInner(): Promise<boolean> {
   try {
     due = await loadDue(now);
   } catch (err) {
-    console.error("[scheduler] failed to query due sheets:", err);
+    logger.error({ err }, "[scheduler] failed to query due sheets");
     return false;
   }
   let anySuccess = false;
   for (const sheet of due) {
     try {
       const result = await captureSnapshot(sheet.id, "scheduled");
-      console.log(`[scheduler] snapshot of "${sheet.title}": ${result.tabCount} tab(s), ${result.rowCount} rows`);
+      logger.info({ sheet: sheet.title, tabs: result.tabCount, rows: result.rowCount }, "[scheduler] snapshot");
       anySuccess = true;
     } catch (err) {
-      console.error(`[scheduler] snapshot of "${sheet.title}" failed:`, err instanceof Error ? err.message : err);
+      logger.error(
+        { sheet: sheet.title, err: err instanceof Error ? err.message : err },
+        "[scheduler] snapshot failed",
+      );
       // Push the next attempt forward so a broken sheet can't loop every minute.
       // A null bump (unparsable schedule) must ALSO move nextRunAt — otherwise
       // the stale due time retries every minute forever.
@@ -98,19 +102,19 @@ async function tickInner(): Promise<boolean> {
         // otherwise empty-inbox users get re-evaluated every minute
         await ddb.update(users).set({ lastDigestAt: now }).where(eq(users.id, u.id));
         if (result.sent) {
-          console.log(`[scheduler] digest sent (user ${u.id})`);
+          logger.info({ user: u.id }, "[scheduler] digest sent");
         } else if (result.reason === "smtp-not-configured") {
-          console.warn("[scheduler] digest skipped: SMTP_HOST/SMTP_USER/SMTP_PASS not configured");
+          logger.warn("[scheduler] digest skipped: SMTP_HOST/SMTP_USER/SMTP_PASS not configured");
         }
       } catch (err) {
-        console.error(`[scheduler] digest for user ${u.id} failed:`, err instanceof Error ? err.message : err);
+        logger.error({ user: u.id, err: err instanceof Error ? err.message : err }, "[scheduler] digest failed");
       }
     }
 
     const { maintenanceDue, runMaintenance } = await import("./maintenance");
     if (maintenanceDue(new Date(now))) await runMaintenance();
   } catch (err) {
-    console.error("[scheduler] digest/maintenance pass failed:", err);
+    logger.error({ err }, "[scheduler] digest/maintenance pass failed");
   }
   return anySuccess;
 }

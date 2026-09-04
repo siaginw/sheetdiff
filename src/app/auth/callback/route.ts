@@ -2,6 +2,7 @@ import { decryptJson, encryptJson } from "@/lib/crypto";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { exchangeCode, type StoredTokens } from "@/lib/google";
+import { logger } from "@/lib/logger";
 import { SESSION_COOKIE, SESSION_TTL_MS, signSession } from "@/lib/session";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -79,7 +80,7 @@ export async function GET(req: Request) {
   } catch (err) {
     // never log the raw error object — gaxios errors embed the token-exchange
     // body (auth code + client secret) in enumerable properties
-    console.error("OAuth callback failed:", err instanceof Error ? err.message : String(err));
+    logger.error({ err: err instanceof Error ? err.message : String(err) }, "OAuth callback failed");
     if (err instanceof Error && err.message.includes("APP_SECRET")) {
       return fail("app-secret-missing");
     }

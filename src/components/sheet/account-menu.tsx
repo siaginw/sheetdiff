@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logout } from "@/lib/actions";
-import { LogOut, Mail, UserPlus } from "lucide-react";
+import { LogOut, Mail, Settings, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 /**
@@ -72,6 +73,9 @@ export function AccountMenu({
             <div className="truncate text-xs text-muted-foreground">{email}</div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem render={<Link href="/settings" />}>
+            <Settings /> Settings
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setDigestOpen(true)}>
             <Mail /> Digest email…
           </DropdownMenuItem>

@@ -10,6 +10,7 @@ import { db } from "./db";
 import { members, notes as notesTable, snapshots, spreadsheets, tabs, users, type ScheduleKind } from "./db/schema";
 import { fetchSpreadsheetMeta, parseSpreadsheetId } from "./google";
 import { parseImportFile } from "./import";
+import { logger } from "./logger";
 import { getPendingChanges } from "./pending";
 import { getSessionUserId, SESSION_COOKIE } from "./session";
 import { captureSnapshot, computeNextRun, encodeSnapshot, toSnapshotData } from "./snapshots";
@@ -130,7 +131,7 @@ export async function startTracking(fd: FormData): Promise<void> {
     await captureSnapshot(id, "manual");
   } catch (err) {
     // never leave a ghost sheet with zero snapshots — a retry would duplicate it
-    console.error("[startTracking] first capture failed:", err instanceof Error ? err.message : err);
+    logger.error({ err: err instanceof Error ? err.message : err }, "[startTracking] first capture failed");
     await db.delete(spreadsheets).where(eq(spreadsheets.id, id));
     redirect("/sheets/new?url=" + encodeURIComponent(str(fd, "url")) + "&error=cannot-read");
   }
@@ -145,7 +146,7 @@ export async function snapshotNow(fd: FormData): Promise<void> {
   try {
     await captureSnapshot(id, "manual");
   } catch (err) {
-    console.error("[snapshot] manual capture failed:", err instanceof Error ? err.message : err);
+    logger.error({ err: err instanceof Error ? err.message : err }, "[snapshot] manual capture failed");
     const { recordCaptureFailure } = await import("./snapshots");
     await recordCaptureFailure(id, err);
     redirect(`/sheets/${id}?error=snapshot-failed`);
@@ -505,6 +506,41 @@ export async function saveDigestSettings(fd: FormData): Promise<void> {
     .update(users)
     .set({ digestEmail: email || null, digestTime: time, digestDay: day })
     .where(eq(users.id, userId));
+  revalidatePath("/");
+}
+
+export async function savePushSettings(fd: FormData): Promise<void> {
+  const userId = (await requireUser()).id;
+  const raw = str(fd, "notifyUrl").trim();
+  // strict shape: this URL becomes a fetch() target on every interesting
+  // capture — only http(s) with a real topic path is stored
+  const { isValidNotifyUrl } = await import("./notify");
+  const url = isValidNotifyUrl(raw) ? raw : "";
+  await db
+    .update(users)
+    .set({ notifyUrl: url || null })
+    .where(eq(users.id, userId));
+  revalidatePath("/settings");
+  revalidatePath("/");
+}
+
+/** Fire a real notification so the user can confirm their phone buzzes. */
+export async function sendTestPush(_fd: FormData): Promise<void> {
+  const user = await requireUser();
+  if (!user.notifyUrl) redirect("/settings?push=none");
+  const { sendPush } = await import("./notify");
+  await sendPush(user.notifyUrl, {
+    title: "SheetDiff",
+    message: "Test notification — you're all set. Captures that introduce changes will buzz you here.",
+    tag: "white_check_mark",
+  });
+  redirect("/settings?push=sent");
+}
+
+/** Hide the getting-started checklist (it also hides itself when complete). */
+export async function dismissOnboarding(_fd: FormData): Promise<void> {
+  const userId = (await requireUser()).id;
+  await db.update(users).set({ onboardingDismissedAt: Date.now() }).where(eq(users.id, userId));
   revalidatePath("/");
 }
 

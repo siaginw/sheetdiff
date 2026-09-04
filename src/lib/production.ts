@@ -1,3 +1,5 @@
+/// <reference types="temporal-spec/global" />
+import "temporal-polyfill/global";
 import { dedupeTabData } from "./dedupe";
 import {
   detectActivityColumn,
@@ -41,6 +43,15 @@ export function detectCrewColumn(data: SnapshotData): number | null {
     if (CREW_HEADER_RE.test(norm(data.headers[i]))) return i;
   }
   return null;
+}
+
+/** Local-midnight Monday of a calendar day, computed with Temporal day math —
+ *  subtracting 86,400,000ms per day drifts across DST transitions and can
+ *  split a week that straddles one. */
+function mondayOf(d: Date): number {
+  const plain = Temporal.PlainDate.from({ year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
+  const monday = plain.subtract({ days: (plain.dayOfWeek + 6) % 7 }); // Monday = 0
+  return new Date(monday.year, monday.month - 1, monday.day).getTime();
 }
 
 /** Parse the completion-date formats crews actually type. Rollover is NEVER
@@ -529,10 +540,7 @@ export function weeklyProduction(data: SnapshotData): WeekBucket[] {
     if (d === null) continue;
     const ft = stations ? Math.max(parseStation(r[stations.end])! - parseStation(r[stations.start])!, 0) : 0;
     if (stations && ft === 0) continue; // handholes/structures: counted, not footage
-    // local-calendar Monday
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const dow = (day.getDay() + 6) % 7; // Monday = 0
-    const monday = day.getTime() - dow * 86_400_000;
+    const monday = mondayOf(d); // local-calendar Monday, DST-safe
     const bucket = byWeek.get(monday) ?? { weekStart: monday, ft: 0, shots: 0 };
     bucket.ft += ft;
     bucket.shots += 1;
@@ -626,9 +634,7 @@ export function stoppageWeeks(data: SnapshotData): Map<number, StoppageWeek> {
     const d = parseCompletedDate(r[dateCol]);
     if (d === null) continue; // undated/unreadable — not bucketable
     const desc = norm(r[descCol]);
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const dow = (day.getDay() + 6) % 7; // Monday = 0 — same math as weeklyProduction
-    const monday = day.getTime() - dow * 86_400_000;
+    const monday = mondayOf(d); // same math as weeklyProduction
     const bucket = byWeek.get(monday) ?? { weekStart: monday, count: 0, exemplar: desc, newestEntryMs: d.getTime() };
     bucket.count += 1;
     if (d.getTime() > bucket.newestEntryMs) bucket.newestEntryMs = d.getTime();

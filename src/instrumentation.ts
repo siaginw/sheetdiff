@@ -7,7 +7,8 @@ export async function register() {
     ensureMigrated();
   } catch (err) {
     // fail closed: a drifted schema must not serve requests or run captures
-    console.error("[migrate] FATAL:", err instanceof Error ? err.message : err);
+    const { logger } = await import("./lib/logger");
+    logger.error({ err: err instanceof Error ? err.message : err }, "[migrate] FATAL");
     throw err;
   }
   const { startScheduler } = await import("./lib/scheduler");

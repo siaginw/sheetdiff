@@ -1,3 +1,4 @@
+import { WeeklyChart } from "@/components/report/weekly-chart";
 import { PrintButton } from "@/components/sheet/print-button";
 import { getSheetAccess } from "@/lib/access";
 import { computeFootage } from "@/lib/checks";
@@ -157,12 +158,18 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
 
-            {/* the sparkline */}
+            {/* the chart */}
             <section className="mb-8">
               <h2 className="mb-2 font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 footage per week (as dated)
               </h2>
-              <Sparkline weeks={weeks} />
+              <WeeklyChart
+                weeks={weeks.map((w) => ({
+                  label: new Date(w.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                  ft: w.ft,
+                  stoppages: stoppages?.get(w.weekStart)?.count ?? 0,
+                }))}
+              />
             </section>
 
             {/* the table */}
@@ -226,35 +233,5 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         )}
       </div>
     </div>
-  );
-}
-
-function Sparkline({ weeks }: { weeks: WeekBucket[] }) {
-  const w = 640;
-  const h = 120;
-  const pad = 6;
-  const max = Math.max(...weeks.map((x) => x.ft), 1);
-  const barW = Math.max(2, Math.floor((w - pad * 2) / weeks.length) - 3);
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="footage per week bar chart">
-      {weeks.map((x, i) => {
-        const barH = Math.round(((h - pad * 2) * x.ft) / max);
-        const bx = pad + i * ((w - pad * 2) / weeks.length);
-        return (
-          <rect
-            key={x.weekStart}
-            x={bx}
-            y={h - pad - barH}
-            width={barW}
-            height={Math.max(barH, 1)}
-            rx={1.5}
-            className="fill-primary"
-            opacity={i === weeks.length - 1 ? 1 : 0.55}
-          >
-            <title>{`${new Date(x.weekStart).toLocaleDateString("en-US")} — ${x.ft.toLocaleString("en-US")} ft`}</title>
-          </rect>
-        );
-      })}
-    </svg>
   );
 }

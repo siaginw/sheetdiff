@@ -1,18 +1,19 @@
 import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
+import { OnboardingCard } from "@/components/dashboard/onboarding-card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listAccessibleSpreadsheets } from "@/lib/access";
 import { db } from "@/lib/db";
-import { tabs } from "@/lib/db/schema";
+import { snapshots, tabs, users } from "@/lib/db/schema";
 import { relativeTime, scheduleLabel } from "@/lib/format";
 import { googleConfigured } from "@/lib/google";
 import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
 import { getSessionUser } from "@/lib/session";
 import { captureIsStale } from "@/lib/staleness";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { AlertCircle, CheckCircle2, ExternalLink, GitCompareArrows, Plus, Star } from "lucide-react";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -91,6 +92,76 @@ async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<Sh
   }
   status.changes = status.detail.added + status.detail.removed + status.detail.changed;
   return status;
+}
+
+/** Derive the getting-started checklist from the database — completion is
+ *  computed, never stored, so the card can't drift out of sync with reality. */
+async function computeOnboarding(userId: string, ownSheetIds: string[]) {
+  const { members } = await import("@/lib/db/schema");
+  const userRow = (await db.select().from(users).where(eq(users.id, userId)).limit(1))[0];
+  if (!userRow) return { show: false, steps: [], allDone: true };
+
+  const hasSheets = ownSheetIds.length > 0;
+  const ownTabIds = hasSheets
+    ? (await db.select({ id: tabs.id }).from(tabs).where(inArray(tabs.spreadsheetId, ownSheetIds))).map((t) => t.id)
+    : [];
+  const hasBaseline =
+    ownTabIds.length > 0 &&
+    (
+      await db
+        .select({ id: snapshots.id })
+        .from(snapshots)
+        .where(and(inArray(snapshots.tabId, ownTabIds), eq(snapshots.isBaseline, true)))
+        .limit(1)
+    ).length > 0;
+  const notified = Boolean(userRow.digestEmail || userRow.notifyUrl);
+  const shared =
+    hasSheets &&
+    (await db.select({ id: members.id }).from(members).where(eq(members.ownerUserId, userId)).limit(1)).length > 0;
+
+  const steps = [
+    {
+      id: "track",
+      title: "Track your first sheet",
+      detail: "Paste a Google Sheets link — SheetDiff snapshots it and diffs every change from then on.",
+      done: hasSheets,
+      href: "/sheets/new",
+      cta: "Track a sheet",
+    },
+    {
+      id: "collect",
+      title: "Mark a collection point",
+      detail:
+        'After you pull data into your office system, click "Mark as collected" — everything after it is what still needs entering.',
+      done: hasBaseline,
+      href: hasSheets ? `/sheets/${ownSheetIds[0]}` : "/sheets/new",
+      cta: "Open the sheet",
+    },
+    {
+      id: "notify",
+      title: "Get told when things change",
+      detail:
+        "Push notifications to your phone the moment a capture finds new work to enter, a daily digest email, or both.",
+      done: notified,
+      href: "/settings",
+      cta: "Set up notifications",
+    },
+    {
+      id: "share",
+      title: "Share with your data collector",
+      detail: "They see diffs and tick changes off as entered — the exact workflow of the person collecting your data.",
+      done: shared,
+      optional: true,
+      href: hasSheets ? `/sheets/${ownSheetIds[0]}` : "/sheets/new",
+      cta: "Share access",
+    },
+  ];
+  const allDone = steps.every((s) => s.done);
+  return {
+    show: !allDone && !userRow.onboardingDismissedAt,
+    steps,
+    allDone,
+  };
 }
 
 /** The little green/red block bar GitHub uses for diff sizes. */
@@ -353,6 +424,14 @@ export default async function Home({
   // does this user OWN anything, or are they a pure viewer on someone else's sheets?
   const ownSheets = sheets.filter((s) => s.userId === user.id);
 
+  // the getting-started checklist: owners only, until every step is done or
+  // it's dismissed. Each step's completion is DERIVED from the database —
+  // no separate state to drift out of sync.
+  const onboarding = await computeOnboarding(
+    user.id,
+    ownSheets.map((s) => s.id),
+  );
+
   const statuses = new Map<string, SheetStatus>();
   for (const sheet of sheets) {
     const tabRows = await db.select().from(tabs).where(eq(tabs.spreadsheetId, sheet.id));
@@ -369,6 +448,8 @@ export default async function Home({
             <span>{ERROR_MESSAGES[error] ?? "Something went wrong."}</span>
           </div>
         ) : null}
+
+        {onboarding.show ? <OnboardingCard steps={onboarding.steps} allDone={onboarding.allDone} /> : null}
 
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>

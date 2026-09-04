@@ -3,10 +3,11 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import zlib from "node:zlib";
 import { db } from "./db";
-import { snapshots, snapshotStats, spreadsheets, tabs, type Snapshot, type Spreadsheet } from "./db/schema";
+import { snapshots, snapshotStats, spreadsheets, tabs, users, type Snapshot, type Spreadsheet } from "./db/schema";
 import { diffSnapshots, type DiffResult, type SnapshotData } from "./diff/engine";
 import { norm } from "./diff/normalize";
 import { fetchTabValues, getUserClient } from "./google";
+import { logger } from "./logger";
 
 const gzipAsync = promisify(zlib.gzip);
 
@@ -180,7 +181,32 @@ async function captureSnapshotInner(
     try {
       db.insert(snapshotStats).values(statsInserts).run();
     } catch (err) {
-      console.warn("[capture] stats materialization skipped:", err instanceof Error ? err.message : err);
+      logger.warn({ err: err instanceof Error ? err.message : err }, "[capture] stats materialization skipped");
+    }
+  }
+
+  // push notification for the OWNER when this capture introduced work to
+  // enter (the run's own diff stats, not the unresolved backlog). The very
+  // first capture is a baseline — everything is "new" by definition and
+  // nobody wants that buzz.
+  const changes = statsInserts.reduce((n, s) => n + s.added + s.removed + s.changed, 0);
+  const firstCapture = prevByTab.size === 0;
+  if (changes > 0 && !firstCapture) {
+    try {
+      const owner = (await db.select().from(users).where(eq(users.id, sheet.userId)).limit(1))[0];
+      if (owner?.notifyUrl) {
+        const { notifyCaptureChanges } = await import("./notify");
+        await notifyCaptureChanges({
+          notifyUrl: owner.notifyUrl,
+          sheetTitle: sheet.title,
+          sheetId: sheet.id,
+          changes,
+          isBaselineFirstCapture: false,
+        });
+      }
+    } catch {
+      // notifications are best-effort; a capture that succeeded must not
+      // report failure because a push didn't go out
     }
   }
 

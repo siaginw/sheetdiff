@@ -40,3 +40,22 @@ test("report and billing pages render", async ({ page }) => {
   await page.getByRole("button", { name: "Billing day" }).first().click();
   await expect(page.getByText(/billing day/i).first()).toBeVisible();
 });
+
+test("settings page renders with push + digest sections", async ({ page }) => {
+  await demoLogin(page);
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByText("Push notifications")).toBeVisible();
+  await expect(page.getByText(/digest email/i)).toBeVisible();
+});
+
+test("the billing packet downloads as a real PDF", async ({ page }) => {
+  await demoLogin(page);
+  const sheetHref = await page.getByRole("link", { name: "US2 Daily Production" }).getAttribute("href");
+  expect(sheetHref).toBeTruthy();
+  const res = await page.request.get(`${sheetHref}/export/billing/pdf`);
+  expect(res.ok()).toBeTruthy();
+  expect(res.headers()["content-type"]).toBe("application/pdf");
+  const bytes = await res.body();
+  expect(bytes.subarray(0, 4).toString()).toBe("%PDF");
+});

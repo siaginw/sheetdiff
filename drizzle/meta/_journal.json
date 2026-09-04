@@ -15,6 +15,13 @@
       "when": 1788205717362,
       "tag": "0001_glorious_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788559295489,
+      "tag": "0002_mysterious_lifeguard",
+      "breakpoints": true
     }
   ]
 }

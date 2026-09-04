@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { logger } from "../logger";
 
 /**
  * Boot-time migrations: every server start (dev, `npm start`, Docker) applies
@@ -51,7 +52,7 @@ export function ensureMigrated(): void {
     // re-authored in place — warn regardless of count (fleet-10: the
     // count-equal-only condition missed the more-entries-than-applied shape)
     if (appliedHashes.size > 0 && [...appliedHashes].some((h) => !journalSet.has(h))) {
-      console.warn(
+      logger.warn(
         "[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING",
       );
     }
@@ -102,7 +103,7 @@ export function ensureMigrated(): void {
       for (const e of alreadyApplied) {
         ins.run(e.hash, e.when);
       }
-      console.log(
+      logger.info(
         `[migrate] stamped ${alreadyApplied.length}/${journalEntries.length} migration(s) already reflected in the legacy schema — the rest will apply normally`,
       );
     }

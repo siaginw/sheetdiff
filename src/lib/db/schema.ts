@@ -14,6 +14,11 @@ export const users = sqliteTable("users", {
   digestTime: text("digest_time").notNull().default("07:00"), // "HH:MM" local
   digestDay: integer("digest_day"), // null = daily, 0=Sun..6=Sat
   lastDigestAt: integer("last_digest_at", { mode: "number" }),
+  // Push notifications (ntfy): a topic URL the user subscribed to on their
+  // phone/desktop. Null = push off. Sent on captures that introduce changes.
+  notifyUrl: text("notify_url"),
+  // The getting-started checklist hides itself once dismissed (epoch ms)
+  onboardingDismissedAt: integer("onboarding_dismissed_at", { mode: "number" }),
   createdAt: integer("created_at", { mode: "number" }).notNull(),
 });
 

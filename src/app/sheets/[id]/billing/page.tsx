@@ -23,7 +23,7 @@ import {
 import { getSessionUser } from "@/lib/session";
 import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
 import { and, desc, eq, ne } from "drizzle-orm";
-import { AlertTriangle, ArrowLeft, Ban, Camera, Clock, Download, ReceiptText, Timer } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, Camera, Clock, Download, FileText, ReceiptText, Timer } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -200,6 +200,12 @@ export default async function BillingPage({ params }: { params: Promise<{ id: st
             <ArrowLeft className="size-4" /> Back to {sheet.title}
           </Link>
           <div className="flex items-center gap-2">
+            <a
+              href={`/sheets/${sheet.id}/export/billing/pdf`}
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+            >
+              <FileText className="size-4" /> PDF
+            </a>
             <a
               href={`/sheets/${sheet.id}/export/billing`}
               className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-muted"

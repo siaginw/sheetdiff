@@ -1,16 +1,16 @@
 import { getSheetAccess } from "@/lib/access";
-import { billingPacketCsv } from "@/lib/billing";
 import { assembleSheetBilling } from "@/lib/billing-packet-source";
+import { BillingPacketPdf } from "@/lib/billing-pdf";
 import { getSessionUser } from "@/lib/session";
+import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
 /**
- * The Billing-Day Packet: one CSV with placed-since-collection footage, open
- * unaccounted holes (do-not-invoice), the to-enter worklist, and late entries.
- * Aggregates EVERY tracked tab — a whole-sheet artifact, never tab 0's numbers.
- * Assembly is shared with the PDF export (one source, two artifacts).
+ * The billing-day packet as a printable, fileable PDF — the artifact the
+ * office attaches to the invoice batch. Built from the SAME assembly as the
+ * CSV (one source of truth), on the same DATA clock.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
@@ -23,15 +23,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const assembled = await assembleSheetBilling(id);
   if ("error" in assembled) return NextResponse.json({ error: "no tracked tabs" }, { status: 400 });
 
-  // when the number is unknowable (no baseline or no station columns), say so — never a confident 0
-  const csv = billingPacketCsv(assembled.packet, { sinceFtKnown: assembled.sinceFtKnown });
+  const buffer = await renderToBuffer(
+    <BillingPacketPdf
+      packet={assembled.packet}
+      sheetTitle={access.sheet.title}
+      sinceFtKnown={assembled.sinceFtKnown}
+    />,
+  );
 
   const safeTitle = access.sheet.title.replace(/[^\w.-]+/g, "-").slice(0, 40) || "sheet";
   const date = new Date(assembled.dataAsOf).toISOString().slice(0, 10);
-  return new NextResponse(csv, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="sheetdiff-${safeTitle}-billing-${date}.csv"`,
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="sheetdiff-${safeTitle}-billing-${date}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

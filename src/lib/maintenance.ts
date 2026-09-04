@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { db } from "./db";
 import { snapshots, tabs } from "./db/schema";
+import { logger } from "./logger";
 
 /**
  * Daily maintenance: snapshot retention + database backup.
@@ -74,7 +75,7 @@ export async function backupDatabase(now = new Date()): Promise<string | null> {
     const check = new Database(dest, { readonly: true });
     try {
       const result = check.pragma("integrity_check", { simple: true });
-      if (result !== "ok") console.error(`[maintenance] backup integrity_check: ${String(result)}`);
+      if (result !== "ok") logger.error({ result: String(result) }, "[maintenance] backup integrity_check");
     } finally {
       check.close();
       // the verify connection leaves -shm/-wal siblings that retention's
@@ -130,9 +131,9 @@ export async function runMaintenance(): Promise<void> {
     const pruned = await pruneSnapshots();
     const backup = await backupDatabase();
     if (pruned > 0 || backup) {
-      console.log(`[maintenance] pruned ${pruned} snapshot(s)${backup ? `, backup → ${path.basename(backup)}` : ""}`);
+      logger.info({ pruned, backup: backup ?? null }, "[maintenance] pruned snapshots");
     }
   } catch (err) {
-    console.error("[maintenance] failed:", err instanceof Error ? err.message : err);
+    logger.error({ err: err instanceof Error ? err.message : err }, "[maintenance] failed");
   }
 }

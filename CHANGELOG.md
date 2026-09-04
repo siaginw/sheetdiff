@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.6.0 — 2026-09-04
+
+**The workflow release: push notifications, PDF billing packets, a settings
+hub, and onboarding — plus Temporal-based date math and real-HTTP Google
+client tests.** Eight researched integrations, each one vetted to actually
+fit before shipping.
+
+- **Push notifications (ntfy).** Settings → Push notifications: subscribe to
+  a topic on your phone, paste the URL, hit the built-in test. Captures that
+  introduce changes buzz instantly (first-capture baselines stay quiet);
+  quiet captures never ping. Validated http(s) URLs only, 5s timeout,
+  failures logged and swallowed — a push can never fail a capture.
+- **PDF billing packet.** The billing page gains a PDF button next to CSV —
+  a printable, fileable artifact built from the SAME packet assembly (one
+  source of truth extracted into billing-packet-source), on the same data
+  clock, so PDF and CSV can never disagree.
+- **Settings hub + onboarding.** All user settings on one /settings page
+  (push, digest, server-settings pointers), linked from the account menu.
+  A four-step getting-started checklist on the dashboard derives its
+  completion from the database (track a sheet → mark a collection point →
+  notifications → sharing) and auto-hides when done or dismissed.
+- **Temporal date math.** parseCompletedDate validates via
+  Temporal.PlainDate — an impossible calendar date now THROWS instead of
+  relying on hand-rolled day-count checks — and week bucketing computes
+  Mondays with Temporal day arithmetic, killing the DST-crossing drift the
+  ms-subtraction could produce. Output contracts unchanged (local-midnight
+  Dates), all 370 tests untouched.
+- **Structured logging (Pino).** One logger with token redaction replaces
+  every server-side console.log — greppable JSON in `docker logs`, level via
+  LOG_LEVEL.
+- **MSW tests for the real Google client.** Five tests exercise the actual
+  googleapis wire path (range quoting, 10-chunk batching, response pairing,
+  the reorder abort, empty-grid handling) instead of a module mock that
+  bypassed all of it.
+- **Weekly report chart (Recharts).** The report's footage-per-week sparkline
+  is now a real bar chart with tooltips — same deduped weeklyProduction
+  numbers, drawn.
+- README: notifications & monitoring guide (ntfy, Uptime Kuma via the
+  existing HEALTHCHECK_PING_URL, Litestream disaster-recovery compose
+  recipe).
+
+Suite: **381 tests + 7 E2E**. Node 22+.
+
 ## 0.5.2 — 2026-09-04
 
 **Playwright E2E + two pre-existing accounting bugs the fresh audit pass

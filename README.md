@@ -145,6 +145,36 @@ cross-tab check to catch. It also seeds a demo _viewer_ — sign in at `/auth/de
 to see exactly what a shared teammate (your data collector) sees. `ENABLE_DEMO` is opt-in and
 should stay off on any real deployment.
 
+## Notifications & monitoring
+
+- **Push (instant):** install the ntfy app, subscribe to a topic (e.g. `sheetdiff-erin`),
+  paste `https://ntfy.sh/sheetdiff-erin` into **Settings → Push notifications**, and send the
+  built-in test. Every capture that finds _new_ work to enter buzzes you — the first capture
+  of a sheet stays quiet (it's just a baseline). Self-hosted ntfy works identically.
+- **Digest (summary):** Settings → digest email, daily or weekly, via your SMTP settings.
+- **Capture monitoring:** set `HEALTHCHECK_PING_URL` to a
+  [healthchecks.io](https://healthchecks.io) monitor — or a self-hosted
+  [Uptime Kuma](https://github.com/louislam/uptime-kuma) push monitor — and get alerted when
+  snapshots silently stop (stale data is the failure mode you won't notice until billing day).
+
+### Disaster recovery for the database (Litestream)
+
+The whole product's memory is one SQLite file. [Litestream](https://litestream.io) streams it
+continuously to S3-compatible storage as a sidecar — point-in-time recovery with zero extra
+infrastructure:
+
+```yaml
+# docker-compose addition
+litestream:
+  image: litestream/litestream
+  volumes:
+    - ./data:/data
+  command: replicate -db /data/sheetdiff.db -endpoint s3://YOUR-BUCKET/sheetdiff
+```
+
+See the [Litestream guides](https://litestream.io/guides/) for bucket setup; nightly local
+backups (`data/backups/`) remain the belt to this suspenders.
+
 ## FAQ
 
 **Is it free?** Yes — MIT license, no paid tier, no per-seat pricing. The only optional
@@ -317,9 +347,15 @@ supports it via `dkim: { domainName, keySelector, privateKey }` transport option
 - **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take. The **invoice ledger** reads your sheet's own "Entered in InEight" + "Invoice #" columns: what's billable right now (aged, with footage), what's billed under which invoice number, and runs already missed.
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice),
   over-placement warnings (TOTALS Placed beyond Designed), the office-entry backlog per the
-  sheet's own "entered" column, the to-enter worklist, and late entries in one CSV —
-  stamped with its snapshot and run id, and byte-identical on re-export (every timestamp
-  and age derives from the data, never the download).
+  sheet's own "entered" column, the to-enter worklist, and late entries — as a CSV _and_ a
+  printable PDF, both stamped with their snapshot and run id, both byte-identical on
+  re-export (every timestamp and age derives from the data, never the download).
+- **Push notifications.** The instant lane: captures that introduce changes buzz your phone
+  via [ntfy](https://ntfy.sh) — subscribe to a topic in the app, paste the topic URL into
+  Settings, done. Self-host your own ntfy server if you want nothing leaving the LAN.
+- **A getting-started checklist** on the dashboard that tracks itself from your real data —
+  track a sheet, mark a collection point, turn on notifications — and disappears when
+  you're done. All user settings live on one **Settings** page.
 - **Monitoring.** Set `HEALTHCHECK_PING_URL` (see `.env.example`) to a free healthchecks.io monitor and get alerted if snapshots ever silently stop.
 
 **When the app seems quiet:** check `docker compose logs sheetdiff` for `[scheduler]` errors (most common: revoked Google token — re-authenticate via the app), verify `curl localhost:3000/api/health` shows `"ok":true` (a non-zero `staleCaptures` means scheduled snapshots are overdue — the pages still render from old data, so this is often the first visible sign), check disk space (`data/backups/` grows), and confirm the container is running (`docker ps`). To restore: stop the container, copy the newest `data/backups/sheetdiff-YYYY-MM-DD.db` over `data/sheetdiff.db` (delete the `-wal` and `-shm` siblings), restart.

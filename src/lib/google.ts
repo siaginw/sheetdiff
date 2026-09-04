@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { decryptJson, encryptJson } from "./crypto";
 import { db } from "./db";
 import { users } from "./db/schema";
+import { logger } from "./logger";
 
 // the client type derived from googleapis itself — importing from
 // google-auth-library directly is a phantom dep (it resolves only when npm's
@@ -104,7 +105,7 @@ export async function getUserClient(userId: string): Promise<OAuth2Client> {
           .set({ tokensEnc: encryptJson(next) })
           .where(eq(users.id, userId));
       } catch (err) {
-        console.error("Failed to persist refreshed Google tokens:", err);
+        logger.error({ err }, "Failed to persist refreshed Google tokens");
       }
     },
   );
