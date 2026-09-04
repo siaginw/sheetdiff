@@ -440,3 +440,52 @@ describe("v0.5.2 audit fixes", () => {
     expect(out.duplicatesDropped).toBe(0);
   });
 });
+
+describe("v0.6.2 audit fixes", () => {
+  it("a NARROWER compilation tab listed FIRST no longer flips ownership (richness-first order)", () => {
+    // the real Frost shape: Line List (fewer columns) precedes the PE tabs
+    // in workbook order — with position order it owned everything and the
+    // WORKING tabs were classified as its copies, flipping the billing basis
+    const WIDE = ["Activity", "Start STA", "End STA", "Crew #", "Date Complete", "Note"];
+    const NARROW = ["Activity", "Start STA", "End STA"];
+    const rows = [
+      ["Plow", "0", "500", "CREW A", "8/1/2026", "ok"],
+      ["Bore", "500", "900", "CREW B", "8/2/2026", "ok"],
+      ["Bore", "900", "1000", "CREW C", "8/3/2026", "ok"],
+    ];
+    const out = dedupeTabData([
+      {
+        title: "Line List",
+        data: snap(
+          NARROW,
+          rows.map((r) => r.slice(0, 3)),
+        ),
+        keyColumn: null,
+      },
+      { title: "PE-1", data: snap(WIDE, rows), keyColumn: null },
+    ]);
+    // the RICH working tab owns the work; the narrow compilation is the copy
+    expect(out.pureCopies).toEqual(new Set(["Line List"]));
+    expect(out.freshByTab.get("PE-1")).toHaveLength(3);
+  });
+
+  it("same-width sheets keep position order (no behavior change where position was right)", () => {
+    const H = ["SKU", "Qty"];
+    const rows = [
+      ["A-1", "1"],
+      ["B-2", "2"],
+    ];
+    const out = dedupeTabData([
+      { title: "First", data: snap(H, rows), keyColumn: null },
+      {
+        title: "Second",
+        data: snap(
+          H,
+          rows.map((r) => [...r]),
+        ),
+        keyColumn: null,
+      },
+    ]);
+    expect(out.pureCopies).toEqual(new Set(["Second"])); // first still wins
+  });
+});

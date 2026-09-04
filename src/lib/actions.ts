@@ -516,13 +516,17 @@ export async function savePushSettings(fd: FormData): Promise<void> {
   // capture — only http(s) with a real topic path is stored
   const { isValidNotifyUrl } = await import("./notify");
   const url = isValidNotifyUrl(raw) ? raw : "";
+  if (raw !== "" && url === "") {
+    // an INVALID entry never clears what was saved before — the user keeps
+    // their working topic and sees why this one was refused
+    redirect("/settings?push=invalid");
+  }
   await db
     .update(users)
     .set({ notifyUrl: url || null })
     .where(eq(users.id, userId));
   revalidatePath("/settings");
   revalidatePath("/");
-  if (raw !== "" && url === "") redirect("/settings?push=invalid");
 }
 
 /** Fire a real notification so the user can confirm their phone buzzes. */

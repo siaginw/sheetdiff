@@ -42,6 +42,7 @@ function isPrivateAddress(ip: string): boolean {
     if (a === 169 && b === 254) return true; // link-local — includes 169.254.169.254 metadata
     if (a === 172 && b >= 16 && b <= 31) return true; // private
     if (a === 192 && b === 168) return true; // private
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10 — Tailscale & friends
     return false;
   }
   if (net.isIPv6(ip)) {
@@ -50,8 +51,30 @@ function isPrivateAddress(ip: string): boolean {
     if (lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb"))
       return true; // link-local fe80::/10
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(lower);
-    if (mapped) return isPrivateAddress(mapped[1]!); // IPv4-mapped
+    // IPv4-mapped ::ffff:0:0/96 — the WHATWG URL parser canonicalizes the
+    // dotted spelling to HEX ("[::ffff:127.0.0.1]" -> "::ffff:7f00:1"), so a
+    // dotted-only regex never fires on URL-derived hostnames and every
+    // guarded target was reachable via the hex spelling. Parse both forms;
+    // anything in the mapped prefix is unwrapped and judged as IPv4, and an
+    // UNPARSEABLE ::ffff: spelling is refused outright (hostile spelling).
+    if (lower.startsWith("::ffff:")) {
+      const tail = lower.slice("::ffff:".length);
+      if (net.isIPv4(tail)) return isPrivateAddress(tail);
+      const groups = tail.split(":").map((g) => parseInt(g || "0", 16));
+      if (groups.length === 2 || groups.length === 4) {
+        if (groups.some((g) => Number.isNaN(g) || g < 0 || g > 0xffff)) return true;
+        const bytes: number[] = [];
+        for (const g of groups) bytes.push((g >> 8) & 0xff, g & 0xff);
+        if (bytes.length === 4) return isPrivateAddress(bytes.join("."));
+        // two groups = 32 bits: reject — a mapped address is exactly 32 bits
+        // and two full groups spell a /96 we cannot interpret as IPv4
+        const v4 = (groups[0]! << 16) | groups[1]!;
+        return isPrivateAddress([v4 >>> 24, (v4 >>> 16) & 0xff, (v4 >>> 8) & 0xff, v4 & 0xff].join("."));
+      }
+      return true;
+    }
+    if (lower.startsWith("64:ff9b:")) return true; // NAT64 — translates to IPv4 we cannot inspect
+    if (lower.startsWith("2002:")) return true; // 6to4 — embeds an arbitrary IPv4
     return false;
   }
   return true; // not an IP at all — treat as hostile
@@ -70,6 +93,14 @@ export async function notifyUrlBlockReason(url: string): Promise<string | null> 
     return "not a URL";
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "protocol";
+  // https-only while the guard is active: the guard resolves, then fetch()
+  // re-resolves independently — a rebinding DNS server can pass the check
+  // with a public A record and answer the fetch's resolution privately.
+  // Over https the rebound connection cannot complete TLS without a
+  // hostname-valid certificate, which closes the window for the guarded
+  // path. Plain http stays available via NOTIFY_ALLOW_PRIVATE_URLS=1 (LAN
+  // ntfy), which returns above before this check.
+  if (parsed.protocol !== "https:") return "http (https required unless NOTIFY_ALLOW_PRIVATE_URLS=1)";
   const host = parsed.hostname.replace(/^\[|\]$/g, "");
   if (net.isIP(host)) return isPrivateAddress(host) ? "private address" : null;
   let resolved: { address: string }[];
@@ -107,6 +138,13 @@ export async function sendPush(
       redirect: "error", // ntfy never legitimately redirects; a redirect into the LAN is an SSRF relay
       signal: AbortSignal.timeout(5_000),
     });
+    // release the socket: an unconsumed body delays pooling and keeps the
+    // connection (and its DNS answer) alive longer than it needs to be
+    try {
+      await res.body?.cancel();
+    } catch {
+      // body already gone — nothing to release
+    }
     if (!res.ok) {
       logger.warn({ status: res.status }, "[notify] push rejected");
       return false;

@@ -128,11 +128,17 @@ describe("push notifications (ntfy)", () => {
     expect(row.notifyUrl).toBe("https://ntfy.sh/sheetdiff-test");
 
     await savePushSettings(fd("javascript:alert(1)")).catch((e: unknown) => {
-      // now redirects with an invalid-URL flash instead of silently clearing
+      // redirects with an invalid-URL flash instead of silently clearing
       expect(String((e as Error).message)).toMatch(/push=invalid/);
     });
     const row2 = (await db.select().from(users).where(eq(users.id, "owner")))[0];
-    expect(row2.notifyUrl).toBeNull(); // junk never stored
+    // an invalid entry NEVER clears a previously saved topic (0.6.2 fix)
+    expect(row2.notifyUrl).toBe("https://ntfy.sh/sheetdiff-test");
+
+    // clearing deliberately (empty field) still turns push off
+    await savePushSettings(fd(""));
+    const row3 = (await db.select().from(users).where(eq(users.id, "owner")))[0];
+    expect(row3.notifyUrl).toBeNull();
   });
 
   it("a capture that introduces changes fires exactly one push; quiet captures fire none", async () => {
@@ -180,6 +186,16 @@ describe("onboarding checklist", () => {
     await dismissOnboarding(new FormData());
     const after = pageText(await Dashboard({ searchParams: Promise.resolve({}) }));
     expect(after).not.toContain("Set up notifications"); // card gone
+  });
+});
+
+describe("settings flash honesty (0.6.2)", () => {
+  it("push=failed and push=invalid render feedback (they rendered nothing in 0.6.1)", async () => {
+    const Settings = (await import("@/app/settings/page")).default;
+    const failed = pageText(await Settings({ searchParams: Promise.resolve({ push: "failed" }) }));
+    expect(failed).toContain("Test failed");
+    const invalid = pageText(await Settings({ searchParams: Promise.resolve({ push: "invalid" }) }));
+    expect(invalid).toContain("not saved");
   });
 });
 

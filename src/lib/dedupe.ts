@@ -190,6 +190,17 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
   const freshByTab = new Map<string, string[][]>();
   const pureCopies = new Set<string>();
   let duplicatesDropped = 0;
+  // OWNERSHIP ORDER: richest tab first (column count desc), then sheet
+  // position. Real compilation tabs RE-LIST with FEWER columns (the Frost
+  // Line List carries 20 vs the PE tabs' 23) — with raw position order, a
+  // compilation that precedes the tabs it copies OWNS everything and the
+  // working tabs get classified as ITS copies, flipping the whole billing
+  // basis (measured: 208,961 ft placed-since vs the true 0 for that window).
+  // Same-width sheets fall through to position — identical to the old
+  // behavior everywhere the old behavior was right.
+  const ownershipOrder = [...tabs].sort(
+    (a, b) => b.data.headers.length - a.data.headers.length || tabs.indexOf(a) - tabs.indexOf(b),
+  );
   // BOTH identity columns are resolved on the LATEST data, once, and reused
   // for every slice — an override that fails validation degrades to the next
   // tier instead of colliding unrelated rows, and the auto-detected column
@@ -207,7 +218,7 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
     const auto = detected !== null && !isDateishHeader(t.data.headers[detected] ?? "") ? detected : null;
     resolvedCols.set(t.title, { override, auto, headers: t.data.headers });
   }
-  for (const t of tabs) {
+  for (const t of ownershipOrder) {
     const out: string[][] = [];
     let hadContent = false;
     let owned = 0;
@@ -258,7 +269,7 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
       }
     }
   }
-  const order = tabs.map((t) => t.title);
+  const order = ownershipOrder.map((t) => t.title);
   const ownedRows = (slice: Map<string, SnapshotData>): Map<string, string[][]> => {
     const result = new Map<string, string[][]>();
     const seenInSlice = new Set<string>();

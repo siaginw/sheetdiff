@@ -44,9 +44,20 @@ describe("SSRF guard (resolve-at-send)", () => {
   it("unwraps IPv4-mapped IPv6 and refuses non-canonical IPv4 spellings", async () => {
     dns.lookup.mockResolvedValue([{ address: "::ffff:127.0.0.1", family: 6 }]);
     expect(await notifyUrlBlockReason("https://evil.example/topic")).toBe("private address");
-    // literal hostnames bypass DNS — checked directly
-    expect(await notifyUrlBlockReason("http://2130706433/topic")).toBe("private address");
-    expect(await notifyUrlBlockReason("http://0x7f.1/topic")).toBe("private address");
+    // literal hostnames bypass DNS — checked directly (https so the
+    // https-only rule doesn't fire before the address check)
+    expect(await notifyUrlBlockReason("https://2130706433/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://0x7f.1/topic")).toBe("private address");
+    // THE 0.6.2 CRITICAL: hex-form IPv4-mapped literals (the WHATWG URL
+    // parser canonicalizes the dotted spelling to this) reached loopback
+    // and cloud metadata before the fix
+    expect(await notifyUrlBlockReason("https://[::ffff:7f00:1]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://[::ffff:a9fe:a9fe]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://[::ffff:c0a8:101]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://[::ffff:10.1.2.3]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://[64:ff9b::7f00:1]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://[2002:7f00:1::]/topic")).toBe("private address");
+    expect(await notifyUrlBlockReason("https://100.64.1.1/topic")).toBe("private address"); // CGNAT
   });
 
   it("allows public targets, refuses non-http(s) and DNS failures", async () => {
@@ -55,6 +66,12 @@ describe("SSRF guard (resolve-at-send)", () => {
     expect(await notifyUrlBlockReason("ftp://ntfy.sh/x")).toBe("protocol");
     dns.lookup.mockRejectedValue(new Error("ENOTFOUND"));
     expect(await notifyUrlBlockReason("https://nope.invalid/topic")).toBe("DNS");
+  });
+
+  it("plain http is refused while the guard is active (rebinding), allowed via the opt-in", async () => {
+    expect(await notifyUrlBlockReason("http://ntfy.example/topic")).toMatch(/^http \(https required/);
+    process.env.NOTIFY_ALLOW_PRIVATE_URLS = "1";
+    expect(await notifyUrlBlockReason("http://192.168.1.50:8080/ntfy-topic")).toBeNull();
   });
 
   it("NOTIFY_ALLOW_PRIVATE_URLS=1 is the deployer's explicit LAN opt-in", async () => {

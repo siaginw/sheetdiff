@@ -14,9 +14,10 @@ export const logger = pino({
       "refresh_token",
       "access_token",
       "id_token",
-      // wildcards: nested error payloads (err.response.data.access_token,
-      // err.config.headers.authorization, user.tokensEnc) carry real
-      // credentials in gaxios/OAuth errors
+      // wildcards are SINGLE-SEGMENT in fast-redact (*.access_token matches
+      // depth-2 only) — they are best-effort for shallow nests. The real
+      // defense is discipline: log err.message, never raw error objects,
+      // anywhere OAuth/HTTP clients can attach credential payloads.
       "*.refresh_token",
       "*.access_token",
       "*.id_token",
@@ -24,6 +25,10 @@ export const logger = pino({
       "*.tokensEnc",
       "*.authorization",
       "*.cookie",
+      "req.headers.authorization",
+      "req.headers.cookie",
+      "err.response.data",
+      "err.config.headers",
     ],
     censor: "[redacted]",
   },

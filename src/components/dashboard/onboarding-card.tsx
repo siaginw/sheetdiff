@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { dismissOnboarding } from "@/lib/actions";
-import { Check, Circle, Share2, Star, Table2, X } from "lucide-react";
+import { Check, Circle, X } from "lucide-react";
 import Link from "next/link";
 
 export interface OnboardingStep {
@@ -68,6 +68,3 @@ export function OnboardingCard({ steps, allDone }: { steps: OnboardingStep[]; al
     </section>
   );
 }
-
-/** Icon per step — kept next to the card so titles stay plain strings. */
-export const STEP_ICONS = { Table2, Star, Share2 } as const;

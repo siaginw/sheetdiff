@@ -124,10 +124,11 @@ async function captureSnapshotInner(
 
   // previous non-import snapshot per tab (for capture-time diff stats)
   const prevByTab = new Map<string, SnapshotData>();
-  const prevBaseAt = { value: 0 }; // newest previous non-import snapshot across tabs
+  // per-tab base timestamp: the tab's own previous non-import snapshot
+  const prevBaseByTab = new Map<string, number>();
   for (const [tabId, snap] of await latestNonImportSnapshots(trackedTabs.map((t) => t.id))) {
     prevByTab.set(tabId, decodeSnapshot(snap.dataBlob));
-    if (snap.createdAt > prevBaseAt.value) prevBaseAt.value = snap.createdAt;
+    prevBaseByTab.set(tabId, snap.createdAt);
   }
 
   const inserts: (typeof snapshots.$inferInsert)[] = [];
@@ -177,6 +178,27 @@ async function captureSnapshotInner(
       .where(eq(spreadsheets.id, sheet.id))
       .run();
   });
+  // imports that landed between the tabs' previous bases and now — the
+  // push suppression below attributes "changes" on those tabs to the office's
+  // own just-imported rows
+  const importsInWindow =
+    prevByTab.size > 0
+      ? await db
+          .select({ tabId: snapshots.tabId, createdAt: snapshots.createdAt })
+          .from(snapshots)
+          .where(
+            and(
+              inArray(
+                snapshots.tabId,
+                trackedTabs.map((t) => t.id),
+              ),
+              eq(snapshots.trigger, "import"),
+              gt(snapshots.createdAt, Math.min(...prevBaseByTab.values())),
+              lt(snapshots.createdAt, now),
+            ),
+          )
+      : [];
+
   // stats are an optimization: never let them roll back real snapshots (an
   // upgraded deployment without the new table falls back to on-demand diffs)
   if (statsInserts.length > 0) {
@@ -196,43 +218,32 @@ async function captureSnapshotInner(
   // snapshot is already durably committed, and a slow ntfy endpoint must
   // never add its 5s timeout to the capture (or the scheduler tick).
   try {
-    const changes = statsInserts.reduce((n, s) => n + s.added + s.removed + s.changed, 0);
+    // per-tab: a tab's "changes" here are just-imported rows iff an import
+    // landed after THAT tab's own previous non-import base (before now)
+    const contaminated = new Set<string>();
+    for (const [tabId, baseAt] of prevBaseByTab) {
+      if (importsInWindow.some((imp) => imp.tabId === tabId && imp.createdAt > baseAt && imp.createdAt < now)) {
+        contaminated.add(tabId);
+      }
+    }
+    const snapToTab = new Map(inserts.map((i) => [i.id, i.tabId]));
+    const changes = statsInserts.reduce(
+      (n, st) => (contaminated.has(snapToTab.get(st.snapshotId) ?? "") ? n : n + st.added + st.removed + st.changed),
+      0,
+    );
     const firstCapture = prevByTab.size === 0;
     if (changes > 0 && !firstCapture) {
-      // the capture's diff base is the previous NON-import snapshot per tab;
-      // an import run landed after that base means this capture's "changes"
-      // are the just-imported rows
-      const importSincePrev =
-        (
-          await db
-            .select({ id: snapshots.id })
-            .from(snapshots)
-            .where(
-              and(
-                inArray(
-                  snapshots.tabId,
-                  trackedTabs.map((t) => t.id),
-                ),
-                eq(snapshots.trigger, "import"),
-                gt(snapshots.createdAt, prevBaseAt.value),
-                lt(snapshots.createdAt, now),
-              ),
-            )
-            .limit(1)
-        ).length > 0;
-      if (!importSincePrev) {
-        const owner = (await db.select().from(users).where(eq(users.id, sheet.userId)).limit(1))[0];
-        if (owner?.notifyUrl) {
-          const { notifyCaptureChanges } = await import("./notify");
-          void notifyCaptureChanges({
-            notifyUrl: owner.notifyUrl,
-            sheetTitle: sheet.title,
-            sheetId: sheet.id,
-            changes,
-          }).catch(() => {
-            // notifications are best-effort by contract
-          });
-        }
+      const owner = (await db.select().from(users).where(eq(users.id, sheet.userId)).limit(1))[0];
+      if (owner?.notifyUrl) {
+        const { notifyCaptureChanges } = await import("./notify");
+        void notifyCaptureChanges({
+          notifyUrl: owner.notifyUrl,
+          sheetTitle: sheet.title,
+          sheetId: sheet.id,
+          changes,
+        }).catch(() => {
+          // notifications are best-effort by contract
+        });
       }
     }
   } catch {

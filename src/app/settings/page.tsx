@@ -90,6 +90,17 @@ export default async function SettingsPage({
             <p className="mt-2 text-sm text-primary">Test sent — check the device that subscribed.</p>
           ) : null}
           {pushFlash === "none" ? <p className="mt-2 text-sm text-destructive">Save a topic URL first.</p> : null}
+          {pushFlash === "failed" ? (
+            <p className="mt-2 text-sm text-destructive">
+              Test failed — the server couldn&apos;t reach that URL (wrong topic, unreachable server, plain http, or a
+              private address the SSRF guard refuses).
+            </p>
+          ) : null}
+          {pushFlash === "invalid" ? (
+            <p className="mt-2 text-sm text-destructive">
+              That doesn&apos;t look like an https topic URL — it was not saved.
+            </p>
+          ) : null}
           {notifyUrl ? (
             <form action={sendTestPush} className="mt-3">
               <Button type="submit" variant="ghost" size="sm">

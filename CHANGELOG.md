@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.2 — 2026-09-05
+
+**The guard-the-guard pass.** The v0.6.1 audit attacked v0.6.1's own fixes
+and found them wanting; everything below is fixed and regression-tested.
+
+- **CRITICAL — the SSRF guard itself was bypassable.** The WHATWG URL
+  parser canonicalizes dotted IPv4-mapped IPv6 to HEX
+  ("[::ffff:127.0.0.1]" becomes "::ffff:7f00:1"), so the dotted-only unwrap
+  never fired on URL-derived hostnames — every guarded target was reachable
+  via the hex spelling, including cloud metadata (::ffff:a9fe:a9fe).
+  Mapped addresses are now parsed in both spellings (unparseable ::ffff:
+  forms refused), and NAT64 (64:ff9b::/96), 6to4 (2002::/16), and CGNAT
+  (100.64.0.0/10 — Tailscale) ranges are blocked too.
+- **The DNS-rebinding window is closed for the guarded path**: plain http
+  URLs are now refused unless NOTIFY_ALLOW_PRIVATE_URLS=1 is set — a
+  rebound connection cannot complete TLS without a hostname-valid
+  certificate, and LAN ntfy users already have the opt-in. The push
+  response body is released so sockets pool promptly.
+- **"Line List FIRST" no longer flips the billing basis.** Compilation
+  tabs re-list with FEWER columns (the real Line List: 20 vs the PE tabs'
+  23); with raw position order, a compilation preceding the tabs it copies
+  owned everything and the WORKING tabs became its copies — measured on
+  the real tracker: 208,961 ft placed-since and zero holes instead of the
+  true 55,683 ft / 28,299. Ownership now runs richest-tab-first (column
+  count, then position); same-width sheets behave exactly as before.
+  Verified on the real file: Line List first, last, or absent all produce
+  identical billing packets.
+- **Import-quiet push suppression is per-tab**: an import between one
+  tab's base and now silences only that tab's "changes"; genuine changes
+  on clean tabs still notify (a sheet-wide max silenced them).
+- **The 0.6.1 honesty fixes actually render now** (they didn't): failed
+  test pushes and invalid URLs show their messages on /settings, and an
+  invalid entry never clears a previously saved topic.
+- Pino redaction: restores the req.headers paths 0.6.1 dropped, adds
+  err.response.data / err.config.headers censors, and the comment now
+  tells the truth about wildcard depth (single-segment only).
+- .env.example documents LOG_LEVEL and NOTIFY_ALLOW_PRIVATE_URLS; dead
+  STEP_ICONS export removed.
+
+Suite: **393 tests + 7 E2E**. Node 22+.
+
 ## 0.6.1 — 2026-09-05
 
 **Security and honesty fixes from the v0.6.0 audit pass.** The audit's
