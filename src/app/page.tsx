@@ -96,7 +96,7 @@ async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<Sh
 
 /** Derive the getting-started checklist from the database — completion is
  *  computed, never stored, so the card can't drift out of sync with reality. */
-async function computeOnboarding(userId: string, ownSheetIds: string[]) {
+async function computeOnboarding(userId: string, ownSheetIds: string[], accessibleCount: number) {
   const { members } = await import("@/lib/db/schema");
   const userRow = (await db.select().from(users).where(eq(users.id, userId)).limit(1))[0];
   if (!userRow) return { show: false, steps: [], allDone: true };
@@ -157,8 +157,11 @@ async function computeOnboarding(userId: string, ownSheetIds: string[]) {
     },
   ];
   const allDone = steps.every((s) => s.done);
+  const pureViewer = ownSheetIds.length === 0 && accessibleCount > 0;
   return {
-    show: !allDone && !userRow.onboardingDismissedAt,
+    // a pure viewer can't track sheets or receive owner pushes — the
+    // checklist would show steps they can never complete
+    show: !allDone && !pureViewer && !userRow.onboardingDismissedAt,
     steps,
     allDone,
   };
@@ -430,6 +433,7 @@ export default async function Home({
   const onboarding = await computeOnboarding(
     user.id,
     ownSheets.map((s) => s.id),
+    sheets.length,
   );
 
   const statuses = new Map<string, SheetStatus>();

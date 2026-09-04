@@ -61,12 +61,18 @@ export function parseCompletedDate(value: unknown): Date | null {
   const t = norm(value);
   if (t === "") return null;
   const build = (y: number, m: number, d: number): Date | null => {
-    // month is 1-based here; JS rolls over silently — validate explicitly
+    // month is 1-based here. Validated via Temporal.PlainDate with
+    // overflow:"reject" — the DEFAULT is "constrain", which CLAMPS Feb 30 to
+    // Feb 28 and would silently reintroduce the rollover bug this exists to
+    // kill. PlainDate.from throws on a day the calendar doesn't have.
     if (m < 1 || m > 12) return null;
     if (y < 1990 || y > 2100) return null;
-    const dim = new Date(y, m, 0).getDate(); // days in month
-    if (d < 1 || d > dim) return null;
-    return new Date(y, m - 1, d);
+    try {
+      const plain = Temporal.PlainDate.from({ year: y, month: m, day: d }, { overflow: "reject" });
+      return new Date(plain.year, plain.month - 1, plain.day); // local midnight (stable contract)
+    } catch {
+      return null; // impossible calendar date — unreadable, never rolled over
+    }
   };
   // ISO-ish (exceljs Dates are pre-serialized to this by the importer)
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);

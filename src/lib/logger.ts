@@ -14,8 +14,16 @@ export const logger = pino({
       "refresh_token",
       "access_token",
       "id_token",
-      "req.headers.authorization",
-      "req.headers.cookie",
+      // wildcards: nested error payloads (err.response.data.access_token,
+      // err.config.headers.authorization, user.tokensEnc) carry real
+      // credentials in gaxios/OAuth errors
+      "*.refresh_token",
+      "*.access_token",
+      "*.id_token",
+      "*.tokens",
+      "*.tokensEnc",
+      "*.authorization",
+      "*.cookie",
     ],
     censor: "[redacted]",
   },

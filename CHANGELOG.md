@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.1 — 2026-09-05
+
+**Security and honesty fixes from the v0.6.0 audit pass.** The audit's
+headline: the push-notification URL was a full SSRF surface, and the
+Temporal date port claimed in 0.6.0's notes had never actually landed (an
+aborted edit script — the changelog lied). Both corrected, among others.
+
+- **SSRF guard on push URLs.** The server fetches a user-controlled URL —
+  it is now treated as hostile: the hostname is RESOLVED AT SEND TIME and
+  every address is refused if loopback, link-local (which includes the
+  cloud-metadata 169.254.169.254), RFC1918, ULA, unspecified, or
+  IPv4-mapped; redirects are refused outright; non-canonical IPv4
+  spellings (2130706433, 0x7f.1) die at resolution. Deployers running
+  ntfy on the same LAN can set NOTIFY_ALLOW_PRIVATE_URLS=1 explicitly.
+- **parseCompletedDate now really validates via Temporal.PlainDate** with
+  overflow:"reject" (the default CLAMPS Feb 30 to Feb 28 — the silent
+  rollover, reintroduced). The 0.6.0 note claimed this; the code didn't.
+  The full existing date battery pins the behavior.
+- Captures after a GIS IMPORT stay quiet: their "changes" are the rows
+  the office just imported — announcing them as new work was backwards.
+- The push is fire-and-forget: a dead ntfy endpoint can no longer add its
+  5s timeout to a capture or the sequential scheduler tick.
+- Pino redaction covers NESTED credential paths (err.response.data.*
+  access tokens, err.config.headers.authorization); google.ts logs
+  err.message, never the raw gaxios error object.
+- The billing PAGE now sees an untracked TOTALS tab's over-placement
+  exactly like the CSV and PDF always did (it queried tracked tabs only).
+- "Test notification" reports failure honestly; an invalid URL is
+  rejected with a message instead of silently cleared. Pure viewers no
+  longer see the onboarding checklist (steps they can never complete).
+- knip-clean: pino-pretty removed, temporal-spec declared, dead exports
+  dropped; pino externalized from the server bundle.
+
+Suite: **391 tests + 7 E2E**. Node 22+.
+
 ## 0.6.0 — 2026-09-04
 
 **The workflow release: push notifications, PDF billing packets, a settings

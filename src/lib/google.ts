@@ -105,7 +105,10 @@ export async function getUserClient(userId: string): Promise<OAuth2Client> {
           .set({ tokensEnc: encryptJson(next) })
           .where(eq(users.id, userId));
       } catch (err) {
-        logger.error({ err }, "Failed to persist refreshed Google tokens");
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          "Failed to persist refreshed Google tokens",
+        );
       }
     },
   );

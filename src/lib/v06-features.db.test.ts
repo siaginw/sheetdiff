@@ -127,7 +127,10 @@ describe("push notifications (ntfy)", () => {
     const row = (await db.select().from(users).where(eq(users.id, "owner")))[0];
     expect(row.notifyUrl).toBe("https://ntfy.sh/sheetdiff-test");
 
-    await savePushSettings(fd("javascript:alert(1)"));
+    await savePushSettings(fd("javascript:alert(1)")).catch((e: unknown) => {
+      // now redirects with an invalid-URL flash instead of silently clearing
+      expect(String((e as Error).message)).toMatch(/push=invalid/);
+    });
     const row2 = (await db.select().from(users).where(eq(users.id, "owner")))[0];
     expect(row2.notifyUrl).toBeNull(); // junk never stored
   });
@@ -139,6 +142,9 @@ describe("push notifications (ntfy)", () => {
       return new Response("{}", { status: 200 });
     });
     viMock.stubGlobal("fetch", fetchMock);
+    // skip the SSRF DNS resolution (unit-tested separately with mocked dns) —
+    // CI runners may have no egress
+    process.env.NOTIFY_ALLOW_PRIVATE_URLS = "1";
 
     const { sendPush } = await import("@/lib/notify");
     const ok = await sendPush("https://ntfy.sh/t", { title: "T", message: "m" });
@@ -147,6 +153,7 @@ describe("push notifications (ntfy)", () => {
     expect(pushes[0]!.url).toBe("https://ntfy.sh/t");
 
     viMock.unstubAllGlobals();
+    delete process.env.NOTIFY_ALLOW_PRIVATE_URLS;
   });
 
   it("the settings page renders the push section and current topic", async () => {
@@ -195,5 +202,120 @@ describe("PDF billing packet", () => {
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toMatch(/# SheetDiff billing packet — data as of/);
+  });
+});
+
+describe("v0.6.1 audit fixes", () => {
+  it("an UNTRACKED TOTALS tab's over-placement now reaches the billing PAGE (parity with CSV/PDF)", async () => {
+    // add an untracked TOTALS claiming placed > designed
+    await db.insert(tabs).values({ id: "v6-tot", spreadsheetId: SHEET, title: "TOTALS", position: 1, tracked: false });
+    const T = [
+      ["Package", "Designed", "Placed"],
+      ["PE-9", "100", "999"],
+    ];
+    const data = toSnapshotData(T);
+    await db.insert(snapshots).values({
+      id: "v6-tot-s",
+      tabId: "v6-tot",
+      runId: "r1",
+      trigger: "manual",
+      isBaseline: false,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt: 1_000_000_000_000 + 5 * DAY,
+    });
+    const Billing = (await import("@/app/sheets/[id]/billing/page")).default;
+    const text = pageText(await Billing({ params: Promise.resolve({ id: SHEET }) }));
+    if (process.env.DEBUG_V6) console.log("BILLING-SLICE:", JSON.stringify(text.slice(0, 500)));
+    // the page renders over-placement in the "Do not invoice" section (the
+    // OVER-PLACED label is the CSV's) — the substance is the same finding
+    expect(text).toContain("placed 999"); // was CSV/PDF-only before the parity fix
+    expect(text).toContain("Do not invoice");
+  });
+
+  it("a pure viewer never sees the onboarding checklist", async () => {
+    state.userId = "viewer";
+    await db.insert(users).values({
+      id: "viewer",
+      googleSub: "sv",
+      email: "v@x.com",
+      name: "v",
+      tokensEnc: "x",
+      createdAt: 1,
+    });
+    await db.insert((await import("@/lib/db/schema")).members).values({
+      id: "v6-mem",
+      ownerUserId: "owner",
+      email: "v@x.com",
+      createdAt: 1,
+    });
+    const Dashboard = (await import("@/app/page")).default;
+    const text = pageText(await Dashboard({ searchParams: Promise.resolve({}) }));
+    expect(text).not.toContain("Get told when things change");
+    state.userId = "owner";
+  });
+
+  it("a capture right after a GIS import stays quiet (no 'new work' push for entered rows)", async () => {
+    const pushes: unknown[] = [];
+    const fetchMock = viMock.fn(async () => {
+      pushes.push(1);
+      return new Response("{}", { status: 200 });
+    });
+    viMock.stubGlobal("fetch", fetchMock);
+    process.env.NOTIFY_ALLOW_PRIVATE_URLS = "1";
+    await db.update(users).set({ notifyUrl: "https://ntfy.sh/owner-topic" }).where(eq(users.id, "owner"));
+
+    // an import run lands, then a capture whose diff-vs-pre-import "changes"
+    // are exactly the imported rows
+    const imp = toSnapshotData([
+      ["Activity", "Start STA", "End STA"],
+      ["Plow", "0", "500"],
+      ["Bore", "500", "900"],
+      ["Dig", "900", "903"],
+    ]);
+    await db.insert(snapshots).values({
+      id: "v6-imp",
+      tabId: TAB_A,
+      runId: "rimp",
+      trigger: "import",
+      isBaseline: false,
+      rowCount: imp.rows.length,
+      colCount: imp.headers.length,
+      dataBlob: encodeSnapshot(imp),
+      createdAt: 1_000_000_000_000 + 6 * DAY,
+    });
+    const { captureSnapshot } = await import("@/lib/snapshots");
+    const g = await import("@/lib/google");
+    viMock.spyOn(g, "getUserClient").mockResolvedValue({} as never);
+    viMock.spyOn(g, "fetchTabValues").mockResolvedValue({
+      A: [
+        ["Activity", "Start STA", "End STA"],
+        ["Plow", "0", "500"],
+        ["Bore", "500", "900"],
+        ["Dig", "900", "903"],
+      ],
+    });
+    await captureSnapshot(SHEET, "scheduled");
+    // give the fire-and-forget promise a beat
+    await new Promise((r) => setTimeout(r, 100));
+    expect(pushes).toHaveLength(0); // imported rows are NOT new work
+
+    // a capture that introduces REAL changes after that still pushes
+    viMock.spyOn(g, "fetchTabValues").mockResolvedValue({
+      A: [
+        ["Activity", "Start STA", "End STA"],
+        ["Plow", "0", "500"],
+        ["Bore", "500", "900"],
+        ["Dig", "900", "903"],
+        ["Bore", "903", "950"],
+      ],
+    });
+    await captureSnapshot(SHEET, "scheduled");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(pushes).toHaveLength(1);
+
+    delete process.env.NOTIFY_ALLOW_PRIVATE_URLS;
+    viMock.unstubAllGlobals();
   });
 });

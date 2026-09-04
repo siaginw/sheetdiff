@@ -157,7 +157,10 @@ export default async function BillingPage({ params }: { params: Promise<{ id: st
   const allTabs = await db.select().from(tabs).where(eq(tabs.spreadsheetId, id));
   const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title));
   if (totalsTab) {
-    const totalsSnap = latestByTab.get(totalsTab.id);
+    // query the totals tab DIRECTLY — latestByTab is tracked-tabs-only, and
+    // an untracked TOTALS' over-placement must reach the page exactly as it
+    // reaches the CSV and the PDF (parity with assembleSheetBilling)
+    const totalsSnap = (await latestNonImportSnapshots([totalsTab.id])).get(totalsTab.id);
     if (totalsSnap) overplacements.push(...detectOverplacement(decodeSnapshot(totalsSnap.dataBlob)));
   }
 

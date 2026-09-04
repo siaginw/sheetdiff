@@ -352,7 +352,9 @@ supports it via `dkim: { domainName, keySelector, privateKey }` transport option
   re-export (every timestamp and age derives from the data, never the download).
 - **Push notifications.** The instant lane: captures that introduce changes buzz your phone
   via [ntfy](https://ntfy.sh) — subscribe to a topic in the app, paste the topic URL into
-  Settings, done. Self-host your own ntfy server if you want nothing leaving the LAN.
+  Settings, done.
+  Self-host ntfy on the LAN if you want nothing leaving it — set `NOTIFY_ALLOW_PRIVATE_URLS=1`, since the
+  server otherwise refuses to fetch private addresses from user-provided URLs (SSRF guard).
 - **A getting-started checklist** on the dashboard that tracks itself from your real data —
   track a sheet, mark a collection point, turn on notifications — and disappears when
   you're done. All user settings live on one **Settings** page.

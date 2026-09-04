@@ -522,6 +522,7 @@ export async function savePushSettings(fd: FormData): Promise<void> {
     .where(eq(users.id, userId));
   revalidatePath("/settings");
   revalidatePath("/");
+  if (raw !== "" && url === "") redirect("/settings?push=invalid");
 }
 
 /** Fire a real notification so the user can confirm their phone buzzes. */
@@ -529,12 +530,12 @@ export async function sendTestPush(_fd: FormData): Promise<void> {
   const user = await requireUser();
   if (!user.notifyUrl) redirect("/settings?push=none");
   const { sendPush } = await import("./notify");
-  await sendPush(user.notifyUrl, {
+  const ok = await sendPush(user.notifyUrl, {
     title: "SheetDiff",
     message: "Test notification — you're all set. Captures that introduce changes will buzz you here.",
     tag: "white_check_mark",
   });
-  redirect("/settings?push=sent");
+  redirect(`/settings?push=${ok ? "sent" : "failed"}`);
 }
 
 /** Hide the getting-started checklist (it also hides itself when complete). */

@@ -1,4 +1,4 @@
-import { and, eq, inArray, max, ne } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, max, ne } from "drizzle-orm";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import zlib from "node:zlib";
@@ -124,8 +124,10 @@ async function captureSnapshotInner(
 
   // previous non-import snapshot per tab (for capture-time diff stats)
   const prevByTab = new Map<string, SnapshotData>();
+  const prevBaseAt = { value: 0 }; // newest previous non-import snapshot across tabs
   for (const [tabId, snap] of await latestNonImportSnapshots(trackedTabs.map((t) => t.id))) {
     prevByTab.set(tabId, decodeSnapshot(snap.dataBlob));
+    if (snap.createdAt > prevBaseAt.value) prevBaseAt.value = snap.createdAt;
   }
 
   const inserts: (typeof snapshots.$inferInsert)[] = [];
@@ -188,26 +190,53 @@ async function captureSnapshotInner(
   // push notification for the OWNER when this capture introduced work to
   // enter (the run's own diff stats, not the unresolved backlog). The very
   // first capture is a baseline — everything is "new" by definition and
-  // nobody wants that buzz.
-  const changes = statsInserts.reduce((n, s) => n + s.added + s.removed + s.changed, 0);
-  const firstCapture = prevByTab.size === 0;
-  if (changes > 0 && !firstCapture) {
-    try {
-      const owner = (await db.select().from(users).where(eq(users.id, sheet.userId)).limit(1))[0];
-      if (owner?.notifyUrl) {
-        const { notifyCaptureChanges } = await import("./notify");
-        await notifyCaptureChanges({
-          notifyUrl: owner.notifyUrl,
-          sheetTitle: sheet.title,
-          sheetId: sheet.id,
-          changes,
-          isBaselineFirstCapture: false,
-        });
+  // nobody wants that buzz. A capture right after a GIS IMPORT stays quiet
+  // too: its "changes" are the rows the office just imported/entered, and
+  // announcing them as new work is exactly backwards. Fire-and-forget: the
+  // snapshot is already durably committed, and a slow ntfy endpoint must
+  // never add its 5s timeout to the capture (or the scheduler tick).
+  try {
+    const changes = statsInserts.reduce((n, s) => n + s.added + s.removed + s.changed, 0);
+    const firstCapture = prevByTab.size === 0;
+    if (changes > 0 && !firstCapture) {
+      // the capture's diff base is the previous NON-import snapshot per tab;
+      // an import run landed after that base means this capture's "changes"
+      // are the just-imported rows
+      const importSincePrev =
+        (
+          await db
+            .select({ id: snapshots.id })
+            .from(snapshots)
+            .where(
+              and(
+                inArray(
+                  snapshots.tabId,
+                  trackedTabs.map((t) => t.id),
+                ),
+                eq(snapshots.trigger, "import"),
+                gt(snapshots.createdAt, prevBaseAt.value),
+                lt(snapshots.createdAt, now),
+              ),
+            )
+            .limit(1)
+        ).length > 0;
+      if (!importSincePrev) {
+        const owner = (await db.select().from(users).where(eq(users.id, sheet.userId)).limit(1))[0];
+        if (owner?.notifyUrl) {
+          const { notifyCaptureChanges } = await import("./notify");
+          void notifyCaptureChanges({
+            notifyUrl: owner.notifyUrl,
+            sheetTitle: sheet.title,
+            sheetId: sheet.id,
+            changes,
+          }).catch(() => {
+            // notifications are best-effort by contract
+          });
+        }
       }
-    } catch {
-      // notifications are best-effort; a capture that succeeded must not
-      // report failure because a push didn't go out
     }
+  } catch {
+    // same contract on the outer path: a push problem is never a capture problem
   }
 
   return { runId, createdAt: now, tabCount: trackedTabs.length, rowCount };
