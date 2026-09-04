@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { computeGapReport } from "./gaps";
+import { describe, expect, it } from "vitest";
 import type { SnapshotData } from "./diff/engine";
+import { computeGapReport } from "./gaps";
 
 /** Property test: randomized chains must always satisfy the gap-report
  *  invariants — the class of bug where overlap ft disagreed with its own

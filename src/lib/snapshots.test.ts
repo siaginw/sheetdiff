@@ -1,14 +1,14 @@
 /** computeNextRun boundary table — pure logic, googleapis mocked away. */
-import { vi } from "vitest";
-vi.mock("./google", () => ({ getUserClient: vi.fn(), fetchTabValues: vi.fn() }));
-import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { vi } from "vitest";
+vi.mock("./google", () => ({ getUserClient: vi.fn(), fetchTabValues: vi.fn() }));
 process.env.DATABASE_PATH ??= join(mkdtempSync(join(tmpdir(), "sd-test-")), "unused.db");
 
-import { describe, it, expect } from "vitest";
-import { computeNextRun } from "./snapshots";
+import { describe, expect, it } from "vitest";
 import type { Spreadsheet } from "./db/schema";
+import { computeNextRun } from "./snapshots";
 
 const DAY = 86_400_000;
 const at = (iso: string, h: number, m: number) => {
@@ -39,12 +39,42 @@ const sheet = (s: Sched): Spreadsheet => ({
 
 describe("computeNextRun", () => {
   it.each([
-    ["daily, time passed today → tomorrow", "2026-08-29T18:00:00", { scheduleKind: "daily", scheduleTime: "09:00" }, at("2026-08-29T18:00:00", 9, 0) + DAY],
-    ["daily, time still ahead → today", "2026-08-29T08:00:00", { scheduleKind: "daily", scheduleTime: "09:00" }, at("2026-08-29T08:00:00", 9, 0)],
-    ["daily, exactly at boundary → tomorrow", "2026-08-29T09:00:00", { scheduleKind: "daily", scheduleTime: "09:00" }, at("2026-08-29T09:00:00", 9, 0) + DAY],
-    ["weekly Sat → next Mon", "2026-08-29T18:00:00", { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 }, at("2026-08-29T18:00:00", 9, 0) + 2 * DAY],
-    ["weekly same-day passed → +7", "2026-08-31T18:00:00", { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 }, at("2026-08-31T18:00:00", 9, 0) + 7 * DAY],
-    ["weekly same-day ahead → today", "2026-08-31T07:00:00", { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 }, at("2026-08-31T07:00:00", 9, 0)],
+    [
+      "daily, time passed today → tomorrow",
+      "2026-08-29T18:00:00",
+      { scheduleKind: "daily", scheduleTime: "09:00" },
+      at("2026-08-29T18:00:00", 9, 0) + DAY,
+    ],
+    [
+      "daily, time still ahead → today",
+      "2026-08-29T08:00:00",
+      { scheduleKind: "daily", scheduleTime: "09:00" },
+      at("2026-08-29T08:00:00", 9, 0),
+    ],
+    [
+      "daily, exactly at boundary → tomorrow",
+      "2026-08-29T09:00:00",
+      { scheduleKind: "daily", scheduleTime: "09:00" },
+      at("2026-08-29T09:00:00", 9, 0) + DAY,
+    ],
+    [
+      "weekly Sat → next Mon",
+      "2026-08-29T18:00:00",
+      { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 },
+      at("2026-08-29T18:00:00", 9, 0) + 2 * DAY,
+    ],
+    [
+      "weekly same-day passed → +7",
+      "2026-08-31T18:00:00",
+      { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 },
+      at("2026-08-31T18:00:00", 9, 0) + 7 * DAY,
+    ],
+    [
+      "weekly same-day ahead → today",
+      "2026-08-31T07:00:00",
+      { scheduleKind: "weekly", scheduleTime: "09:00", scheduleDay: 1 },
+      at("2026-08-31T07:00:00", 9, 0),
+    ],
   ])("%s", (_name, from, sched, expected) => {
     expect(computeNextRun(sheet(sched as Sched), new Date(from as string).getTime())).toBe(expected);
   });

@@ -1,11 +1,11 @@
-import Link from "next/link";
-import { GitCompareArrows } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { AccountMenu } from "@/components/sheet/account-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import { listMembers } from "@/lib/access";
-import { smtpConfigured } from "@/lib/digest";
 import type { User } from "@/lib/db/schema";
+import { smtpConfigured } from "@/lib/digest";
+import { GitCompareArrows } from "lucide-react";
+import Link from "next/link";
 
 export async function AppHeader({ user }: { user: User | null }) {
   const memberList = user ? await listMembers(user.id) : [];

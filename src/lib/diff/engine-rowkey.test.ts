@@ -18,15 +18,18 @@
  * unimplemented fix. A source-grep test cannot tell wired from dead; the
  * behavioral tests below can, and survive any refactor of the expression.
  */
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 // sync.ts transitively imports ./db — point it at a temp file BEFORE import
 // or parallel workers race on the developer's REAL data/sheetdiff.db
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-process.env.DATABASE_PATH ??= path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "rowkeytest" + "-")), "unused.db");
-import { diffSnapshots, rowContentKey, type SnapshotData } from "./engine";
 import { isResolved } from "../sync";
+import { diffSnapshots, rowContentKey, type SnapshotData } from "./engine";
+process.env.DATABASE_PATH ??= path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "rowkeytest" + "-")),
+  "unused.db",
+);
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 
@@ -79,8 +82,12 @@ describe("rowKey disambiguation: same-family blank-key siblings both changed", (
       ["Plow", "0", "500", "", "AA"],
       ["Plow", "0", "500", "B", ""],
     ]);
-    const first = diffSnapshots(a, b).rows.filter((x) => x.status === "changed").map((x) => x.rowKey);
-    const second = diffSnapshots(a, c).rows.filter((x) => x.status === "changed").map((x) => x.rowKey);
+    const first = diffSnapshots(a, b)
+      .rows.filter((x) => x.status === "changed")
+      .map((x) => x.rowKey);
+    const second = diffSnapshots(a, c)
+      .rows.filter((x) => x.status === "changed")
+      .map((x) => x.rowKey);
     expect(second).toEqual(first);
   });
 
@@ -207,8 +214,15 @@ describe("rowKey disambiguation: removed siblings and repeated key values", () =
     // suffix would collide with the unrelated row keyed "s3#0". Reserved
     // bases must force the family to bump past them.
     const H = ["Shot", "Activity"];
-    const a = snap(H, [["s3", "Plow"], ["s3", "Bore"], ["s3#0", "Plow"]]);
-    const b = snap(H, [["s3", "Plow"], ["s3#0", "Plow"]]);
+    const a = snap(H, [
+      ["s3", "Plow"],
+      ["s3", "Bore"],
+      ["s3#0", "Plow"],
+    ]);
+    const b = snap(H, [
+      ["s3", "Plow"],
+      ["s3#0", "Plow"],
+    ]);
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     const all = r.rows.map((x) => x.rowKey);
     expect(new Set(all).size).toBe(all.length); // pairwise distinct across ALL rows
@@ -220,8 +234,15 @@ describe("rowKey disambiguation: removed siblings and repeated key values", () =
     // the matched row (A-index 1) and the added row (B-index 1) both propose
     // "s3#1" — the collision bump must separate them or one ack resolves both
     const H = ["Shot", "Activity"];
-    const a = snap(H, [["s9", "A"], ["s3", "B"]]);
-    const b = snap(H, [["s3", "B2"], ["s3", "C"], ["s9", "A"]]);
+    const a = snap(H, [
+      ["s9", "A"],
+      ["s3", "B"],
+    ]);
+    const b = snap(H, [
+      ["s3", "B2"],
+      ["s3", "C"],
+      ["s9", "A"],
+    ]);
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     const changed = r.rows.find((x) => x.status === "changed")!;
     const added = r.rows.find((x) => x.status === "added")!;

@@ -13,20 +13,20 @@
  * ID column, but "the 14800–15743 plow" is already how crews identify shots.
  */
 
-import { norm, normalizeKey, compositeKey } from "./diff/normalize";
-import type { SnapshotData } from "./diff/engine";
-import { computeGapReport } from "./gaps";
 import {
-  parseStation,
-  detectStationColumns,
   detectActivityColumn,
-  isFootageChainRow,
+  detectStationColumns,
   isAdderRow,
+  isFootageChainRow,
   isGapRow,
+  parseStation,
 } from "./detect";
+import type { SnapshotData } from "./diff/engine";
+import { compositeKey, norm, normalizeKey } from "./diff/normalize";
+import { computeGapReport } from "./gaps";
 
 // re-exported for existing callers/tests
-export { parseStation, detectStationColumns, detectActivityColumn } from "./detect";
+export { detectActivityColumn, detectStationColumns, parseStation } from "./detect";
 
 export type CheckSeverity = "error" | "warning";
 
@@ -81,9 +81,7 @@ export interface FootageTotal {
 }
 
 /** Sum a tab's footage using the detected station columns. */
-export function computeFootage(
-  data: SnapshotData,
-): FootageTotal & { stations: { start: number; end: number } | null } {
+export function computeFootage(data: SnapshotData): FootageTotal & { stations: { start: number; end: number } | null } {
   const stations = detectStationColumns(data);
   const out: FootageTotal & { stations: { start: number; end: number } | null } = {
     ft: 0,

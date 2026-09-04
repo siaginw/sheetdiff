@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { rememberSnapshot, peekSnapshot, snapshotCacheStats, clearSnapshotCache } from "./snapshot-cache";
-import { encodeSnapshot, toSnapshotData, decodeSnapshot } from "./snapshots";
+import { beforeEach, describe, expect, it } from "vitest";
+import { clearSnapshotCache, peekSnapshot, rememberSnapshot, snapshotCacheStats } from "./snapshot-cache";
+import { decodeSnapshot, encodeSnapshot, toSnapshotData } from "./snapshots";
 
 const blob = (grid: string[][]) => encodeSnapshot(toSnapshotData(grid));
 

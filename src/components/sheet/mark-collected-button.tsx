@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +11,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { setBaseline } from "@/lib/actions";
+import { CheckCircle2, Star } from "lucide-react";
+import { useState } from "react";
 
 /**
  * "Mark as collected" with a guard: when unentered changes remain anywhere in
@@ -73,11 +73,14 @@ export function MarkCollectedButton({
           <input type="hidden" name="spreadsheetId" value={spreadsheetId} />
           <input type="hidden" name="runId" value={runId} />
           <DialogHeader>
-            <DialogTitle>Mark as collected with {unenteredCount} change{unenteredCount === 1 ? "" : "s"} unentered?</DialogTitle>
+            <DialogTitle>
+              Mark as collected with {unenteredCount} change{unenteredCount === 1 ? "" : "s"} unentered?
+            </DialogTitle>
             <DialogDescription>
-              Everything changed since the current collection point will be considered entered —
-              including {unenteredCount === 1 ? "this change" : "these changes"} on tabs you may not
-              be viewing. Download the typing list first (More options → Typing list) if InEight still needs {unenteredCount === 1 ? "it" : "them"}.
+              Everything changed since the current collection point will be considered entered — including{" "}
+              {unenteredCount === 1 ? "this change" : "these changes"} on tabs you may not be viewing. Download the
+              typing list first (More options → Typing list) if InEight still needs{" "}
+              {unenteredCount === 1 ? "it" : "them"}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4">

@@ -23,10 +23,17 @@ const journalHashes = journal.entries.map((e) => {
   const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
   return { tag: e.tag, when: e.when, hash: crypto.createHash("sha256").update(sqlText).digest("hex") };
 });
-sqlite.exec('CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
+sqlite.exec(
+  "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)",
+);
 // applied ROW count, not table existence — an empty table (legacy DB, or a
 // prior run that crashed between CREATE and stamping) still needs stamping
-const appliedHashes = new Set(sqlite.prepare("SELECT hash FROM __drizzle_migrations").all().map((r) => r.hash));
+const appliedHashes = new Set(
+  sqlite
+    .prepare("SELECT hash FROM __drizzle_migrations")
+    .all()
+    .map((r) => r.hash),
+);
 
 // pre-migration backup, same rule as the boot path (src/lib/db/migrate.ts):
 // only when a journal entry isn't recorded yet — count (legacy/new) or hash
@@ -34,7 +41,9 @@ const appliedHashes = new Set(sqlite.prepare("SELECT hash FROM __drizzle_migrati
 // same safety net.
 const journalHashSet = new Set(journalHashes.map((j) => j.hash));
 if (appliedHashes.size > 0 && [...appliedHashes].some((h) => !journalHashSet.has(h))) {
-  console.warn("[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING");
+  console.warn(
+    "[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING",
+  );
 }
 if (hasUsers && journalHashes.some((j) => !appliedHashes.has(j.hash))) {
   const backupDir = path.join(path.dirname(dbPath), "backups");
@@ -49,8 +58,12 @@ if (hasUsers && appliedHashes.size === 0) {
   // lacks 0001's columns; stamping it would skip the ALTERs and crash every
   // new-column read. Mirror of src/lib/db/migrate.ts.
   const columnExists = (table, col) => {
-    try { sqlite.prepare(`SELECT ${col} FROM ${table} LIMIT 1`).get(); return true; }
-    catch { return false; }
+    try {
+      sqlite.prepare(`SELECT ${col} FROM ${table} LIMIT 1`).get();
+      return true;
+    } catch {
+      return false;
+    }
   };
   const markers = {
     "0000_equal_darkstar": { table: "change_acks", col: "row_key" },
@@ -67,7 +80,9 @@ if (hasUsers && appliedHashes.size === 0) {
     const h = journalHashes.find((x) => x.tag === e.tag);
     if (h) ins.run(h.hash, e.when);
   }
-  console.log(`[migrate] stamped ${already.length}/${journal.entries.length} migration(s) in the legacy schema — the rest apply normally`);
+  console.log(
+    `[migrate] stamped ${already.length}/${journal.entries.length} migration(s) in the legacy schema — the rest apply normally`,
+  );
 }
 
 // apply POSITIONALLY, like drizzle's boot-path migrator: entries beyond the

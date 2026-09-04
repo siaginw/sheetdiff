@@ -17,5 +17,19 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary", "html"],
+      include: ["src/**"],
+      exclude: ["src/**/*.d.ts"],
+      // set to today's real numbers minus a hair; raise them as tests grow
+      // (they never ratchet down without a deliberate decision)
+      thresholds: {
+        lines: 80,
+        functions: 60,
+        branches: 60,
+        statements: 80,
+      },
+    },
   },
 });

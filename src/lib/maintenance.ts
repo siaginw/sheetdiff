@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
 import Database from "better-sqlite3";
 import { desc, eq, inArray } from "drizzle-orm";
+import fs from "node:fs";
+import path from "node:path";
 import { db } from "./db";
 import { snapshots, tabs } from "./db/schema";
 

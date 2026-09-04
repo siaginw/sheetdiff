@@ -1,13 +1,13 @@
+import { getSheetAccess } from "@/lib/access";
+import { csvSafe } from "@/lib/csv";
+import { db } from "@/lib/db";
+import { notes as notesTable, tabs } from "@/lib/db/schema";
+import { absoluteTime } from "@/lib/format";
+import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
+import { getSessionUser } from "@/lib/session";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import Papa from "papaparse";
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { tabs, notes as notesTable } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
-import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
-import { absoluteTime } from "@/lib/format";
-import { csvSafe } from "@/lib/csv";
 
 export const runtime = "nodejs";
 
@@ -36,13 +36,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // a compilation tab's pending changes are echoes of the working tabs —
   // skip them or the typing list asks the office to enter the same shot twice
   // (the dashboard badge and the billing packet skip copies too)
-  const copyTabIds = await pureCopyTabIds(
-    await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)),
-  );
+  const copyTabIds = await pureCopyTabIds(await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)));
 
-  const rows: string[][] = [
-    ["Tab", "Change", "Row ID", "Row", "Column", "Old", "New", "Note", "Seen at"],
-  ];
+  const rows: string[][] = [["Tab", "Change", "Row ID", "Row", "Column", "Old", "New", "Note", "Seen at"]];
 
   let dataAsOf = 0;
   for (const tab of tracked) {
@@ -52,11 +48,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     dataAsOf = Math.max(dataAsOf, pending.latestAt);
     const when = absoluteTime(pending.latestAt);
     // rowKeys are only unique within a tab — scope notes accordingly
-    const noteByRow = new Map(
-      sheetNotes
-        .filter((n) => n.rowKey && n.tabId === tab.id)
-        .map((n) => [n.rowKey!, n.body]),
-    );
+    const noteByRow = new Map(sheetNotes.filter((n) => n.rowKey && n.tabId === tab.id).map((n) => [n.rowKey!, n.body]));
 
     for (const row of pending.unresolved) {
       const note = noteByRow.get(row.rowKey) ?? "";
@@ -64,19 +56,40 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       if (row.status === "changed") {
         for (const c of row.cells) {
           rows.push([
-            csvSafe(tab.title), "Changed", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
-            csvSafe(c.header), csvSafe(c.from), csvSafe(c.to), csvSafe(note), when,
+            csvSafe(tab.title),
+            "Changed",
+            csvSafe(row.key ?? ""),
+            String((row.newIndex ?? 0) + 1),
+            csvSafe(c.header),
+            csvSafe(c.from),
+            csvSafe(c.to),
+            csvSafe(note),
+            when,
           ]);
         }
       } else if (row.status === "added") {
         rows.push([
-          csvSafe(tab.title), "Added", csvSafe(row.key ?? ""), String((row.newIndex ?? 0) + 1),
-          "(new row)", "", csvSafe(row.values.filter(Boolean).join(" | ")), csvSafe(note), when,
+          csvSafe(tab.title),
+          "Added",
+          csvSafe(row.key ?? ""),
+          String((row.newIndex ?? 0) + 1),
+          "(new row)",
+          "",
+          csvSafe(row.values.filter(Boolean).join(" | ")),
+          csvSafe(note),
+          when,
         ]);
       } else {
         rows.push([
-          csvSafe(tab.title), "Removed", csvSafe(row.key ?? ""), String((row.oldIndex ?? 0) + 1),
-          "(deleted row)", csvSafe(row.values.filter(Boolean).join(" | ")), "", csvSafe(note), when,
+          csvSafe(tab.title),
+          "Removed",
+          csvSafe(row.key ?? ""),
+          String((row.oldIndex ?? 0) + 1),
+          "(deleted row)",
+          csvSafe(row.values.filter(Boolean).join(" | ")),
+          "",
+          csvSafe(note),
+          when,
         ]);
       }
     }

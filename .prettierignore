@@ -1,0 +1,7 @@
+.next/
+node_modules/
+coverage/
+data/
+next-env.d.ts
+package-lock.json
+pnpm-lock.yaml

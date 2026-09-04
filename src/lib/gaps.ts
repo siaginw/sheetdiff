@@ -1,6 +1,6 @@
+import { detectActivityColumn, detectStationColumns, isFootageChainRow, isGapRow, parseStation } from "./detect";
 import type { SnapshotData } from "./diff/engine";
 import { norm } from "./diff/normalize";
-import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow } from "./detect";
 
 /**
  * The auto gap report: reconstructs a tab's footage chain from ONLY the
@@ -98,8 +98,7 @@ export function computeGapReport(data: SnapshotData): GapReport {
   report.chainEnd = chainEnd;
   report.designedSpan = chainEnd - chainStart;
 
-  const spansInvalidBetween = (prevIdx: number, curIdx: number) =>
-    invalidIdx.some((k) => k > prevIdx && k < curIdx);
+  const spansInvalidBetween = (prevIdx: number, curIdx: number) => invalidIdx.some((k) => k > prevIdx && k < curIdx);
 
   let coveredTo = 0;
   let prev: (typeof members)[number] | null = null;
@@ -123,7 +122,13 @@ export function computeGapReport(data: SnapshotData): GapReport {
       });
     }
     if (m.gap) {
-      report.knownGaps.push({ from: m.start!, to: m.end!, ft: m.end! - m.start!, afterRow: m.i + 1, spansInvalid: false });
+      report.knownGaps.push({
+        from: m.start!,
+        to: m.end!,
+        ft: m.end! - m.start!,
+        afterRow: m.i + 1,
+        spansInvalid: false,
+      });
     } else {
       report.placedFt += m.end! - m.start!;
     }

@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
+import { describe, expect, it } from "vitest";
+import { computeFootage, runChecks } from "./checks";
 import { parseImportFile } from "./import";
 import { toSnapshotData } from "./snapshots";
-import { runChecks, computeFootage } from "./checks";
 
 function csvFile(text: string): File {
   return new File([text], "gis-export.csv", { type: "text/csv" });
@@ -164,9 +164,7 @@ const bomb = (mb: number) => Buffer.alloc(mb * 1024 * 1024, 0x41); // DEFLATE co
 describe("parseImportFile (XLSX zip guard)", () => {
   it("rejects a data-descriptor bomb (flag bit 3, zeroed local sizes) with the friendly message", async () => {
     const zip = craftZip({
-      entries: [
-        { name: "xl/worksheets/sheet1.xml", uncompressed: bomb(70) },
-      ],
+      entries: [{ name: "xl/worksheets/sheet1.xml", uncompressed: bomb(70) }],
       descriptor: true,
       declaredUncompressed: 1000,
     });
@@ -182,12 +180,16 @@ describe("parseImportFile (XLSX zip guard)", () => {
       declaredUncompressed: 100,
       eocdCount: 1, // the bomb is "not there"
     });
-    await expect(parseImportFile(new File([new Uint8Array(zip)], "lie.xlsx"))).rejects.toThrow(/expands too large|corrupt or lies/);
+    await expect(parseImportFile(new File([new Uint8Array(zip)], "lie.xlsx"))).rejects.toThrow(
+      /expands too large|corrupt or lies/,
+    );
   });
 
   it("survives a truncated deflate stream with a clean error (no raw zlib internals)", async () => {
     const zip = craftZip({ entries: [{ name: "a.xml", uncompressed: Buffer.from("hello") }] });
     const truncated = zip.subarray(0, zip.length - 8); // chop into the central dir/EOCD
-    await expect(parseImportFile(new File([new Uint8Array(truncated)], "cut.xlsx"))).rejects.toThrow(/xlsx|zip|central/i);
+    await expect(parseImportFile(new File([new Uint8Array(truncated)], "cut.xlsx"))).rejects.toThrow(
+      /xlsx|zip|central/i,
+    );
   });
 });

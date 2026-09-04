@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { computeGapReport } from "./gaps";
+import { describe, expect, it } from "vitest";
 import type { SnapshotData } from "./diff/engine";
+import { computeGapReport } from "./gaps";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 const H = ["Activity", "Start STA", "End STA"];
@@ -10,7 +10,7 @@ describe("computeGapReport", () => {
     const r = computeGapReport(
       snap(H, [
         ["Plow", "0", "500"],
-        ["48 Handhole", "500", "500"],  // sits on a station, skipped
+        ["48 Handhole", "500", "500"], // sits on a station, skipped
         ["Bore", "500", "900"],
         ["Cobble Adder", "500", "900"], // billing overlay, skipped
       ]),
@@ -25,7 +25,7 @@ describe("computeGapReport", () => {
     const r = computeGapReport(
       snap(H, [
         ["Plow", "0", "500"],
-        ["GAP", "500", "620"],   // booked by the crew
+        ["GAP", "500", "620"], // booked by the crew
         ["Bore", "620", "900"],
         ["Plow", "950", "1200"], // 900→950 was never booked — the actionable hole
       ]),
@@ -83,7 +83,7 @@ describe("computeGapReport", () => {
     const r = computeGapReport(
       snap(H, [
         ["Plow", "0", "400"],
-        ["GAP", "500", "620"],  // the 400–500 hole BEFORE it was never booked
+        ["GAP", "500", "620"], // the 400–500 hole BEFORE it was never booked
         ["Plow", "620", "900"],
       ]),
     );
@@ -103,7 +103,9 @@ describe("computeGapReport", () => {
     expect(r.overlaps).toHaveLength(1);
     expect(r.overlaps[0]).toMatchObject({ from: 200, to: 300, ft: 100 }); // not 9800
     const accounted =
-      r.placedFt + r.knownGaps.reduce((n, g) => n + g.ft, 0) + r.unaccounted.reduce((n, g) => n + g.ft, 0) -
+      r.placedFt +
+      r.knownGaps.reduce((n, g) => n + g.ft, 0) +
+      r.unaccounted.reduce((n, g) => n + g.ft, 0) -
       r.overlaps.reduce((n, g) => n + g.ft, 0);
     expect(accounted).toBe(r.designedSpan);
   });

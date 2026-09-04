@@ -8,11 +8,11 @@
  *  - boot: ensureMigrated() with DATABASE_PATH swapped per fixture
  *  - CLI: `node scripts/migrate.mjs` via execFileSync
  */
+import Database from "better-sqlite3";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
 
 process.env.APP_SECRET ??= "migrate-test-secret-0123456789";
@@ -30,7 +30,9 @@ function legacyFixture(name: string): string {
   // materializes every table), NOT a bare users table
   const sql0000 = fs.readFileSync(path.join(repoRoot, "drizzle", "0000_equal_darkstar.sql"), "utf8");
   db.exec(sql0000.split("--> statement-breakpoint").join(""));
-  db.prepare("INSERT INTO users (id, google_sub, email, name, tokens_enc, created_at) VALUES ('legacy-1', 'sub-x', 'legacy@x.com', 'L', 't', 1)").run();
+  db.prepare(
+    "INSERT INTO users (id, google_sub, email, name, tokens_enc, created_at) VALUES ('legacy-1', 'sub-x', 'legacy@x.com', 'L', 't', 1)",
+  ).run();
   db.close();
   return dbPath;
 }
@@ -69,7 +71,11 @@ async function bootMigrate(dbPath: string) {
 }
 
 afterAll(() => {
-  try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* Windows WAL */ }
+  try {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  } catch {
+    /* Windows WAL */
+  }
 });
 
 describe("ensureMigrated (boot path)", () => {
@@ -161,7 +167,10 @@ describe("legacy v0.2 upgrade with 0001 present (fleet-13 blocker)", () => {
     await bootMigrate(dbPath);
     const db = new Database(dbPath, { readonly: true });
     try {
-      const cols = db.prepare("PRAGMA table_info(spreadsheets)").all().map((c) => (c as { name: string }).name);
+      const cols = db
+        .prepare("PRAGMA table_info(spreadsheets)")
+        .all()
+        .map((c) => (c as { name: string }).name);
       expect(cols).toContain("capture_fail_streak");
       expect(cols).toContain("last_capture_error");
       expect(cols).toContain("last_capture_error_at");

@@ -1,17 +1,23 @@
-import { redirect } from "next/navigation";
-import { AlertCircle, ArrowRight, ClipboardPaste } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getSessionUser } from "@/lib/session";
-import { parseSpreadsheetId, fetchSpreadsheetMeta, fetchTabValues, getUserClient, googleConfigured } from "@/lib/google";
-import { toSnapshotData } from "@/lib/snapshots";
+import { startTracking } from "@/lib/actions";
 import { detectKeyColumn } from "@/lib/diff/engine";
 import { colLetter } from "@/lib/diff/normalize";
-import { startTracking } from "@/lib/actions";
+import {
+  fetchSpreadsheetMeta,
+  fetchTabValues,
+  getUserClient,
+  googleConfigured,
+  parseSpreadsheetId,
+} from "@/lib/google";
+import { getSessionUser } from "@/lib/session";
+import { toSnapshotData } from "@/lib/snapshots";
+import { AlertCircle, ArrowRight, ClipboardPaste } from "lucide-react";
+import { redirect } from "next/navigation";
 
 interface TabPreview {
   title: string;
@@ -45,7 +51,8 @@ export default async function NewSheetPage({
   if (url) {
     const googleId = parseSpreadsheetId(url);
     if (!googleId) {
-      loadError = "That doesn't look like a Google Sheets link. Paste the full URL, e.g. https://docs.google.com/spreadsheets/d/…";
+      loadError =
+        "That doesn't look like a Google Sheets link. Paste the full URL, e.g. https://docs.google.com/spreadsheets/d/…";
     } else if (!googleConfigured()) {
       // error taxonomy: missing server credentials is NOT a sharing problem.
       // A demo user (or one who signed in before the env was wiped) can reach
@@ -112,9 +119,7 @@ export default async function NewSheetPage({
         {(error ?? loadError) ? (
           <div className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {error === "no-tabs" ? "Pick at least one tab to track." : loadError ?? error}
-            </span>
+            <span>{error === "no-tabs" ? "Pick at least one tab to track." : (loadError ?? error)}</span>
           </div>
         ) : null}
 
@@ -125,20 +130,13 @@ export default async function NewSheetPage({
               <div className="border-b px-5 py-4">
                 <p className="font-medium">{preview.title}</p>
                 <p className="text-sm text-muted-foreground">
-                  {preview.tabs.length} {preview.tabs.length === 1 ? "tab" : "tabs"} found · pick
-                  which ones to track
+                  {preview.tabs.length} {preview.tabs.length === 1 ? "tab" : "tabs"} found · pick which ones to track
                 </p>
               </div>
               <ul className="divide-y">
                 {preview.tabs.map((tab) => (
                   <li key={tab.title} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
-                    <Checkbox
-                      id={`tab-${tab.title}`}
-                      name="tab"
-                      value={tab.title}
-                      defaultChecked
-                      className="mt-0"
-                    />
+                    <Checkbox id={`tab-${tab.title}`} name="tab" value={tab.title} defaultChecked className="mt-0" />
                     <Label htmlFor={`tab-${tab.title}`} className="min-w-0 flex-1 cursor-pointer">
                       <span className="block truncate font-medium">{tab.title}</span>
                       <span className="text-xs text-muted-foreground">

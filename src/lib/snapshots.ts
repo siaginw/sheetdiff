@@ -1,14 +1,14 @@
+import { and, eq, inArray, max, ne } from "drizzle-orm";
 import crypto from "node:crypto";
-import zlib from "node:zlib";
 import { promisify } from "node:util";
-import {and, eq, inArray, max, ne} from "drizzle-orm";
+import zlib from "node:zlib";
 import { db } from "./db";
-import { spreadsheets, tabs, snapshots, snapshotStats, type Spreadsheet, type Snapshot } from "./db/schema";
-import { getUserClient, fetchTabValues } from "./google";
-import { diffSnapshots, type SnapshotData, type DiffResult } from "./diff/engine";
+import { snapshots, snapshotStats, spreadsheets, tabs, type Snapshot, type Spreadsheet } from "./db/schema";
+import { diffSnapshots, type DiffResult, type SnapshotData } from "./diff/engine";
+import { norm } from "./diff/normalize";
+import { fetchTabValues, getUserClient } from "./google";
 
 const gzipAsync = promisify(zlib.gzip);
-import { norm } from "./diff/normalize";
 
 /**
  * Convert a raw API grid into a stable SnapshotData:
@@ -88,15 +88,10 @@ const inFlight = new Map<string, Promise<CaptureResult>>();
 /** Single-flighted per spreadsheet: a manual click racing the scheduler must
  *  not double-capture (both would diff against the same prev, double-counting
  *  the timeline stats). */
-export function captureSnapshot(
-  spreadsheetId: string,
-  trigger: "manual" | "scheduled",
-): Promise<CaptureResult> {
+export function captureSnapshot(spreadsheetId: string, trigger: "manual" | "scheduled"): Promise<CaptureResult> {
   const existing = inFlight.get(spreadsheetId);
   if (existing) return existing;
-  const run = captureSnapshotInner(spreadsheetId, trigger).finally(() =>
-    inFlight.delete(spreadsheetId),
-  );
+  const run = captureSnapshotInner(spreadsheetId, trigger).finally(() => inFlight.delete(spreadsheetId));
   inFlight.set(spreadsheetId, run);
   return run;
 }
@@ -168,12 +163,14 @@ async function captureSnapshotInner(
   // transaction commits having executed nothing.
   db.transaction((tx) => {
     tx.insert(snapshots).values(inserts).run();
-    tx
-      .update(spreadsheets)
+    tx.update(spreadsheets)
       .set({
-          captureFailStreak: 0,
-          lastCaptureError: null,
-          lastCaptureErrorAt: null, lastSnapshotAt: now, nextRunAt: computeNextRun(sheet, now) })
+        captureFailStreak: 0,
+        lastCaptureError: null,
+        lastCaptureErrorAt: null,
+        lastSnapshotAt: now,
+        nextRunAt: computeNextRun(sheet, now),
+      })
       .where(eq(spreadsheets.id, sheet.id))
       .run();
   });
@@ -195,9 +192,7 @@ async function captureSnapshotInner(
  * replaces the per-tab hand-rolled loop that ran 36 sequential queries on
  * every page render and twice inside capture.
  */
-export async function latestNonImportSnapshots(
-  tabIds: string[],
-): Promise<Map<string, Snapshot>> {
+export async function latestNonImportSnapshots(tabIds: string[]): Promise<Map<string, Snapshot>> {
   if (tabIds.length === 0) return new Map();
   // SQLite bare-column-with-max: the row returned per group IS the max-createdAt
   // row — one query, one blob per tab, instead of reading the whole history

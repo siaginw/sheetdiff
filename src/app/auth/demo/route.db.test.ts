@@ -4,8 +4,8 @@
  * production-izing would otherwise expose a LAN-reachable login).
  * Standard temp-DATABASE_PATH harness; schema via the repo's own migrator.
  */
-import { beforeEach, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeEach, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("demo");
 
@@ -15,8 +15,12 @@ const { GET } = await import("./route");
 
 const seedDemoUser = () =>
   db.insert(users).values({
-    id: "demo-1", googleSub: "smoke-fake-sub", email: "smoke@test.local", name: "Smoke",
-    tokensEnc: "x", createdAt: 1,
+    id: "demo-1",
+    googleSub: "smoke-fake-sub",
+    email: "smoke@test.local",
+    name: "Smoke",
+    tokensEnc: "x",
+    createdAt: 1,
   });
 
 beforeEach(async () => {
@@ -36,8 +40,12 @@ describe("GET /auth/demo", () => {
   it("REFUSES once a real (non-demo) user exists — even with ENABLE_DEMO=1", async () => {
     await seedDemoUser();
     await db.insert(users).values({
-      id: "real-1", googleSub: "real-sub", email: "erin@company.com", name: "Erin",
-      tokensEnc: "x", createdAt: 2,
+      id: "real-1",
+      googleSub: "real-sub",
+      email: "erin@company.com",
+      name: "Erin",
+      tokensEnc: "x",
+      createdAt: 2,
     });
     const res = await GET(new Request("http://localhost/auth/demo"));
     expect(res.status).toBe(307);

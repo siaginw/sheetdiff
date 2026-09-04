@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { traceKey, type TraceSnap } from "./trace";
+import { describe, expect, it } from "vitest";
 import type { SnapshotData } from "./diff/engine";
+import { traceKey, type TraceSnap } from "./trace";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 const H = ["Shot", "Start Station", "End Station", "Type"];
@@ -30,7 +30,13 @@ describe("traceKey", () => {
     const events = traceKey(
       chain([
         { at: 1000, rows: [["S1", "0", "100", "plow"]] },
-        { at: 2000, rows: [["S1", "0", "100", "plow"], ["S9", "100", "150", "bore"]] },
+        {
+          at: 2000,
+          rows: [
+            ["S1", "0", "100", "plow"],
+            ["S9", "100", "150", "bore"],
+          ],
+        },
         { at: 3000, rows: [["S1", "0", "100", "plow"]] }, // S9 deleted
       ]),
       "s9",
@@ -43,9 +49,27 @@ describe("traceKey", () => {
   it("stays quiet across snapshots that didn't touch the shot", () => {
     const events = traceKey(
       chain([
-        { at: 1000, rows: [["S1", "0", "100", "plow"], ["S2", "100", "200", "bore"]] },
-        { at: 2000, rows: [["S1", "0", "100", "plow"], ["S2", "100", "999", "bore"]] },
-        { at: 3000, rows: [["S1", "0", "500", "plow"], ["S2", "100", "999", "bore"]] },
+        {
+          at: 1000,
+          rows: [
+            ["S1", "0", "100", "plow"],
+            ["S2", "100", "200", "bore"],
+          ],
+        },
+        {
+          at: 2000,
+          rows: [
+            ["S1", "0", "100", "plow"],
+            ["S2", "100", "999", "bore"],
+          ],
+        },
+        {
+          at: 3000,
+          rows: [
+            ["S1", "0", "500", "plow"],
+            ["S2", "100", "999", "bore"],
+          ],
+        },
       ]),
       "s2",
     );
@@ -66,8 +90,20 @@ describe("traceKey without ID columns (station + text matching)", () => {
   it("traces by station number: the row covering that station", () => {
     const events = traceKey(
       tchain([
-        { at: 1000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW B"]] },
-        { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "CREW C"]] },
+        {
+          at: 1000,
+          rows: [
+            ["Plow", "0", "500", "CREW A"],
+            ["Bore", "500", "900", "CREW B"],
+          ],
+        },
+        {
+          at: 2000,
+          rows: [
+            ["Plow", "0", "500", "CREW A"],
+            ["Bore", "500", "900", "CREW C"],
+          ],
+        },
       ]),
       "700",
     );
@@ -79,14 +115,26 @@ describe("traceKey without ID columns (station + text matching)", () => {
   it("station mode uses the station columns — a row-index or footage column can't hijack the span", () => {
     const events = traceKey(
       [
-        { createdAt: 1000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
-          ["1", "Plow", "600", "900", "300"],
-          ["2", "Bore", "0", "500", "500"],
-        ]) },
-        { createdAt: 2000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
-          ["1", "Plow", "600", "900", "300"],
-          ["2", "Bore", "0", "500", "500"],
-        ]) },
+        {
+          createdAt: 1000,
+          data: snap(
+            ["#", "Activity", "Start STA", "End STA", "Footage"],
+            [
+              ["1", "Plow", "600", "900", "300"],
+              ["2", "Bore", "0", "500", "500"],
+            ],
+          ),
+        },
+        {
+          createdAt: 2000,
+          data: snap(
+            ["#", "Activity", "Start STA", "End STA", "Footage"],
+            [
+              ["1", "Plow", "600", "900", "300"],
+              ["2", "Bore", "0", "500", "500"],
+            ],
+          ),
+        },
       ],
       "450", // inside the Bore 0–500 span; row-1's "1" index would have matched first under old logic
     );
@@ -95,14 +143,26 @@ describe("traceKey without ID columns (station + text matching)", () => {
     // which also produced no events — assert via a visible mutation)
     const mutated = traceKey(
       [
-        { createdAt: 1000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
-          ["1", "Plow", "600", "900", "300"],
-          ["2", "Bore", "0", "500", "500"],
-        ]) },
-        { createdAt: 2000, data: snap(["#", "Activity", "Start STA", "End STA", "Footage"], [
-          ["1", "Plow", "600", "900", "999"], // plow's footage changed — must NOT appear in a 450-trace
-          ["2", "Bore", "0", "500", "500"],
-        ]) },
+        {
+          createdAt: 1000,
+          data: snap(
+            ["#", "Activity", "Start STA", "End STA", "Footage"],
+            [
+              ["1", "Plow", "600", "900", "300"],
+              ["2", "Bore", "0", "500", "500"],
+            ],
+          ),
+        },
+        {
+          createdAt: 2000,
+          data: snap(
+            ["#", "Activity", "Start STA", "End STA", "Footage"],
+            [
+              ["1", "Plow", "600", "900", "999"], // plow's footage changed — must NOT appear in a 450-trace
+              ["2", "Bore", "0", "500", "500"],
+            ],
+          ),
+        },
       ],
       "450",
     );
@@ -113,7 +173,13 @@ describe("traceKey without ID columns (station + text matching)", () => {
     const events = traceKey(
       tchain([
         { at: 1000, rows: [["Plow", "0", "500", "CREW A"]] },
-        { at: 2000, rows: [["Plow", "0", "500", "CREW A"], ["Bore", "500", "900", "HAIDER 1"]] },
+        {
+          at: 2000,
+          rows: [
+            ["Plow", "0", "500", "CREW A"],
+            ["Bore", "500", "900", "HAIDER 1"],
+          ],
+        },
         { at: 3000, rows: [["Plow", "0", "500", "CREW A"]] },
       ]),
       "HAIDER",

@@ -1,39 +1,35 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { PrintButton } from "@/components/sheet/print-button";
+import { getSheetAccess } from "@/lib/access";
+import { computeFootage } from "@/lib/checks";
 import { db } from "@/lib/db";
 import { tabs } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
-import { getSheetAccess } from "@/lib/access";
-import { latestNonImportSnapshots, decodeSnapshot } from "@/lib/snapshots";
+import type { SnapshotData } from "@/lib/diff/engine";
+import { absoluteTime, relativeTime } from "@/lib/format";
 import {
-  weeklyProduction,
   aggregateWeekly,
   dedupeTabData,
   detectStoppageTab,
   isStoppageTabTitle,
-  stoppageWeeks,
   quietStoppageLog,
-  type WeekBucket,
-  type StoppageWeek,
+  stoppageWeeks,
+  weeklyProduction,
   type QuietStoppageLog,
+  type StoppageWeek,
+  type WeekBucket,
 } from "@/lib/production";
-import { computeFootage } from "@/lib/checks";
-import type { SnapshotData } from "@/lib/diff/engine";
-import { absoluteTime, relativeTime } from "@/lib/format";
-import { PrintButton } from "@/components/sheet/print-button";
+import { getSessionUser } from "@/lib/session";
+import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
+import { eq } from "drizzle-orm";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 
 /**
  * The weekly one-pager: footage per week (as dated), placed-vs-designed
  * position, and the office backlog — the management-facing view Erin can
  * hand to a superintendent or attach to an update email. Print-ready.
  */
-export default async function ReportPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
   if (!user) redirect("/");
   const { id } = await params;
@@ -119,48 +115,51 @@ export default async function ReportPage({
           <p className="mt-1 font-mono text-xs text-muted-foreground">
             weekly production report · as of {latestAt ? absoluteTime(latestAt) : "no snapshots yet"}
             {latestAt ? ` (${relativeTime(latestAt)})` : ""} · footage as dated by crews
-            {duplicatesDropped > 0 ? ` · ${duplicatesDropped} copied row${duplicatesDropped === 1 ? "" : "s"} counted once` : ""}
+            {duplicatesDropped > 0
+              ? ` · ${duplicatesDropped} copied row${duplicatesDropped === 1 ? "" : "s"} counted once`
+              : ""}
           </p>
         </header>
 
         {weeks.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
-            No dated footage yet — this report needs Date Complete and station columns on the
-            tracked tabs.
+            No dated footage yet — this report needs Date Complete and station columns on the tracked tabs.
           </p>
         ) : (
           <>
             {/* the headline numbers */}
             <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div className="rounded-lg border p-3">
-                <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">placed total</div>
+                <div className="font-mono text-[10px] tracking-wide text-muted-foreground uppercase">placed total</div>
                 <div className="mt-1 font-mono text-lg font-semibold">{placedFt.toLocaleString("en-US")} ft</div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">this week</div>
+                <div className="font-mono text-[10px] tracking-wide text-muted-foreground uppercase">this week</div>
                 <div className="mt-1 font-mono text-lg font-semibold">
                   {thisWeek ? `${thisWeek.ft.toLocaleString("en-US")} ft` : "—"}
                 </div>
                 {thisWeek && lastWeek ? (
-                  <div className={`font-mono text-[10px] ${thisWeek.ft >= lastWeek.ft ? "text-diff-add-fg" : "text-diff-del-fg"}`}>
+                  <div
+                    className={`font-mono text-[10px] ${thisWeek.ft >= lastWeek.ft ? "text-diff-add-fg" : "text-diff-del-fg"}`}
+                  >
                     {thisWeek.ft >= lastWeek.ft ? "+" : "−"}
                     {Math.abs(thisWeek.ft - lastWeek.ft).toLocaleString("en-US")} vs last week
                   </div>
                 ) : null}
               </div>
               <div className="rounded-lg border p-3">
-                <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">weeks worked</div>
+                <div className="font-mono text-[10px] tracking-wide text-muted-foreground uppercase">weeks worked</div>
                 <div className="mt-1 font-mono text-lg font-semibold">{weeks.length}</div>
               </div>
               <div className="rounded-lg border p-3">
-                <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">dated footage</div>
+                <div className="font-mono text-[10px] tracking-wide text-muted-foreground uppercase">dated footage</div>
                 <div className="mt-1 font-mono text-lg font-semibold">{totalFt.toLocaleString("en-US")} ft</div>
               </div>
             </div>
 
             {/* the sparkline */}
             <section className="mb-8">
-              <h2 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="mb-2 font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 footage per week (as dated)
               </h2>
               <Sparkline weeks={weeks} />
@@ -168,7 +167,7 @@ export default async function ReportPage({
 
             {/* the table */}
             <section>
-              <h2 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="mb-2 font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 week by week
               </h2>
               <table className="w-full font-mono text-xs">
@@ -185,7 +184,13 @@ export default async function ReportPage({
                     const sw = stoppages?.get(w.weekStart) ?? null;
                     return (
                       <tr key={w.weekStart} className="border-b border-border/40">
-                        <td className="py-1.5 pr-4">{new Date(w.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
+                        <td className="py-1.5 pr-4">
+                          {new Date(w.weekStart).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </td>
                         <td className="py-1.5 pr-4 text-right">{w.ft.toLocaleString("en-US")} ft</td>
                         <td className="py-1.5 pr-4 text-right">{w.shots}</td>
                         {stoppages ? (
@@ -207,13 +212,14 @@ export default async function ReportPage({
               </table>
               {quietLog ? (
                 <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-[11px] text-warning">
-                  Stoppage log looks quiet: newest entry {quietLog.newestStoppage} is {quietLog.daysBehind} day{quietLog.daysBehind === 1 ? "" : "s"} behind the newest completed work ({quietLog.newestCompletion}) — is the log being kept?
+                  Stoppage log looks quiet: newest entry {quietLog.newestStoppage} is {quietLog.daysBehind} day
+                  {quietLog.daysBehind === 1 ? "" : "s"} behind the newest completed work ({quietLog.newestCompletion})
+                  — is the log being kept?
                 </p>
               ) : null}
               <p className="mt-3 text-[10.5px] text-muted-foreground">
-                &ldquo;As dated&rdquo; = a row lands in the week its Date Complete says. Late-entered
-                rows shift retroactively — check the production panel&rsquo;s late entries before
-                quoting a quiet week.
+                &ldquo;As dated&rdquo; = a row lands in the week its Date Complete says. Late-entered rows shift
+                retroactively — check the production panel&rsquo;s late entries before quoting a quiet week.
               </p>
             </section>
           </>

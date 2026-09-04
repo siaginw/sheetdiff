@@ -19,8 +19,8 @@
  *    CSV lands on the chosen tab (with first-tracked fallback).
  *  - startTracking: a failed first capture deletes the ghost sheet row.
  */
-import { vi } from "vitest";
 import ExcelJS from "exceljs";
+import { vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   userId: null as string | null,
@@ -41,9 +41,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("./crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -59,8 +57,8 @@ vi.mock("./snapshots", async (importOriginal) => {
   return { ...actual, captureSnapshot: vi.fn() };
 });
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("pending");
 
@@ -83,11 +81,16 @@ const signIn = (id: string | null) => {
 };
 
 async function seedUser(id: string) {
-  await db.insert(users).values({ id, googleSub: `sub-${id}`, email: `${id}@x.com`, name: id, tokensEnc: "unused", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id, googleSub: `sub-${id}`, email: `${id}@x.com`, name: id, tokensEnc: "unused", createdAt: 1 });
 }
 async function seedSheet(id: string, userId: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId, googleId: `gid-${id}`, title,
+    id,
+    userId,
+    googleId: `gid-${id}`,
+    title,
     url: `https://docs.google.com/spreadsheets/d/gid-${id}/edit`,
     createdAt: 1,
   });
@@ -95,26 +98,62 @@ async function seedSheet(id: string, userId: string, title: string) {
 async function seedTab(id: string, spreadsheetId: string, keyColumn: number | null, tracked = true) {
   await db.insert(tabs).values({ id, spreadsheetId, title: id, position: 0, tracked, keyColumn });
 }
-async function seedSnapshot(id: string, tabId: string, runId: string, trigger: "manual" | "import", isBaseline: boolean, createdAt: number, grid: string[][]) {
+async function seedSnapshot(
+  id: string,
+  tabId: string,
+  runId: string,
+  trigger: "manual" | "import",
+  isBaseline: boolean,
+  createdAt: number,
+  grid: string[][],
+) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger, isBaseline,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt,
+    id,
+    tabId,
+    runId,
+    trigger,
+    isBaseline,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt,
   });
 }
 /** Like seedSnapshot but stores an arbitrary (undecodable) blob — for proving
  *  the quiet-day short-circuit returns before any blob is ever gunzip'd. */
-async function seedRawBlobSnapshot(id: string, tabId: string, runId: string, trigger: "manual" | "import", isBaseline: boolean, createdAt: number, raw: Buffer) {
+async function seedRawBlobSnapshot(
+  id: string,
+  tabId: string,
+  runId: string,
+  trigger: "manual" | "import",
+  isBaseline: boolean,
+  createdAt: number,
+  raw: Buffer,
+) {
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger, isBaseline,
-    rowCount: 0, colCount: 0, dataBlob: raw, createdAt,
+    id,
+    tabId,
+    runId,
+    trigger,
+    isBaseline,
+    rowCount: 0,
+    colCount: 0,
+    dataBlob: raw,
+    createdAt,
   });
 }
 /** better-sqlite3 v13 enables `PRAGMA foreign_keys = ON` by default, so every
  *  stats row must reference a real snapshot id (as production does: stats are
  *  written capture-time, one row per snapshot). */
-async function seedStats(snapshotId: string, tabId: string, createdAt: number, added: number, removed: number, changed: number) {
+async function seedStats(
+  snapshotId: string,
+  tabId: string,
+  createdAt: number,
+  added: number,
+  removed: number,
+  changed: number,
+) {
   await db.insert(snapshotStats).values({ snapshotId, tabId, added, removed, changed, createdAt });
 }
 const tabRow = async (id: string) => (await db.select().from(tabs).where(eq(tabs.id, id)))[0]!;
@@ -123,9 +162,22 @@ const tabRow = async (id: string) => (await db.select().from(tabs).where(eq(tabs
  *  The mid snapshot exercises the introduction walk (between.length > 1):
  *  S2's new content was introduced at `midAt`, S3 at `lastAt`. */
 async function seedWalkHistory(tabId: string, p: string, baseAt: number, midAt: number, lastAt: number) {
-  await seedSnapshot(`${p}-base`, tabId, `${p}0`, "manual", true, baseAt, [["Shot", "Qty"], ["S1", "10"], ["S2", "20"]]);
-  await seedSnapshot(`${p}-mid`, tabId, `${p}1`, "manual", false, midAt, [["Shot", "Qty"], ["S1", "10"], ["S2", "99"]]);
-  await seedSnapshot(`${p}-last`, tabId, `${p}2`, "manual", false, lastAt, [["Shot", "Qty"], ["S1", "10"], ["S2", "99"], ["S3", "30"]]);
+  await seedSnapshot(`${p}-base`, tabId, `${p}0`, "manual", true, baseAt, [
+    ["Shot", "Qty"],
+    ["S1", "10"],
+    ["S2", "20"],
+  ]);
+  await seedSnapshot(`${p}-mid`, tabId, `${p}1`, "manual", false, midAt, [
+    ["Shot", "Qty"],
+    ["S1", "10"],
+    ["S2", "99"],
+  ]);
+  await seedSnapshot(`${p}-last`, tabId, `${p}2`, "manual", false, lastAt, [
+    ["Shot", "Qty"],
+    ["S1", "10"],
+    ["S2", "99"],
+    ["S3", "30"],
+  ]);
 }
 
 beforeAll(async () => {
@@ -151,8 +203,17 @@ beforeAll(async () => {
   await db.update(tabs).set({ title: "csv-b" }).where(eq(tabs.id, "tab-csvB"));
 
   // tp1: no walk (2 snapshots), no acks — everything pending
-  await seedSnapshot("tp1-base", "tp1", "tp1-0", "manual", true, 1000, [["Shot", "Qty"], ["S1", "10"], ["S2", "20"]]);
-  await seedSnapshot("tp1-last", "tp1", "tp1-1", "manual", false, 2000, [["Shot", "Qty"], ["S1", "10"], ["S2", "99"], ["S3", "30"]]);
+  await seedSnapshot("tp1-base", "tp1", "tp1-0", "manual", true, 1000, [
+    ["Shot", "Qty"],
+    ["S1", "10"],
+    ["S2", "20"],
+  ]);
+  await seedSnapshot("tp1-last", "tp1", "tp1-1", "manual", false, 2000, [
+    ["Shot", "Qty"],
+    ["S1", "10"],
+    ["S2", "99"],
+    ["S3", "30"],
+  ]);
 
   // tp2/tp3: walk histories for fresh-ack vs stale-ack resolution
   await seedWalkHistory("tp2", "tp2", 1000, 2000, 3000);
@@ -165,13 +226,34 @@ beforeAll(async () => {
   await seedWalkHistory("tf", "tf", 1000, 2000, 3000);
 
   // tn: snapshots but NO baseline; te: no snapshots at all
-  await seedSnapshot("tn-1", "tn", "tn-0", "manual", false, 1000, [["Shot", "Qty"], ["S1", "1"]]);
-  await seedSnapshot("tn-2", "tn", "tn-1", "manual", false, 2000, [["Shot", "Qty"], ["S1", "2"]]);
+  await seedSnapshot("tn-1", "tn", "tn-0", "manual", false, 1000, [
+    ["Shot", "Qty"],
+    ["S1", "1"],
+  ]);
+  await seedSnapshot("tn-2", "tn", "tn-1", "manual", false, 2000, [
+    ["Shot", "Qty"],
+    ["S1", "2"],
+  ]);
 
   // ti: newest snapshot is an IMPORT — must be excluded from latest
-  await seedSnapshot("ti-base", "ti", "ti-0", "manual", true, 1000, [["Shot", "Qty"], ["S1", "1"], ["S2", "2"]]);
-  await seedSnapshot("ti-last", "ti", "ti-1", "manual", false, 2000, [["Shot", "Qty"], ["S1", "1"], ["S2", "2"], ["S4", "4"]]);
-  await seedSnapshot("ti-import", "ti", "ti-2", "import", false, 3000, [["Shot", "Qty"], ["S1", "1"], ["S2", "2"], ["S4", "4"], ["S9", "9"]]);
+  await seedSnapshot("ti-base", "ti", "ti-0", "manual", true, 1000, [
+    ["Shot", "Qty"],
+    ["S1", "1"],
+    ["S2", "2"],
+  ]);
+  await seedSnapshot("ti-last", "ti", "ti-1", "manual", false, 2000, [
+    ["Shot", "Qty"],
+    ["S1", "1"],
+    ["S2", "2"],
+    ["S4", "4"],
+  ]);
+  await seedSnapshot("ti-import", "ti", "ti-2", "import", false, 3000, [
+    ["Shot", "Qty"],
+    ["S1", "1"],
+    ["S2", "2"],
+    ["S4", "4"],
+    ["S9", "9"],
+  ]);
 
   // tq: quiet-day — undecodable blobs prove the short-circuit never reads them.
   // History: base@1000, s1@2000, s2@4500 (latest sheet snap), import@6000.
@@ -187,9 +269,18 @@ beforeAll(async () => {
   await seedStats("tqn-s1", "tq-noise", 3000, 0, 0, 3); // other tab's stats — filtered by tabId
 
   // tnz: non-zero stats in window — must fall through to the real diff
-  await seedSnapshot("tnz-base", "tnz", "tnz-0", "manual", true, 1000, [["Shot", "Qty"], ["S1", "1"]]);
-  await seedSnapshot("tnz-mid", "tnz", "tnz-1", "manual", false, 1500, [["Shot", "Qty"], ["S1", "2"]]);
-  await seedSnapshot("tnz-last", "tnz", "tnz-2", "manual", false, 5000, [["Shot", "Qty"], ["S1", "2"]]);
+  await seedSnapshot("tnz-base", "tnz", "tnz-0", "manual", true, 1000, [
+    ["Shot", "Qty"],
+    ["S1", "1"],
+  ]);
+  await seedSnapshot("tnz-mid", "tnz", "tnz-1", "manual", false, 1500, [
+    ["Shot", "Qty"],
+    ["S1", "2"],
+  ]);
+  await seedSnapshot("tnz-last", "tnz", "tnz-2", "manual", false, 5000, [
+    ["Shot", "Qty"],
+    ["S1", "2"],
+  ]);
   await seedStats("tnz-mid", "tnz", 1500, 0, 0, 1);
 
   // acks: tp2's is newer than S2's introduction (2000) -> resolves;
@@ -314,7 +405,9 @@ async function xlsxFile(sheets: [string, string[][]][]): Promise<File> {
 const runIdFrom = (message: string) => /imported=([0-9a-f-]{36})/.exec(message)![1]!;
 const importErr = (promise: Promise<void>) =>
   promise.then(
-    () => { throw new Error("importGis resolved — expected a REDIRECT throw"); },
+    () => {
+      throw new Error("importGis resolved — expected a REDIRECT throw");
+    },
     (e: Error) => e,
   );
 
@@ -341,14 +434,23 @@ describe("importGis xlsx", () => {
   it("matches worksheet names to tracked tabs case-insensitively and stores an import snapshot", async () => {
     signIn("u1");
     const file = await xlsxFile([
-      ["PE-001", [["Activity", "Start STA", "End STA"], ["Plow", "0", "500"]]],
+      [
+        "PE-001",
+        [
+          ["Activity", "Start STA", "End STA"],
+          ["Plow", "0", "500"],
+        ],
+      ],
     ]);
     const form = fd({ spreadsheetId: "imp-sheet" });
     form.set("file", file);
     const err = await importErr(importGis(form));
     expect(err.message).toMatch(/^REDIRECT:\/sheets\/imp-sheet\?tab=pe-001&imported=[0-9a-f-]{36}$/);
 
-    const rows = await db.select().from(snapshots).where(eq(snapshots.runId, runIdFrom(err.message)));
+    const rows = await db
+      .select()
+      .from(snapshots)
+      .where(eq(snapshots.runId, runIdFrom(err.message)));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.tabId).toBe("tab-pe");
     expect(rows[0]!.trigger).toBe("import");
@@ -371,7 +473,10 @@ describe("importGis csv", () => {
     const err = await importErr(importGis(csvForm("tab-csvB")));
     expect(err.message).toMatch(/^REDIRECT:\/sheets\/imp-sheet-csv\?tab=csv-b&imported=[0-9a-f-]{36}$/);
 
-    const rows = await db.select().from(snapshots).where(eq(snapshots.runId, runIdFrom(err.message)));
+    const rows = await db
+      .select()
+      .from(snapshots)
+      .where(eq(snapshots.runId, runIdFrom(err.message)));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.tabId).toBe("tab-csvB");
     expect(rows[0]!.trigger).toBe("import");
@@ -385,7 +490,10 @@ describe("importGis csv", () => {
     const err = await importErr(importGis(csvForm("no-such-tab")));
     expect(err.message).toMatch(/^REDIRECT:\/sheets\/imp-sheet-csv\?tab=csv-a&imported=[0-9a-f-]{36}$/);
 
-    const rows = await db.select().from(snapshots).where(eq(snapshots.runId, runIdFrom(err.message)));
+    const rows = await db
+      .select()
+      .from(snapshots)
+      .where(eq(snapshots.runId, runIdFrom(err.message)));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.tabId).toBe("tab-csvA");
   });
@@ -447,11 +555,27 @@ describe("INTRO_WALK_LIMIT cap (retention-fueled windows)", () => {
     // UNRESOLVED: the safe direction (a false nag beats a false miss).
     await seedTab("tcap", "s-pend", 0);
     await db.update(tabs).set({ title: "tcap-tab" }).where(eq(tabs.id, "tcap"));
-    await seedSnapshot("cap-base", "tcap", "cap0", "manual", true, 0, [["Shot", "Qty"], ["S1", "10"]]);
+    await seedSnapshot("cap-base", "tcap", "cap0", "manual", true, 0, [
+      ["Shot", "Qty"],
+      ["S1", "10"],
+    ]);
     for (let i = 1; i <= 125; i++) {
       await seedSnapshot(
-        `cap-${i}`, "tcap", `cap${i}`, "manual", false, i * 1000,
-        i >= 3 ? [["Shot", "Qty"], ["S1", "55"]] : [["Shot", "Qty"], ["S1", "10"]],
+        `cap-${i}`,
+        "tcap",
+        `cap${i}`,
+        "manual",
+        false,
+        i * 1000,
+        i >= 3
+          ? [
+              ["Shot", "Qty"],
+              ["S1", "55"],
+            ]
+          : [
+              ["Shot", "Qty"],
+              ["S1", "10"],
+            ],
       );
       await seedStats(`cap-${i}`, "tcap", i * 1000, 0, 0, i === 3 ? 1 : 0);
     }

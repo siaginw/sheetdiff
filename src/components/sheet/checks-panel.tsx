@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, CircleSlash } from "lucide-react";
 import type { CheckFinding } from "@/lib/checks";
+import { AlertTriangle, CheckCircle2, CircleSlash } from "lucide-react";
 
 /**
  * The gap linter results for this sheet — station continuity breaks,
@@ -11,9 +11,7 @@ export function ChecksPanel({ findings }: { findings: CheckFinding[] }) {
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-diff-add-bg/40 px-4 py-2.5 text-sm dark:border-emerald-900">
         <CheckCircle2 className="size-4 text-diff-add-fg" />
         <span className="font-medium">All checks pass</span>
-        <span className="text-xs text-muted-foreground">
-          station continuity, duplicate shots, cross-tab strays
-        </span>
+        <span className="text-xs text-muted-foreground">station continuity, duplicate shots, cross-tab strays</span>
       </div>
     );
   }
@@ -41,8 +39,7 @@ export function ChecksPanel({ findings }: { findings: CheckFinding[] }) {
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-diff-del-fg" />
             )}
             <span>
-              <span className="font-mono text-xs text-muted-foreground">{f.tabTitle}</span>{" "}
-              <span>{f.message}</span>
+              <span className="font-mono text-xs text-muted-foreground">{f.tabTitle}</span> <span>{f.message}</span>
             </span>
           </li>
         ))}

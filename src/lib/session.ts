@@ -1,8 +1,8 @@
+import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { signValue, verifySigned } from "./crypto";
 import { db } from "./db";
 import { users } from "./db/schema";
-import { eq } from "drizzle-orm";
 
 export const SESSION_COOKIE = "sd_session";
 export const SESSION_TTL_MS = 30 * 24 * 3_600_000; // 30 days; Google refresh token does the real work

@@ -1,20 +1,25 @@
-import { describe, it, expect } from "vitest";
-import { buildBillingPacket, billingPacketCsv, quietTabs } from "./billing";
+import { describe, expect, it } from "vitest";
+import { billingPacketCsv, buildBillingPacket, quietTabs } from "./billing";
 import type { AgingGap, LateEntry } from "./production";
 
 describe("buildBillingPacket", () => {
   it("assembles footage, holes, to-enter, and late rows with summary counts", () => {
-    const holes: AgingGap[] = [
-      { from: 500, to: 620, ft: 120, firstSeen: 1, lastSeen: 2, daysOpen: 5 },
-    ];
-    const late: LateEntry[] = [
-      { row: 3, completedOn: "7/13/2026", appearedAt: 2, daysLate: 4, activity: "Plow" },
-    ];
+    const holes: AgingGap[] = [{ from: 500, to: 620, ft: 120, firstSeen: 1, lastSeen: 2, daysOpen: 5 }];
+    const late: LateEntry[] = [{ row: 3, completedOn: "7/13/2026", appearedAt: 2, daysLate: 4, activity: "Plow" }];
     const p = buildBillingPacket({
       sinceFt: 5280,
       holes,
       unresolved: [
-        { status: "changed", key: "1", rowKey: "1", oldIndex: 0, newIndex: 0, movedFrom: null, cells: [{ col: 2, header: "Qty", from: "40", to: "55" }], values: ["1", "Plow", "55"] },
+        {
+          status: "changed",
+          key: "1",
+          rowKey: "1",
+          oldIndex: 0,
+          newIndex: 0,
+          movedFrom: null,
+          cells: [{ col: 2, header: "Qty", from: "40", to: "55" }],
+          values: ["1", "Plow", "55"],
+        },
       ] as never[],
       lateEntries: late,
       snapshotLabel: "Aug 29 4:00 PM",
@@ -39,7 +44,7 @@ describe("buildBillingPacket", () => {
     });
     const csv = billingPacketCsv(p);
     expect(csv.startsWith("# SheetDiff billing packet")).toBe(true);
-    expect(csv).toContain('Test, with comma');
+    expect(csv).toContain("Test, with comma");
     expect(csv.split("\n")[0]).toMatch(/^#/);
   });
 
@@ -71,9 +76,20 @@ describe("buildBillingPacket", () => {
       let q = false;
       for (let i = 0; i < line.length; i++) {
         const ch = line[i]!;
-        if (q && ch === '"' && line[i + 1] === '"') { cur += '"'; i++; continue; }
-        if (ch === '"') { q = !q; continue; }
-        if (ch === "," && !q) { out.push(cur); cur = ""; continue; }
+        if (q && ch === '"' && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+          continue;
+        }
+        if (ch === '"') {
+          q = !q;
+          continue;
+        }
+        if (ch === "," && !q) {
+          out.push(cur);
+          cur = "";
+          continue;
+        }
         cur += ch;
       }
       out.push(cur);

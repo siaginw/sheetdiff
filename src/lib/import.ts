@@ -1,6 +1,6 @@
-import Papa from "papaparse";
-import zlib from "node:zlib";
 import ExcelJS from "exceljs";
+import zlib from "node:zlib";
+import Papa from "papaparse";
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // compressed cap
 const MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024; // decompression-bomb guard
@@ -85,8 +85,7 @@ function verifyActualZipSize(buf: Buffer, limit: number): void {
     if (localOffset + 30 > buf.length) throw new Error("[zip] entry offset out of range");
     // the local header's own name/extra lengths locate the data (they can
     // legitimately differ from the central directory's)
-    const dataStart =
-      localOffset + 30 + buf.readUInt16LE(localOffset + 26) + buf.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + buf.readUInt16LE(localOffset + 26) + buf.readUInt16LE(localOffset + 28);
     if (compSize === 0) continue; // directories / truly empty entries
     if (dataStart + compSize > buf.length) throw new Error("[zip] entry data out of range");
     if (method === 8) {
@@ -161,7 +160,9 @@ export async function parseImportFile(
     }
     const declared = zipUncompressedSize(buf);
     if (declared !== null && declared > MAX_UNCOMPRESSED_BYTES) {
-      throw new Error(`That workbook declares ${Math.round(declared / 1_048_576)} MB uncompressed — over the 64 MB limit.`);
+      throw new Error(
+        `That workbook declares ${Math.round(declared / 1_048_576)} MB uncompressed — over the 64 MB limit.`,
+      );
     }
     // declared sizes are attacker-controlled: verify ACTUAL inflated bytes by
     // trial-inflating every stored entry with a hard output limit
@@ -185,7 +186,12 @@ export async function parseImportFile(
       ws.eachRow((row) => {
         const vals: string[] = [];
         const r = row as unknown as { values: Record<number, unknown> };
-        const max = Math.max(1, ...Object.keys(r.values ?? {}).map(Number).filter((n) => !isNaN(n)));
+        const max = Math.max(
+          1,
+          ...Object.keys(r.values ?? {})
+            .map(Number)
+            .filter((n) => !isNaN(n)),
+        );
         for (let c = 1; c <= max; c++) {
           vals.push(cellText(r.values?.[c]));
         }

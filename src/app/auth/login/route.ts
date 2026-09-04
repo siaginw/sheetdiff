@@ -1,6 +1,6 @@
+import { generateAuthUrl, googleConfigured } from "@/lib/google";
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { generateAuthUrl, googleConfigured } from "@/lib/google";
 
 export const runtime = "nodejs";
 

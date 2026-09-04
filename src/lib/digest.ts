@@ -1,27 +1,27 @@
 import { render } from "@react-email/render";
-import nodemailer from "nodemailer";
 import { and, desc, eq, ne } from "drizzle-orm";
+import nodemailer from "nodemailer";
+import { listAccessibleSpreadsheets } from "./access";
+import { computeFootage, runChecks } from "./checks";
 import { db } from "./db";
-import { tabs, snapshots, notes as notesTable, users, type User } from "./db/schema";
-import { decodeSnapshot, latestNonImportSnapshots } from "./snapshots";
+import { notes as notesTable, snapshots, tabs, users, type User } from "./db/schema";
+import { detectStationColumns } from "./detect";
 import type { SnapshotData } from "./diff/engine";
-import { runChecks, computeFootage } from "./checks";
+import { DigestEmail, type DigestSheet } from "./emails/digest";
+import { relativeTime } from "./format";
+import { getPendingChanges } from "./pending";
+import { detectPermitTab, isPermitTabTitle, permitFindings } from "./permits";
 import {
-  weeklyProduction,
   aggregateWeekly,
   dedupeTabData,
   detectOverplacement,
   detectStoppageTab,
   isStoppageTabTitle,
-  stoppageWeeks,
   quietStoppageLog,
+  stoppageWeeks,
+  weeklyProduction,
 } from "./production";
-import { detectPermitTab, isPermitTabTitle, permitFindings } from "./permits";
-import { detectStationColumns } from "./detect";
-import { getPendingChanges } from "./pending";
-import { listAccessibleSpreadsheets } from "./access";
-import { DigestEmail, type DigestSheet } from "./emails/digest";
-import { relativeTime } from "./format";
+import { decodeSnapshot, latestNonImportSnapshots } from "./snapshots";
 import { captureIsStale } from "./staleness";
 
 export function smtpConfigured(): boolean {
@@ -91,9 +91,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     for (const tab of tracked) {
       const latestData = latestDataByTab.get(tab.id) ?? null;
       if (latestData) {
-        const checkFindings = runChecks([
-          { tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null },
-        ]);
+        const checkFindings = runChecks([{ tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null }]);
         digest.checkCount += checkFindings.length;
         for (const f of checkFindings.slice(0, 3)) digest.topChecks.push(`${tab.title}: ${f.message}`);
       }
@@ -123,13 +121,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       const baselineRows = await db
         .select({ dataBlob: snapshots.dataBlob })
         .from(snapshots)
-        .where(
-          and(
-            eq(snapshots.tabId, tab.id),
-            eq(snapshots.isBaseline, true),
-            ne(snapshots.trigger, "import"),
-          ),
-        )
+        .where(and(eq(snapshots.tabId, tab.id), eq(snapshots.isBaseline, true), ne(snapshots.trigger, "import")))
         .orderBy(desc(snapshots.createdAt))
         .limit(1);
       if (baselineRows[0]) {
@@ -144,9 +136,15 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
       for (const row of pending.unresolved) {
         if (digest.sampleChanges.length >= 12) break;
         if (row.status === "added") {
-          digest.sampleChanges.push({ tab: tab.title, description: `added: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
+          digest.sampleChanges.push({
+            tab: tab.title,
+            description: `added: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}`,
+          });
         } else if (row.status === "removed") {
-          digest.sampleChanges.push({ tab: tab.title, description: `removed: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}` });
+          digest.sampleChanges.push({
+            tab: tab.title,
+            description: `removed: ${row.values.slice(0, 4).filter(Boolean).join(" · ") || "(empty row)"}`,
+          });
         } else if (row.cells.length > 0) {
           digest.sampleChanges.push({
             tab: tab.title,
@@ -187,7 +185,8 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
         const agg = aggregateWeekly(weeklyByTab);
         if (agg.weeks.length > 0) {
           digest.weekFt = agg.weeks[agg.weeks.length - 1]!.ft;
-          digest.weekDeltaFt = agg.weeks.length > 1 ? agg.weeks[agg.weeks.length - 1]!.ft - agg.weeks[agg.weeks.length - 2]!.ft : null;
+          digest.weekDeltaFt =
+            agg.weeks.length > 1 ? agg.weeks[agg.weeks.length - 1]!.ft - agg.weeks[agg.weeks.length - 2]!.ft : null;
           lastWeekStart = agg.weeks[agg.weeks.length - 1]!.weekStart;
         }
       }
@@ -199,9 +198,14 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
     {
       const totalsTab = allTabs.find((t) => /totals?|summary/i.test(t.title) && t.tracked);
       if (totalsTab) {
-        const totalsSnap = (await db.select().from(snapshots)
-          .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
-          .orderBy(desc(snapshots.createdAt)).limit(1))[0];
+        const totalsSnap = (
+          await db
+            .select()
+            .from(snapshots)
+            .where(and(eq(snapshots.tabId, totalsTab.id), ne(snapshots.trigger, "import")))
+            .orderBy(desc(snapshots.createdAt))
+            .limit(1)
+        )[0];
         if (totalsSnap) {
           const totals = decodeSnapshot(totalsSnap.dataBlob);
           totalsData = totals;
@@ -252,7 +256,10 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
             totals: totalsData,
             peTabs: workingTabs
               .filter((t) => !deduped.pureCopies.has(t.title))
-              .map((t) => ({ title: t.title, data: { headers: t.data.headers, rows: permitFresh.get(t.title) ?? [] } })),
+              .map((t) => ({
+                title: t.title,
+                data: { headers: t.data.headers, rows: permitFresh.get(t.title) ?? [] },
+              })),
           });
           digest.permitCounts = {
             unapprovedCrossings: findings.filter((f) => f.kind === "placed-under-unapproved").length,
@@ -278,7 +285,7 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
         if (stoppageTab) {
           const weeks = stoppageWeeks(stoppageTab.data);
           const quiet = quietStoppageLog(weeks, prodTabsFresh);
-          const thisWeek = lastWeekStart !== null ? weeks.get(lastWeekStart) ?? null : null;
+          const thisWeek = lastWeekStart !== null ? (weeks.get(lastWeekStart) ?? null) : null;
           digest.stoppage = {
             weekCount: thisWeek?.count ?? 0,
             exemplar: thisWeek?.exemplar ?? "",
@@ -311,9 +318,7 @@ export async function sendDigestTo(user: User): Promise<DigestSendResult> {
   if (sheets.length === 0) return { sent: false, reason: "no-sheets" };
 
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const html = await render(
-    DigestEmail({ name: user.name?.split(" ")[0] ?? "", appUrl, sheets }),
-  );
+  const html = await render(DigestEmail({ name: user.name?.split(" ")[0] ?? "", appUrl, sheets }));
   const totalUnresolved = sheets.reduce((n, s) => n + s.unresolved, 0);
   const staleCount = sheets.filter((s) => s.lastSnapshotAgo).length;
 

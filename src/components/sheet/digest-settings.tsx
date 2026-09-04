@@ -1,8 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Send } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,17 +9,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { saveDigestSettings } from "@/lib/actions";
 import { sendTestDigest } from "@/lib/digest-actions";
+import { Send } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 const DAY_ITEMS = [
   { value: "daily", label: "Every day" },
@@ -56,13 +50,31 @@ export function DigestSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <DigestBody digestEmail={digestEmail} digestTime={digestTime} digestDay={digestDay} smtpReady={smtpReady} onSaved={() => onOpenChange(false)} />
+        <DigestBody
+          digestEmail={digestEmail}
+          digestTime={digestTime}
+          digestDay={digestDay}
+          smtpReady={smtpReady}
+          onSaved={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: { digestEmail: string | null; digestTime: string; digestDay: number | null; smtpReady: boolean; onSaved: () => void }) {
+function DigestBody({
+  digestEmail,
+  digestTime,
+  digestDay,
+  smtpReady,
+  onSaved,
+}: {
+  digestEmail: string | null;
+  digestTime: string;
+  digestDay: number | null;
+  smtpReady: boolean;
+  onSaved: () => void;
+}) {
   const [email, setEmail] = useState(digestEmail ?? "");
   const [day, setDay] = useState(digestDay === null || digestDay === undefined ? "daily" : String(digestDay));
   const [testing, setTesting] = useState(false);
@@ -77,7 +89,6 @@ function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: 
   };
   return (
     <>
-
       <form
         action={saveDigestSettings}
         onSubmit={() => {
@@ -92,14 +103,15 @@ function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: 
         <DialogHeader>
           <DialogTitle>Digest email</DialogTitle>
           <DialogDescription>
-            A scheduled email with what changed since the last collection, unresolved changes,
-            check findings, footage movement, and audit notes. Clear the address to turn it
-            off.
+            A scheduled email with what changed since the last collection, unresolved changes, check findings, footage
+            movement, and audit notes. Clear the address to turn it off.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-5 items-center gap-2">
-            <Label htmlFor="digest-email" className="col-span-1 text-right text-sm">To</Label>
+            <Label htmlFor="digest-email" className="col-span-1 text-right text-sm">
+              To
+            </Label>
             <Input
               id="digest-email"
               name="digestEmail"
@@ -133,14 +145,10 @@ function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: 
             </Select>
           </div>
           <div className="grid grid-cols-5 items-center gap-2">
-            <Label htmlFor="digest-time" className="col-span-1 text-right text-sm">At</Label>
-            <Input
-              id="digest-time"
-              name="digestTime"
-              type="time"
-              defaultValue={digestTime}
-              className="col-span-4"
-            />
+            <Label htmlFor="digest-time" className="col-span-1 text-right text-sm">
+              At
+            </Label>
+            <Input id="digest-time" name="digestTime" type="time" defaultValue={digestTime} className="col-span-4" />
           </div>
         </div>
         <DialogFooter className="flex items-center gap-2">
@@ -149,16 +157,17 @@ function DigestBody({ digestEmail, digestTime, digestDay, smtpReady, onSaved }: 
             variant="outline"
             onClick={sendTest}
             disabled={!email.trim() || testing || !smtpReady}
-            title={smtpReady
-              ? undefined
-              : "This server has no SMTP settings (.env: SMTP_HOST / SMTP_USER / SMTP_PASS) — whoever runs SheetDiff needs to add them."}
+            title={
+              smtpReady
+                ? undefined
+                : "This server has no SMTP settings (.env: SMTP_HOST / SMTP_USER / SMTP_PASS) — whoever runs SheetDiff needs to add them."
+            }
           >
             <Send className="size-4" /> {testing ? "Sending…" : "Send test"}
           </Button>
           <Button type="submit">Save</Button>
         </DialogFooter>
       </form>
-    
     </>
   );
 }

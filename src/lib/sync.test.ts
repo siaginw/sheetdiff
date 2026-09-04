@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 // sync.ts transitively imports ./db — point it at a temp file BEFORE import
 // or parallel workers race on the developer's REAL data/sheetdiff.db
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-process.env.DATABASE_PATH ??= path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "synctest" + "-")), "unused.db");
-import { computeIntroductions, isResolved, keySetsFor } from "./sync";
 import { diffSnapshots, type SnapshotData } from "./diff/engine";
+import { computeIntroductions, isResolved, keySetsFor } from "./sync";
+process.env.DATABASE_PATH ??= path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sd-" + "synctest" + "-")), "unused.db");
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 const H = ["ID", "Qty"];
@@ -58,11 +58,26 @@ describe("computeIntroductions", () => {
   });
 
   it("dates added rows at their first appearance and removals at their disappearance", () => {
-    const baseline = snap(H, [["1", "40"], ["2", "10"]]);
+    const baseline = snap(H, [
+      ["1", "40"],
+      ["2", "10"],
+    ]);
     const chain = [
       { at: 2000, data: snap(H, [["1", "40"]]) }, // "2" removed here
-      { at: 3000, data: snap(H, [["1", "40"], ["3", "99"]]) }, // "3" added here
-      { at: 4000, data: snap(H, [["1", "40"], ["3", "99"]]) },
+      {
+        at: 3000,
+        data: snap(H, [
+          ["1", "40"],
+          ["3", "99"],
+        ]),
+      }, // "3" added here
+      {
+        at: 4000,
+        data: snap(H, [
+          ["1", "40"],
+          ["3", "99"],
+        ]),
+      },
     ];
     const { intro, diff } = introductionsBetween(baseline, chain);
     expect(intro.get("2")).toBe(2000); // removed at 2000
@@ -148,7 +163,10 @@ describe("computeIntroductions", () => {
     const baseline = snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P, P, P]);
     const chain = [
       { at: 2000, data: snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P]) },
-      ...Array.from({ length: 20 }, (_, i) => ({ at: 3000 + i * 1000, data: snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P]) })),
+      ...Array.from({ length: 20 }, (_, i) => ({
+        at: 3000 + i * 1000,
+        data: snap(["Activity", "Start STA", "End STA", "Crew", "Notes"], [P]),
+      })),
     ];
     const { diff, intro } = introductionsBetween(baseline, chain);
     const removed = diff.rows.filter((r) => r.status === "removed");
@@ -166,10 +184,25 @@ describe("computeIntroductions", () => {
     // the count threshold ("the family GREW by one vs the bounding snapshot")
     // dates it at the moment it grew — in BOTH anchored and unanchored walks.
     const NH = ["Name", "Qty"];
-    const baseline = snap(NH, [["x", "40"], ["x", "55"]]);
+    const baseline = snap(NH, [
+      ["x", "40"],
+      ["x", "55"],
+    ]);
     const chain = [
-      { at: 2000, data: snap(NH, [["x", "55"], ["x", "55"]]) }, // row 0 became a twin of row 1
-      ...Array.from({ length: 5 }, (_, i) => ({ at: 3000 + i * 1000, data: snap(NH, [["x", "55"], ["x", "55"]]) })),
+      {
+        at: 2000,
+        data: snap(NH, [
+          ["x", "55"],
+          ["x", "55"],
+        ]),
+      }, // row 0 became a twin of row 1
+      ...Array.from({ length: 5 }, (_, i) => ({
+        at: 3000 + i * 1000,
+        data: snap(NH, [
+          ["x", "55"],
+          ["x", "55"],
+        ]),
+      })),
     ];
     const latest = chain[chain.length - 1];
     const diff = diffSnapshots(baseline, latest.data); // no key column — content matching
@@ -242,8 +275,20 @@ describe("computeIntroductions", () => {
 describe("keySetsFor (identity column hardening)", () => {
   const TH = ["Activity", "Start STA", "End STA", "Crew"];
   it("builds composite identity sets when headers agree across the walk", async () => {
-    const baseline = snap(TH, [["Plow", "0", "500", "A"], ["Bore", "500", "14800", "B"], ["Plow", "14800", "15743", "C"]]);
-    const chain = [{ at: 2000, data: snap(TH, [["Plow", "0", "500", "A"], ["Plow", "14800", "15743", "C"]]) }]; // bore removed (composite needs >=2 rows in B)
+    const baseline = snap(TH, [
+      ["Plow", "0", "500", "A"],
+      ["Bore", "500", "14800", "B"],
+      ["Plow", "14800", "15743", "C"],
+    ]);
+    const chain = [
+      {
+        at: 2000,
+        data: snap(TH, [
+          ["Plow", "0", "500", "A"],
+          ["Plow", "14800", "15743", "C"],
+        ]),
+      },
+    ]; // bore removed (composite needs >=2 rows in B)
     const latest = chain[chain.length - 1];
     const diff = diffSnapshots(baseline, latest.data); // composite engages
     expect(diff.identityColumns).toEqual([0, 1, 2]);
@@ -260,10 +305,16 @@ describe("keySetsFor (identity column hardening)", () => {
   });
 
   it("bails to undefined when a walked snapshot's headers drift at the identity indices", () => {
-    const latest = snap(TH, [["Plow", "0", "500", "A"], ["Bore", "500", "14800", "B"]]);
+    const latest = snap(TH, [
+      ["Plow", "0", "500", "A"],
+      ["Bore", "500", "14800", "B"],
+    ]);
     const diff = diffSnapshots(latest, latest);
     // a mid-window snapshot where a column was inserted at index 0
-    const drifted = { createdAt: 2000, data: snap(["Note", "Activity", "Start STA", "End STA", "Crew"], [["n", "Plow", "0", "500", "A"]]) };
+    const drifted = {
+      createdAt: 2000,
+      data: snap(["Note", "Activity", "Start STA", "End STA", "Crew"], [["n", "Plow", "0", "500", "A"]]),
+    };
     const walk = [{ createdAt: 3000, data: latest }, drifted];
     expect(keySetsFor(diff, walk)).toBeUndefined();
   });
@@ -275,11 +326,32 @@ describe("multi-member shared-content families date at their own formation (flee
     // row B converges at 3000. Without per-member ranking both date at 2000
     // and an ack at 2500 (taken against row A only) swallows row B's change.
     const NH = ["Name", "Qty"];
-    const baseline = snap(NH, [["a", "1"], ["b", "2"]]);
+    const baseline = snap(NH, [
+      ["a", "1"],
+      ["b", "2"],
+    ]);
     const chain = [
-      { at: 2000, data: snap(NH, [["a", "9"], ["b", "2"]]) }, // row a -> 9
-      { at: 3000, data: snap(NH, [["b", "9"], ["a", "9"]]) }, // row b -> 9 too
-      { at: 4000, data: snap(NH, [["a", "9"], ["b", "9"]]) },
+      {
+        at: 2000,
+        data: snap(NH, [
+          ["a", "9"],
+          ["b", "2"],
+        ]),
+      }, // row a -> 9
+      {
+        at: 3000,
+        data: snap(NH, [
+          ["b", "9"],
+          ["a", "9"],
+        ]),
+      }, // row b -> 9 too
+      {
+        at: 4000,
+        data: snap(NH, [
+          ["a", "9"],
+          ["b", "9"],
+        ]),
+      },
     ];
     const latest = chain[chain.length - 1];
     const diff = diffSnapshots(baseline, latest.data);

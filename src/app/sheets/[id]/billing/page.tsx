@@ -1,48 +1,35 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { and, desc, eq, ne } from "drizzle-orm";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Ban,
-  Camera,
-  Clock,
-  Download,
-  ReceiptText,
-  Timer,
-} from "lucide-react";
-import { db } from "@/lib/db";
-import { tabs, snapshots } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
+import { PrintButton } from "@/components/sheet/print-button";
 import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges } from "@/lib/pending";
-import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
-import { computeGapReport } from "@/lib/gaps";
+import { buildBillingPacket, type BillingRow } from "@/lib/billing";
+import { db } from "@/lib/db";
+import { snapshots, tabs } from "@/lib/db/schema";
 import { detectStationColumns } from "@/lib/detect";
+import { absoluteTime } from "@/lib/format";
+import { computeGapReport } from "@/lib/gaps";
+import { getPendingChanges } from "@/lib/pending";
 import {
   agingGaps,
+  dedupeTabData,
   detectLateEntries,
   detectOverplacement,
-  officePipeline,
   invoiceStatus,
-  dedupeTabData,
+  officePipeline,
   type AgingGap,
-  type LateEntry,
-  type OverplacementFinding,
-  type OfficePipeline,
   type InvoiceStatus,
+  type LateEntry,
+  type OfficePipeline,
+  type OverplacementFinding,
 } from "@/lib/production";
-import { buildBillingPacket, type BillingRow } from "@/lib/billing";
-import { absoluteTime } from "@/lib/format";
-import { PrintButton } from "@/components/sheet/print-button";
+import { getSessionUser } from "@/lib/session";
+import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { AlertTriangle, ArrowLeft, Ban, Camera, Clock, Download, ReceiptText, Timer } from "lucide-react";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 
 const ft = (n: number) => n.toLocaleString("en-US");
 
-export default async function BillingPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function BillingPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
   if (!user) redirect("/");
   const { id } = await params;
@@ -50,7 +37,9 @@ export default async function BillingPage({
   if (!access) notFound();
   const sheet = access.sheet;
 
-  const trackedTabs = (await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)).orderBy(tabs.position)).filter((t) => t.tracked);
+  const trackedTabs = (await db.select().from(tabs).where(eq(tabs.spreadsheetId, id)).orderBy(tabs.position)).filter(
+    (t) => t.tracked,
+  );
   const latestByTab = await latestNonImportSnapshots(trackedTabs.map((t) => t.id));
 
   let placedSinceFt = 0;
@@ -64,7 +53,12 @@ export default async function BillingPage({
   const invoicesByTab: { tab: string; status: InvoiceStatus }[] = [];
   const overplacements: OverplacementFinding[] = [];
   let toEnterCount = 0;
-  const pendingRows: { status: string; values: string[]; cells: { header: string; from: string; to: string }[]; tab?: string }[] = [];
+  const pendingRows: {
+    status: string;
+    values: string[];
+    cells: { header: string; from: string; to: string }[];
+    tab?: string;
+  }[] = [];
 
   // compilation tabs (Line List copies working tabs) would double-count every
   // hole, billable row, and office backlog entry on the money page — the
@@ -86,10 +80,7 @@ export default async function BillingPage({
   // server component where it's safe — same suppression the sheet page uses)
   // eslint-disable-next-line react-hooks/purity
   const fallbackNow = Date.now();
-  const dataAsOf = Math.max(
-    0,
-    ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
-  ) || fallbackNow;
+  const dataAsOf = Math.max(0, ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0)) || fallbackNow;
   const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
@@ -137,7 +128,10 @@ export default async function BillingPage({
         createdAt: s.createdAt,
         data: s.id === latestSnap.id ? freshData : ownedSlice(s.dataBlob),
       }));
-      for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })), dataAsOf)) {
+      for (const g of agingGaps(
+        walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })),
+        dataAsOf,
+      )) {
         allAgedGaps.push({ ...g, tab: tab.title });
       }
       if (walk.length > 1) for (const e of detectLateEntries(walk)) allLate.push(e);
@@ -150,7 +144,12 @@ export default async function BillingPage({
     if (pending) {
       toEnterCount += pending.counts.unresolved;
       for (const r of pending.unresolved) {
-        pendingRows.push({ status: r.status, values: r.values, cells: r.cells.map((c) => ({ header: c.header, from: c.from, to: c.to })), tab: tab.title });
+        pendingRows.push({
+          status: r.status,
+          values: r.values,
+          cells: r.cells.map((c) => ({ header: c.header, from: c.from, to: c.to })),
+          tab: tab.title,
+        });
       }
     }
   }
@@ -239,7 +238,11 @@ export default async function BillingPage({
           <Card
             label="billable now"
             value={billableCount === 0 ? "0" : `${billableCount} row${billableCount === 1 ? "" : "s"}`}
-            sub={invoicesByTab.some((i) => i.status.oldestAgeDays) ? `oldest ${Math.max(...invoicesByTab.map((i) => i.status.oldestAgeDays ?? 0))}d` : undefined}
+            sub={
+              invoicesByTab.some((i) => i.status.oldestAgeDays)
+                ? `oldest ${Math.max(...invoicesByTab.map((i) => i.status.oldestAgeDays ?? 0))}d`
+                : undefined
+            }
             icon={<ReceiptText className="size-3.5" />}
           />
           <Card
@@ -260,7 +263,11 @@ export default async function BillingPage({
         ) : null}
 
         {billable.length > 0 ? (
-          <Section title="Billable — complete, in GIS, never entered" tone="move" icon={<ReceiptText className="size-4" />}>
+          <Section
+            title="Billable — complete, in GIS, never entered"
+            tone="move"
+            icon={<ReceiptText className="size-4" />}
+          >
             {billable.slice(0, 20).map((r, i) => (
               <Row key={i} row={r} />
             ))}
@@ -303,7 +310,8 @@ export default async function BillingPage({
           </Section>
         ) : null}
 
-        {blockers.length + billable.length + missedRuns.length + office.length + toEnterList.length + late.length === 0 ? (
+        {blockers.length + billable.length + missedRuns.length + office.length + toEnterList.length + late.length ===
+        0 ? (
           <div className="rounded-lg border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
             Nothing to chase — no blockers, no backlog, no late entries.
           </div>
@@ -316,7 +324,7 @@ export default async function BillingPage({
 function Card({ label, value, sub, icon }: { label: string; value: string; sub?: string; icon: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
-      <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
         {icon} {label}
       </div>
       <div className="mt-1 font-mono text-lg font-semibold">{value}</div>
@@ -325,10 +333,22 @@ function Card({ label, value, sub, icon }: { label: string; value: string; sub?:
   );
 }
 
-function Section({ title, tone, icon, children }: { title: string; tone: "del" | "move"; icon: React.ReactNode; children: React.ReactNode }) {
+function Section({
+  title,
+  tone,
+  icon,
+  children,
+}: {
+  title: string;
+  tone: "del" | "move";
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <section className="mb-6 print:break-inside-avoid-page">
-      <h2 className={`mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wide ${tone === "del" ? "text-diff-del-fg" : "text-diff-move-fg"}`}>
+      <h2
+        className={`mb-2 flex items-center gap-1.5 font-mono text-xs font-semibold tracking-wide uppercase ${tone === "del" ? "text-diff-del-fg" : "text-diff-move-fg"}`}
+      >
         {icon} {title}
       </h2>
       <ul className="space-y-1 font-mono text-[11.5px]">{children}</ul>
@@ -338,10 +358,14 @@ function Section({ title, tone, icon, children }: { title: string; tone: "del" |
 
 function Row({ row }: { row: BillingRow }) {
   return (
-    <li className={`flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded border-l-2 py-1 pl-3 pr-2 print:break-inside-avoid ${row.kind === "hole" || row.kind === "over" ? "border-diff-del-fg bg-diff-del-bg/30" : "border-diff-move-fg bg-diff-move-bg/20"}`}>
+    <li
+      className={`flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded border-l-2 py-1 pr-2 pl-3 print:break-inside-avoid ${row.kind === "hole" || row.kind === "over" ? "border-diff-del-fg bg-diff-del-bg/30" : "border-diff-move-fg bg-diff-move-bg/20"}`}
+    >
       <span className="min-w-0 flex-1 break-words">{row.detail}</span>
       {row.ft !== undefined ? <span className="shrink-0 font-semibold">{ft(row.ft)}</span> : null}
-      {row.meta ? <span className="min-w-0 shrink text-[10px] break-words text-muted-foreground">{row.meta}</span> : null}
+      {row.meta ? (
+        <span className="min-w-0 shrink text-[10px] break-words text-muted-foreground">{row.meta}</span>
+      ) : null}
     </li>
   );
 }

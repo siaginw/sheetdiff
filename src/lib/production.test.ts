@@ -1,26 +1,26 @@
-import { describe, it, expect } from "vitest";
-import {
-  parseCompletedDate,
-  dateHygiene,
-  detectLateEntries,
-  reconcileTotals,
-  detectOverplacement,
-  computeCrewBoard,
-  agingGaps,
-  officePipeline,
-  weeklyProduction,
-  aggregateWeekly,
-  invoiceStatus,
-  dedupeTabData,
-  sheetBillableNow,
-  detectStoppageTab,
-  isStoppageTabTitle,
-  stoppageWeeks,
-  quietStoppageLog,
-} from "./production";
-import type { WeekBucket } from "./production";
-import { computeGapReport } from "./gaps";
+import { describe, expect, it } from "vitest";
 import type { SnapshotData } from "./diff/engine";
+import { computeGapReport } from "./gaps";
+import type { WeekBucket } from "./production";
+import {
+  aggregateWeekly,
+  agingGaps,
+  computeCrewBoard,
+  dateHygiene,
+  dedupeTabData,
+  detectLateEntries,
+  detectOverplacement,
+  detectStoppageTab,
+  invoiceStatus,
+  isStoppageTabTitle,
+  officePipeline,
+  parseCompletedDate,
+  quietStoppageLog,
+  reconcileTotals,
+  sheetBillableNow,
+  stoppageWeeks,
+  weeklyProduction,
+} from "./production";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 const H = ["Activity", "Start STA", "End STA", "Date Complete", "Crew #"];
@@ -58,12 +58,12 @@ describe("dateHygiene", () => {
   it("flags undated, unreadable, and future-dated placed footage", () => {
     const today = new Date("2026-08-30T12:00:00");
     const rows = [
-      ["Plow", "0", "500", "8/28/2026", "A"],   // fine
-      ["Bore", "500", "900", "", "B"],           // undated
-      ["Plow", "900", "1200", "sometime", "A"],  // unreadable
+      ["Plow", "0", "500", "8/28/2026", "A"], // fine
+      ["Bore", "500", "900", "", "B"], // undated
+      ["Plow", "900", "1200", "sometime", "A"], // unreadable
       ["Bore", "1200", "1500", "12/25/2026", "C"], // future
-      ["48 Handhole", "500", "500", "", "B"],    // not footage — ignored
-      ["GAP", "1500", "1620", "", "C"],          // booked hole — never counted
+      ["48 Handhole", "500", "500", "", "B"], // not footage — ignored
+      ["GAP", "1500", "1620", "", "C"], // booked hole — never counted
     ];
     const f = dateHygiene(snap(H, rows), today);
     expect(f.map((x) => x.kind)).toEqual(["undated", "unreadable", "future"]);
@@ -77,10 +77,13 @@ describe("detectLateEntries", () => {
     const thursday = new Date(2026, 6, 16, 18).getTime();
     const walk = [
       { createdAt: monday, data: snap(H, [["Plow", "0", "500", "7/13/2026", "A"]]) },
-      { createdAt: thursday, data: snap(H, [
-        ["Plow", "0", "500", "7/13/2026", "A"],
-        ["Plow", "500", "1300", "7/13/2026", "A"], // 800 ft dated Monday, appearing Thursday
-      ]) },
+      {
+        createdAt: thursday,
+        data: snap(H, [
+          ["Plow", "0", "500", "7/13/2026", "A"],
+          ["Plow", "500", "1300", "7/13/2026", "A"], // 800 ft dated Monday, appearing Thursday
+        ]),
+      },
     ];
     const late = detectLateEntries(walk);
     expect(late).toHaveLength(1);
@@ -134,14 +137,20 @@ describe("reconcileTotals", () => {
   });
 
   it("skips not-started tabs (blank placed cell) and returns real-case titles", () => {
-    const totals = snap(["PE", "Total Conduit Placed"], [
-      ["US2-PE-003", ""],       // not started
-      ["US2-PE-004", "9999"],   // real mismatch
-    ]);
-    const m = reconcileTotals(totals, new Map([
-      ["us2-pe-003", { title: "US2-PE-003", ft: 0 }],
-      ["us2-pe-004", { title: "US2-PE-004", ft: 9000 }],
-    ]));
+    const totals = snap(
+      ["PE", "Total Conduit Placed"],
+      [
+        ["US2-PE-003", ""], // not started
+        ["US2-PE-004", "9999"], // real mismatch
+      ],
+    );
+    const m = reconcileTotals(
+      totals,
+      new Map([
+        ["us2-pe-003", { title: "US2-PE-003", ft: 0 }],
+        ["us2-pe-004", { title: "US2-PE-004", ft: 9000 }],
+      ]),
+    );
     expect(m).toHaveLength(1);
     expect(m[0]!.tabTitle).toBe("US2-PE-004"); // real case, not the lowercase key
   });
@@ -199,7 +208,7 @@ describe("detectOverplacement", () => {
     [
       ["US2-PE-001", "25662", "23044", "25662"], // placed == designed — fine
       ["US2-PE-002", "52041", "38358", "52994"], // 953 ft nobody designed (real-tracker case)
-      ["US2-PE-003", "", "0", ""],               // not started — nothing to judge
+      ["US2-PE-003", "", "0", ""], // not started — nothing to judge
       ["US2-PE-004", "52698", "12000", "52698"], // exact — fine
     ],
   );
@@ -226,12 +235,16 @@ describe("agingGaps", () => {
   it("fractional-station holes are DISTINCT identities, never rounded together", () => {
     const day = 86_400_000;
     const now = 10 * day;
-    const gapAt = (from: number, to: number) => computeGapReport(
-      snap(["Activity", "Start STA", "End STA"], [
-        ["Plow", "0", String(from)],
-        ["Plow", String(to), "2000"],
-      ]),
-    );
+    const gapAt = (from: number, to: number) =>
+      computeGapReport(
+        snap(
+          ["Activity", "Start STA", "End STA"],
+          [
+            ["Plow", "0", String(from)],
+            ["Plow", String(to), "2000"],
+          ],
+        ),
+      );
     // 101.5-203.25 and 101-203 are different holes; the rounded key used to
     // merge them and drop one from the aging report
     const aged = agingGaps(
@@ -248,12 +261,16 @@ describe("agingGaps", () => {
   it("ages open holes by station-range identity and drops closed ones", () => {
     const day = 86_400_000;
     const now = 10 * day;
-    const gapAt = (from: number, to: number) => computeGapReport(
-      snap(["Activity", "Start STA", "End STA"], [
-        ["Plow", "0", String(from)],
-        ["Plow", String(to), "2000"],
-      ]),
-    );
+    const gapAt = (from: number, to: number) =>
+      computeGapReport(
+        snap(
+          ["Activity", "Start STA", "End STA"],
+          [
+            ["Plow", "0", String(from)],
+            ["Plow", String(to), "2000"],
+          ],
+        ),
+      );
     const reports = [
       { createdAt: 2 * day, report: gapAt(500, 620) }, // hole opens day 2
       { createdAt: 5 * day, report: gapAt(500, 620) }, // still open day 5
@@ -275,13 +292,20 @@ describe("agingGaps", () => {
   it("a hole that closes then REOPENS ages from the reopen, never vanishes", () => {
     const day = 86_400_000;
     const now = 10 * day;
-    const gapAt2 = (from: number, to: number) => computeGapReport(
-      snap(["Activity", "Start STA", "End STA"], [["Plow", "0", String(from)], ["Plow", String(to), "2000"]]),
-    );
+    const gapAt2 = (from: number, to: number) =>
+      computeGapReport(
+        snap(
+          ["Activity", "Start STA", "End STA"],
+          [
+            ["Plow", "0", String(from)],
+            ["Plow", String(to), "2000"],
+          ],
+        ),
+      );
     const reports = [
       { createdAt: 1 * day, report: gapAt2(500, 620) },
       { createdAt: 2 * day, report: { ...gapAt2(0, 0), unaccounted: [] } }, // closed
-      { createdAt: 6 * day, report: gapAt2(500, 620) },                     // REOPENED
+      { createdAt: 6 * day, report: gapAt2(500, 620) }, // REOPENED
     ];
     const aged = agingGaps(reports, now);
     expect(aged).toHaveLength(1); // the ledger's whole job: it is open RIGHT NOW
@@ -311,7 +335,10 @@ describe("officePipeline (the sheet's own entered-downstream column)", () => {
     expect(p.stuck[0]!.daysWaiting).toBeGreaterThanOrEqual(49);
     expect(p.stuck[0]!.completedOn).toBe("2026-07-11");
     // no entered column → silent no-op
-    const plain = snap(["Activity", "Start STA", "End STA", "Date Complete", "Notes"], [["Plow", "0", "500", "2026-08-29", "x"]]);
+    const plain = snap(
+      ["Activity", "Start STA", "End STA", "Date Complete", "Notes"],
+      [["Plow", "0", "500", "2026-08-29", "x"]],
+    );
     plain.headers = ["Activity", "Start STA", "End STA", "Date Complete", "Notes"];
     expect(officePipeline(plain, NOW).enteredColumn).toBeNull();
   });
@@ -367,8 +394,15 @@ describe("aggregateWeekly (the report page's math)", () => {
 describe("invoiceStatus (the office's own billing ledger)", () => {
   const H = ["Activity", "Start STA", "End STA", "Date Complete", "Entered in InEight", "Invoice #", "Bore log in GIS"];
   const NOW = new Date("2026-08-30T12:00:00").getTime();
-  const mk = (a: string, s: string, e: string, c: string, ent: string, inv: string, gis: string) =>
-    [a, s, e, c, ent, inv, gis];
+  const mk = (a: string, s: string, e: string, c: string, ent: string, inv: string, gis: string) => [
+    a,
+    s,
+    e,
+    c,
+    ent,
+    inv,
+    gis,
+  ];
 
   it("short invoice numbers land in the billed ledger; unrecognizable markers are SURFACED, never dropped", () => {
     const data = snap(H, [
@@ -505,7 +539,11 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
     // position-preserving: blank padding keeps its slot, copied rows are
     // blanked IN PLACE so "Row N" stays the sheet's true row number
     expect(out.freshByTab.get("PE-4")).toEqual([row, ["", "", "", ""]]);
-    expect(out.freshByTab.get("Line List")).toEqual([["", "", "", ""], ["", "", "", ""], ["Bore", "500", "14800", "CREW B"]]);
+    expect(out.freshByTab.get("Line List")).toEqual([
+      ["", "", "", ""],
+      ["", "", "", ""],
+      ["Bore", "500", "14800", "CREW B"],
+    ]);
     expect(out.duplicatesDropped).toBe(2);
     expect(out.pureCopies.size).toBe(0);
   });
@@ -516,7 +554,11 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
       { title: "PE7", data: snap(HEAD, [row, ["", "", "", ""], ["", "", "", ""]]) },
     ]);
     expect(out.pureCopies).toEqual(new Set(["PE7"]));
-    expect(out.freshByTab.get("PE7")).toEqual([["", "", "", ""], ["", "", "", ""], ["", "", "", ""]]);
+    expect(out.freshByTab.get("PE7")).toEqual([
+      ["", "", "", ""],
+      ["", "", "", ""],
+      ["", "", "", ""],
+    ]);
     // an all-blank tab is EMPTY, not a copy — callers may still read its headers
     const blank = dedupeTabData([{ title: "Blank", data: snap(HEAD, [["", "", "", ""]]) }]);
     expect(blank.pureCopies.size).toBe(0);
@@ -527,7 +569,10 @@ describe("dedupeTabData (compilation tabs copy working tabs)", () => {
       { title: "PE-4", data: snap(HEAD, [row]) },
       { title: "PE-5", data: snap(HEAD, [row, ["Bore", "500", "900", "CREW B"]]) },
     ]);
-    expect(out.freshByTab.get("PE-5")).toEqual([["", "", "", ""], ["Bore", "500", "900", "CREW B"]]);
+    expect(out.freshByTab.get("PE-5")).toEqual([
+      ["", "", "", ""],
+      ["Bore", "500", "900", "CREW B"],
+    ]);
     expect(out.duplicatesDropped).toBe(1);
     expect(out.pureCopies.size).toBe(0);
   });
@@ -548,7 +593,9 @@ describe("sheetBillableNow (the badge must equal the billing dashboard's number)
   });
 
   it("returns 0 when no tab tracks an office ledger (feature no-ops)", () => {
-    expect(sheetBillableNow([{ title: "PE-4", data: snap(H, [["Plow", "0", "500", "2026-08-19", "A"]]) }], NOW)).toBe(0);
+    expect(sheetBillableNow([{ title: "PE-4", data: snap(H, [["Plow", "0", "500", "2026-08-19", "A"]]) }], NOW)).toBe(
+      0,
+    );
   });
 });
 
@@ -567,12 +614,14 @@ describe("stoppage join (weekly report explains quiet weeks)", () => {
 
   it("buckets stoppages into the same Monday buckets weeklyProduction uses", () => {
     // 8/20/2026 is a Thursday -> Monday 8/17; 8/24 is the NEXT Monday
-    const weeks = stoppageWeeks(snap(SH, [
-      ["8/20/2026", "utility locate late"],
-      ["8/21/2026", "rock"],
-      ["8/24/2026", ""], // blank reason still counts as a logged day
-      ["not a date", "never bucketed"],
-    ]));
+    const weeks = stoppageWeeks(
+      snap(SH, [
+        ["8/20/2026", "utility locate late"],
+        ["8/21/2026", "rock"],
+        ["8/24/2026", ""], // blank reason still counts as a logged day
+        ["not a date", "never bucketed"],
+      ]),
+    );
     expect(weeks.size).toBe(2);
     const wk1 = weeks.get(new Date(2026, 7, 17).getTime())!;
     expect(wk1.count).toBe(2);
@@ -619,10 +668,12 @@ describe("stoppage join (weekly report explains quiet weeks)", () => {
   it("quiet-log guard measures the newest ENTRY date, not the Monday bucket", () => {
     // a log kept Friday 8/21 (bucket Monday 8/17) against work completed 8/27:
     // 6 days behind by entry date — bucket math claimed 10
-    const weeks = stoppageWeeks(snap(SH, [
-      ["8/19/2026", "rock"],
-      ["8/21/2026", "waiting on permit"], // newest entry in the same bucket
-    ]));
+    const weeks = stoppageWeeks(
+      snap(SH, [
+        ["8/19/2026", "rock"],
+        ["8/21/2026", "waiting on permit"], // newest entry in the same bucket
+      ]),
+    );
     const prod = [snap(PH, [["Plow", "0", "500", "8/27/2026"]])];
     expect(quietStoppageLog(weeks, prod)).toBeNull(); // 6 days — current, no nag
     // pushed past the 14-day tolerance from the SAME bucket: entry date decides

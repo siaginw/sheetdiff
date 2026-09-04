@@ -33,9 +33,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("./crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -47,8 +45,8 @@ vi.mock("./google", () => ({
   fetchTabValues: async () => state.tabValues,
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("actions");
 
@@ -58,7 +56,8 @@ const { changeAcks, members, notes, snapshots, spreadsheets, tabs, users } = awa
 const { encodeSnapshot, toSnapshotData } = await import("./snapshots");
 const { getSheetAccess } = await import("./access");
 const { getPendingChanges } = await import("./pending");
-const { addMembers, addNote, ackAllUnentered, removeMember, setBaseline, snapshotNow, toggleAck } = await import("./actions");
+const { addMembers, addNote, ackAllUnentered, removeMember, setBaseline, snapshotNow, toggleAck } =
+  await import("./actions");
 
 const fd = (entries: Record<string, string>) => {
   const f = new FormData();
@@ -74,7 +73,10 @@ async function seedUser(id: string, email: string | null) {
 }
 async function seedSheet(id: string, userId: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId, googleId: `gid-${id}`, title,
+    id,
+    userId,
+    googleId: `gid-${id}`,
+    title,
     url: `https://docs.google.com/spreadsheets/d/gid-${id}/edit`,
     createdAt: 1,
   });
@@ -82,12 +84,25 @@ async function seedSheet(id: string, userId: string, title: string) {
 async function seedTab(id: string, spreadsheetId: string) {
   await db.insert(tabs).values({ id, spreadsheetId, title: id, position: 0, tracked: true });
 }
-async function seedSnapshot(tabId: string, runId: string, trigger: "manual" | "import", isBaseline: boolean, createdAt: number, grid: string[][]) {
+async function seedSnapshot(
+  tabId: string,
+  runId: string,
+  trigger: "manual" | "import",
+  isBaseline: boolean,
+  createdAt: number,
+  grid: string[][],
+) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id: crypto.randomUUID(), tabId, runId, trigger, isBaseline,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt,
+    id: crypto.randomUUID(),
+    tabId,
+    runId,
+    trigger,
+    isBaseline,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt,
   });
 }
 
@@ -107,8 +122,14 @@ beforeAll(async () => {
   await seedTab("tab-4", "sheet-3");
 
   for (const tabId of ["tab-1", "tab-2"]) {
-    await seedSnapshot(tabId, "run-manual", "manual", false, 1000, [["Shot", "Qty"], ["S1", "1"]]);
-    await seedSnapshot(tabId, "run-import", "import", false, 2000, [["Shot", "Qty"], ["S1", "2"]]);
+    await seedSnapshot(tabId, "run-manual", "manual", false, 1000, [
+      ["Shot", "Qty"],
+      ["S1", "1"],
+    ]);
+    await seedSnapshot(tabId, "run-import", "import", false, 2000, [
+      ["Shot", "Qty"],
+      ["S1", "2"],
+    ]);
   }
 });
 
@@ -121,7 +142,12 @@ describe("temp-db harness", () => {
 describe("snapshotNow ownership gate", () => {
   it("owner captures a real snapshot run", async () => {
     signIn("owner-1");
-    state.tabValues = { tab4: [["Shot", "Qty"], ["S1", "5"]] } as never;
+    state.tabValues = {
+      tab4: [
+        ["Shot", "Qty"],
+        ["S1", "5"],
+      ],
+    } as never;
     await snapshotNow(fd({ spreadsheetId: "sheet-3" }));
     const rows = await db.select().from(snapshots).where(eq(snapshots.tabId, "tab-4"));
     expect(rows).toHaveLength(1);
@@ -148,11 +174,17 @@ describe("setBaseline shared gate", () => {
   it("GIS imports can never become the baseline; the manual run can; degenerate runIds are a NO-OP", async () => {
     signIn("owner-1");
     await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-import" })).catch(() => {});
-    const afterImport = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
+    const afterImport = await db
+      .select()
+      .from(snapshots)
+      .where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(afterImport.filter((r) => r.trigger === "import").every((r) => !r.isBaseline)).toBe(true);
 
     await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-manual" })).catch(() => {});
-    const afterManual = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
+    const afterManual = await db
+      .select()
+      .from(snapshots)
+      .where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(afterManual.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
 
     // a viewer with a degenerate runId (empty, or a run from another sheet)
@@ -161,7 +193,10 @@ describe("setBaseline shared gate", () => {
     signIn("viewer-1");
     await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "" })).catch(() => {});
     await setBaseline(fd({ spreadsheetId: "sheet-1", runId: "run-from-another-sheet" })).catch(() => {});
-    const untouched = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
+    const untouched = await db
+      .select()
+      .from(snapshots)
+      .where(inArray(snapshots.tabId, ["tab-1", "tab-2"]));
     expect(untouched.filter((r) => r.trigger === "manual").every((r) => r.isBaseline)).toBe(true);
   });
 });
@@ -194,7 +229,9 @@ describe("addNote scope upsert + foreign tabId collapse", () => {
   it("collapses a foreign tabId to a sheet-level note", async () => {
     signIn("owner-1");
     await addNote(fd({ spreadsheetId: "sheet-1", tabId: "tab-3", body: "sneaky" })); // tab-3 is sheet-2's
-    const sneaky = (await db.select().from(notes).where(eq(notes.spreadsheetId, "sheet-1"))).find((n) => n.body === "sneaky");
+    const sneaky = (await db.select().from(notes).where(eq(notes.spreadsheetId, "sheet-1"))).find(
+      (n) => n.body === "sneaky",
+    );
     expect(sneaky!.tabId).toBeNull();
   });
 
@@ -222,7 +259,9 @@ describe("addMembers / removeMember", () => {
   });
 
   it("removeMember only deletes the caller's own members", async () => {
-    const ana = (await db.select().from(members).where(eq(members.ownerUserId, "owner-2"))).find((m) => m.email === "ana@corp.com")!;
+    const ana = (await db.select().from(members).where(eq(members.ownerUserId, "owner-2"))).find(
+      (m) => m.email === "ana@corp.com",
+    )!;
     signIn("owner-1"); // NOT owner-2
     await removeMember(fd({ id: ana.id }));
     expect((await db.select().from(members).where(eq(members.ownerUserId, "owner-2"))).length).toBe(2);
@@ -242,7 +281,10 @@ describe("setBaseline cross-run scoping (fleet-9)", () => {
 
     signIn("owner-1");
     await setBaseline(fd({ spreadsheetId: "sheet-scoped", runId: "run-early" })).catch(() => {});
-    const rows = await db.select().from(snapshots).where(inArray(snapshots.tabId, ["tab-a", "tab-late"]));
+    const rows = await db
+      .select()
+      .from(snapshots)
+      .where(inArray(snapshots.tabId, ["tab-a", "tab-late"]));
     // tab-a's run-early snapshot is now the baseline...
     expect(rows.find((r) => r.tabId === "tab-a")!.isBaseline).toBe(true);
     // ...and tab-late's baseline SURVIVES (the run doesn't cover that tab)
@@ -281,8 +323,19 @@ describe("ackAllUnentered bulk ack (fleet-8)", () => {
   it("acks the tab's whole unresolved batch — viewer allowed, stranger rejected, server-side rowKeys only", async () => {
     await seedSheet("sheet-bulk", "owner-1", "Bulk");
     await seedTab("tab-bulk", "sheet-bulk");
-    await seedSnapshot("tab-bulk", "run-b-base", "manual", true, 100, [["ID", "Note"], ["1", "a"], ["2", "b"], ["3", "c"]]);
-    await seedSnapshot("tab-bulk", "run-b-new", "manual", false, 200, [["ID", "Note"], ["1", "a"], ["2", "b-fixed"], ["3", "c"], ["4", "new"]]);
+    await seedSnapshot("tab-bulk", "run-b-base", "manual", true, 100, [
+      ["ID", "Note"],
+      ["1", "a"],
+      ["2", "b"],
+      ["3", "c"],
+    ]);
+    await seedSnapshot("tab-bulk", "run-b-new", "manual", false, 200, [
+      ["ID", "Note"],
+      ["1", "a"],
+      ["2", "b-fixed"],
+      ["3", "c"],
+      ["4", "new"],
+    ]);
 
     const tabRow = (await db.select().from(tabs).where(eq(tabs.id, "tab-bulk")))[0]!;
     const before = await getPendingChanges(tabRow);

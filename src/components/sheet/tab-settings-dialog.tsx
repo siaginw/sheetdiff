@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,16 +11,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { updateTabSettings } from "@/lib/actions";
 import { colLetter } from "@/lib/diff/normalize";
+import { Settings2 } from "lucide-react";
+import { useState } from "react";
 
 /** Per-tab settings: which column identifies rows, and whether to track the tab. */
 export function TabSettingsDialog({
@@ -73,8 +67,8 @@ export function TabSettingsDialog({
           <DialogHeader>
             <DialogTitle>“{tabTitle}” settings</DialogTitle>
             <DialogDescription>
-              How rows are identified between snapshots. Sorting or filtering the sheet in Google
-              never creates false changes.
+              How rows are identified between snapshots. Sorting or filtering the sheet in Google never creates false
+              changes.
             </DialogDescription>
           </DialogHeader>
 
@@ -107,17 +101,17 @@ export function TabSettingsDialog({
               </Select>
             </div>
             <p className="-mt-2 text-[11px] leading-snug text-muted-foreground">
-              Used for diffs <em>and</em> for spotting tabs that copy other tabs. Pick a column whose
-              value identifies a row (unique, filled in) — anything else falls back to smart
-              detection, so a bad pick can&apos;t corrupt counts.
+              Used for diffs <em>and</em> for spotting tabs that copy other tabs. Pick a column whose value identifies a
+              row (unique, filled in) — anything else falls back to smart detection, so a bad pick can&apos;t corrupt
+              counts.
             </p>
             <div className="grid grid-cols-4 items-center gap-2">
-              <Label htmlFor="track-tab" className="text-right text-sm">Tracked</Label>
+              <Label htmlFor="track-tab" className="text-right text-sm">
+                Tracked
+              </Label>
               <div className="col-span-3 flex items-center gap-2">
                 <Switch id="track-tab" checked={isTracked} onCheckedChange={setIsTracked} />
-                <span className="text-xs text-muted-foreground">
-                  Include this tab in snapshots and diffs
-                </span>
+                <span className="text-xs text-muted-foreground">Include this tab in snapshots and diffs</span>
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 "use server";
 
-import { getSessionUser } from "./session";
 import { sendDigestTo, type DigestSkipReason } from "./digest";
+import { getSessionUser } from "./session";
 
 /** Fire the digest to the configured address right now, so SMTP setup can be
  *  validated immediately instead of waiting for the scheduled send. */

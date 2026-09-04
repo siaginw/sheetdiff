@@ -33,16 +33,16 @@ is up); the operator reads it. Used by the Docker `HEALTHCHECK` and uptime monit
 
 ## Data model (`src/lib/db/schema.ts`)
 
-| Table | Purpose |
-|---|---|
-| `users` | Google identity, encrypted OAuth tokens, digest settings |
-| `spreadsheets` | Tracked sheet + schedule (`scheduleKind/Hours/Time/Day`, `nextRunAt`) |
-| `tabs` | Tracked Google tabs, optional explicit `keyColumn` |
-| `snapshots` | One gzip'd JSON blob per tab per run; `runId` groups a capture, `trigger` ∈ manual/scheduled/import, `isBaseline` marks the collected baseline |
-| `snapshot_stats` | Capture-time delta (added/removed/changed) vs the previous non-import snapshot; cascade-deletes with its snapshot |
-| `notes` | Audit notes — scoped to run, tab, or row (`rowKey`); author-scoped delete |
-| `change_acks` | "Entered downstream" marks per (tab, rowKey) |
-| `members` | Viewer emails per owner (lowercase; expression-unique index) |
+| Table            | Purpose                                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`          | Google identity, encrypted OAuth tokens, digest settings                                                                                       |
+| `spreadsheets`   | Tracked sheet + schedule (`scheduleKind/Hours/Time/Day`, `nextRunAt`)                                                                          |
+| `tabs`           | Tracked Google tabs, optional explicit `keyColumn`                                                                                             |
+| `snapshots`      | One gzip'd JSON blob per tab per run; `runId` groups a capture, `trigger` ∈ manual/scheduled/import, `isBaseline` marks the collected baseline |
+| `snapshot_stats` | Capture-time delta (added/removed/changed) vs the previous non-import snapshot; cascade-deletes with its snapshot                              |
+| `notes`          | Audit notes — scoped to run, tab, or row (`rowKey`); author-scoped delete                                                                      |
+| `change_acks`    | "Entered downstream" marks per (tab, rowKey)                                                                                                   |
+| `members`        | Viewer emails per owner (lowercase; expression-unique index)                                                                                   |
 
 Snapshots are stored as gzip'd `{headers, rows}` JSON in SQLite (WAL mode).
 Migrations live in `drizzle/` and are the only way schema changes ship.
@@ -60,7 +60,7 @@ Migrations live in `drizzle/` and are the only way schema changes ship.
   `groupBy-max` query — `latestNonImportSnapshots` — never the whole history)
   and materializes the delta into `snapshot_stats` at write time.
 - The whole run (snapshot inserts + schedule-state update) commits in one
-  transaction. Stats are written *after*, best-effort: a failed stats insert is
+  transaction. Stats are written _after_, best-effort: a failed stats insert is
   logged and skipped — never allowed to roll back real snapshots.
 - **Auto-baseline**: the first-ever snapshot of a tab lands with
   `isBaseline: true`, so the dashboard "changes since collection" badge works
@@ -102,11 +102,11 @@ CSV worklist export, and the digest, so the three can never disagree.
 - **Quiet-day short-circuit**: sums `snapshot_stats` over `(baseline, latest]`.
   When every snapshot in the window has a stats row and all deltas are 0/0/0
   (the common hourly case), it returns "nothing pending" without loading a
-  single blob. A **coverage guard** requires *every* snapshot in the window to
+  single blob. A **coverage guard** requires _every_ snapshot in the window to
   have a stats row — retention cascades, failed inserts, and legacy rows all
   create holes, and a hole means "unknown", never "no changes": it falls
   through to the full diff.
-- Acks resolve against the snapshot that *introduced* a change (bounded
+- Acks resolve against the snapshot that _introduced_ a change (bounded
   newest-first walk, ≤120 snapshots), so an ack survives unrelated later
   snapshots and re-flags the moment the row changes again.
 
@@ -143,12 +143,12 @@ CSV worklist export, and the digest, so the three can never disagree.
   position-preserving: dropped rows become blanks, "Row N" stays the sheet's
   true row number.
 - **Billing packet** (`billing.ts` + page + route) — placed footage since
-  collection, open holes flagged *do not invoice*, over-placement, office-entry
+  collection, open holes flagged _do not invoice_, over-placement, office-entry
   backlog, invoice-ledger BILLABLE rows + missed-run chases, the to-enter
   worklist, and late entries in one CSV stamped with snapshot provenance (time
-  + run id). Everything reads the DATA clock (the latest snapshot), so the
-  page and the CSV can never disagree and re-exports are byte-identical.
-  Formula-injection-guarded, aggregated across every tracked tab, deduped.
+  - run id). Everything reads the DATA clock (the latest snapshot), so the
+    page and the CSV can never disagree and re-exports are byte-identical.
+    Formula-injection-guarded, aggregated across every tracked tab, deduped.
 
 ## Scheduling, digest, maintenance (`scheduler.ts`, `digest.ts`, `maintenance.ts`)
 
@@ -185,24 +185,24 @@ role via `getSheetAccess`.
 
 ## Module map
 
-| Path | Role |
-|---|---|
-| `src/instrumentation.ts` | Boot: fail-closed migrations, scheduler start |
-| `src/lib/db/{index,schema,migrate}.ts` | SQLite (WAL), schema, boot migrations |
-| `src/lib/diff/{engine,normalize,worddiff,widths}.ts` | Pure diff engine + normalization + layout math |
-| `src/lib/snapshots.ts`, `snapshot-cache.ts` | Capture, gzip storage, schedule math, stats materialization, decode LRU |
-| `src/lib/pending.ts` | Baseline→pending resolver with quiet-day short-circuit |
-| `src/lib/sync.ts` | Ack resolution + introduction walk |
-| `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts` | Pure analytics |
-| `src/lib/dedupe.ts` | Identity-keyed cross-tab dedup + ownership filter |
-| `src/lib/billing.ts` | Billing packet builder + CSV |
-| `src/lib/import.ts` | GIS CSV/XLSX import (bomb-guarded) |
-| `src/lib/actions.ts`, `access.ts` | Server actions, owner/viewer gates |
-| `src/lib/google.ts`, `session.ts`, `crypto.ts` | OAuth+reads, sessions, keys/AEAD |
-| `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup |
-| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts` | Station/column detection, helpers, shared capture-staleness rule |
-| `src/lib/stoppages.ts`, `permits.ts` | Stoppage-week join, permit-status join (header-gated, silent no-op) |
-| `src/lib/emails/digest.tsx` | Digest email template (react-email) |
-| `src/app/…` | Pages, export/auth/health routes |
-| `src/components/diff/diff-view.tsx`, `src/components/sheet/*` | Diff UI, sheet panels |
-| `scripts/{generate-env,migrate,seed-demo}.mjs` | `npm run setup` / `db:migrate` / `seed-demo` |
+| Path                                                                       | Role                                                                    |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `src/instrumentation.ts`                                                   | Boot: fail-closed migrations, scheduler start                           |
+| `src/lib/db/{index,schema,migrate}.ts`                                     | SQLite (WAL), schema, boot migrations                                   |
+| `src/lib/diff/{engine,normalize,worddiff,widths}.ts`                       | Pure diff engine + normalization + layout math                          |
+| `src/lib/snapshots.ts`, `snapshot-cache.ts`                                | Capture, gzip storage, schedule math, stats materialization, decode LRU |
+| `src/lib/pending.ts`                                                       | Baseline→pending resolver with quiet-day short-circuit                  |
+| `src/lib/sync.ts`                                                          | Ack resolution + introduction walk                                      |
+| `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts`                | Pure analytics                                                          |
+| `src/lib/dedupe.ts`                                                        | Identity-keyed cross-tab dedup + ownership filter                       |
+| `src/lib/billing.ts`                                                       | Billing packet builder + CSV                                            |
+| `src/lib/import.ts`                                                        | GIS CSV/XLSX import (bomb-guarded)                                      |
+| `src/lib/actions.ts`, `access.ts`                                          | Server actions, owner/viewer gates                                      |
+| `src/lib/google.ts`, `session.ts`, `crypto.ts`                             | OAuth+reads, sessions, keys/AEAD                                        |
+| `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup                   |
+| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts`     | Station/column detection, helpers, shared capture-staleness rule        |
+| `src/lib/stoppages.ts`, `permits.ts`                                       | Stoppage-week join, permit-status join (header-gated, silent no-op)     |
+| `src/lib/emails/digest.tsx`                                                | Digest email template (react-email)                                     |
+| `src/app/…`                                                                | Pages, export/auth/health routes                                        |
+| `src/components/diff/diff-view.tsx`, `src/components/sheet/*`              | Diff UI, sheet panels                                                   |
+| `scripts/{generate-env,migrate,seed-demo}.mjs`                             | `npm run setup` / `db:migrate` / `seed-demo`                            |

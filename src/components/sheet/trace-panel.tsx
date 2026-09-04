@@ -1,6 +1,6 @@
-import { ArrowDownRight, ArrowUpRight, PenLine } from "lucide-react";
-import type { TraceEvent } from "@/lib/trace";
 import { absoluteTime } from "@/lib/format";
+import type { TraceEvent } from "@/lib/trace";
+import { ArrowDownRight, ArrowUpRight, PenLine } from "lucide-react";
 
 /** Shot history: every value change of one traced row, newest first. */
 export function TracePanel({
@@ -15,9 +15,7 @@ export function TracePanel({
   return (
     <div className="mb-4 rounded-xl border bg-card">
       <div className="flex items-center justify-between border-b px-4 py-2.5">
-        <h3 className="font-mono text-xs font-semibold uppercase tracking-wide">
-          History · “{traceKeyLabel}”
-        </h3>
+        <h3 className="font-mono text-xs font-semibold tracking-wide uppercase">History · “{traceKeyLabel}”</h3>
         <a href={onClearHref} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
           clear
         </a>

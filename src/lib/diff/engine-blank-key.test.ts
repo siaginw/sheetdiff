@@ -18,8 +18,7 @@
  * actions.db.test.ts / pending-gaps.db.test.ts. snapshots.ts imports no
  * next/* modules, so only ./google (one directory up) needs mocking.
  */
-import { vi } from "vitest";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { diffSnapshots, type SnapshotData } from "./engine";
 
 /* ------------------------------------------------------------------ */
@@ -112,14 +111,20 @@ describe("blank-key fallthrough: a padded row gets a VALUE typed in", () => {
 
 describe("blank-key fallthrough: keyed rows never match blank-key rows", () => {
   it("single key: blank row with content identical to a removed keyed row stays added+removed", () => {
-    const a = snap(["ID", "Name", "Qty"], [
-      ["1", "Widget", "40"],
-      ["2", "Gadget", "7"],
-    ]);
-    const b = snap(["ID", "Name", "Qty"], [
-      ["2", "Gadget", "7"],
-      ["", "Widget", "40"], // same content as row 1, but blank key
-    ]);
+    const a = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["1", "Widget", "40"],
+        ["2", "Gadget", "7"],
+      ],
+    );
+    const b = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["2", "Gadget", "7"],
+        ["", "Widget", "40"], // same content as row 1, but blank key
+      ],
+    );
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     expect(r.summary.keyColumnIndex).toBe(0);
     expect(r.summary.changedRows).toBe(0); // the whole point: no false "change"
@@ -241,11 +246,14 @@ describe("blank-key fallthrough: full reversal of a mixed sheet", () => {
 
 describe("blank-key fallthrough: explicit single key column with blank-key rows", () => {
   it("duplicate-content blank-key rows pair through the content queue", () => {
-    const a = snap(["ID", "Name"], [
-      ["1", "real"],
-      ["", "pad"],
-      ["", "pad"],
-    ]);
+    const a = snap(
+      ["ID", "Name"],
+      [
+        ["1", "real"],
+        ["", "pad"],
+        ["", "pad"],
+      ],
+    );
     const b = structuredClone(a);
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     expect(r.summary.keyColumnIndex).toBe(0);
@@ -261,11 +269,14 @@ describe("blank-key fallthrough: explicit single key column with blank-key rows"
 /* ------------------------------------------------------------------ */
 
 describe("regression guard: sheets with ONLY keyed rows are unaffected", () => {
-  const base = snap(["ID", "Name", "Qty"], [
-    ["1", "Nails", "40"],
-    ["2", "Screws", "100"],
-    ["3", "Bolts", "55"],
-  ]);
+  const base = snap(
+    ["ID", "Name", "Qty"],
+    [
+      ["1", "Nails", "40"],
+      ["2", "Screws", "100"],
+      ["3", "Bolts", "55"],
+    ],
+  );
 
   it("identical snapshots: nothing changes, key column still auto-detected", () => {
     const r = diffSnapshots(base, structuredClone(base));
@@ -289,11 +300,14 @@ describe("regression guard: sheets with ONLY keyed rows are unaffected", () => {
   });
 
   it("a full sort is moves only, never false changes", () => {
-    const sorted = snap(["ID", "Name", "Qty"], [
-      ["3", "Bolts", "55"],
-      ["1", "Nails", "40"],
-      ["2", "Screws", "100"],
-    ]);
+    const sorted = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["3", "Bolts", "55"],
+        ["1", "Nails", "40"],
+        ["2", "Screws", "100"],
+      ],
+    );
     const r = diffSnapshots(base, sorted);
     expect(r.summary.changedRows).toBe(0);
     expect(r.summary.movedRows).toBe(3);
@@ -353,9 +367,14 @@ const TAB_ID = "bk-tab";
 const SHEET_ID = "bk-sheet";
 
 beforeAll(async () => {
-  await db.insert(users).values({ id: "bk-user", googleSub: "sub-bk", email: "bk@x.com", name: "bk", tokensEnc: "unused", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id: "bk-user", googleSub: "sub-bk", email: "bk@x.com", name: "bk", tokensEnc: "unused", createdAt: 1 });
   await db.insert(spreadsheets).values({
-    id: SHEET_ID, userId: "bk-user", googleId: "gid-blankkey", title: "Padded Tracker",
+    id: SHEET_ID,
+    userId: "bk-user",
+    googleId: "gid-blankkey",
+    title: "Padded Tracker",
     url: "https://docs.google.com/spreadsheets/d/gid-blankkey/edit",
     createdAt: 1,
   });
@@ -363,7 +382,11 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* WAL held open on Windows */ }
+  try {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch {
+    /* WAL held open on Windows */
+  }
 });
 
 describe("auto-baseline (captureSnapshot against a temp real database)", () => {
@@ -372,7 +395,12 @@ describe("auto-baseline (captureSnapshot against a temp real database)", () => {
   });
 
   it("the FIRST capture of a tab sets isBaseline=true on its snapshot row", async () => {
-    state.tabValues = { Tracker: [["Shot", "Qty"], ["S1", "5"]] };
+    state.tabValues = {
+      Tracker: [
+        ["Shot", "Qty"],
+        ["S1", "5"],
+      ],
+    };
     const run = await captureSnapshot(SHEET_ID, "manual");
     expect(run.tabCount).toBe(1);
 
@@ -388,7 +416,12 @@ describe("auto-baseline (captureSnapshot against a temp real database)", () => {
   });
 
   it("subsequent captures are NOT baselines; exactly one baseline row remains", async () => {
-    state.tabValues = { Tracker: [["Shot", "Qty"], ["S1", "6"]] };
+    state.tabValues = {
+      Tracker: [
+        ["Shot", "Qty"],
+        ["S1", "6"],
+      ],
+    };
     const run = await captureSnapshot(SHEET_ID, "scheduled");
 
     const rows = await db.select().from(snapshots).where(eq(snapshots.tabId, TAB_ID));
@@ -402,7 +435,10 @@ describe("auto-baseline (captureSnapshot against a temp real database)", () => {
     const stats = await db.select().from(snapshotStats).where(eq(snapshotStats.tabId, TAB_ID));
     expect(stats).toHaveLength(1);
     expect(stats[0]!.snapshotId).toBe(rows[1]!.id);
-    expect({ added: stats[0]!.added, removed: stats[0]!.removed, changed: stats[0]!.changed })
-      .toEqual({ added: 0, removed: 0, changed: 1 });
+    expect({ added: stats[0]!.added, removed: stats[0]!.removed, changed: stats[0]!.changed }).toEqual({
+      added: 0,
+      removed: 0,
+      changed: 1,
+    });
   });
 });

@@ -1,16 +1,27 @@
-import { NextResponse } from "next/server";
-import { and, desc, eq, ne } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { tabs, snapshots } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
 import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges } from "@/lib/pending";
-import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
-import { computeGapReport } from "@/lib/gaps";
+import { billingPacketCsv, buildBillingPacket } from "@/lib/billing";
+import { db } from "@/lib/db";
+import { snapshots, tabs } from "@/lib/db/schema";
 import { detectStationColumns } from "@/lib/detect";
-import { agingGaps, detectLateEntries, detectOverplacement, officePipeline, invoiceStatus, dedupeTabData, type LateEntry, type AgingGap, type OverplacementFinding, type OfficePipeline } from "@/lib/production";
-import { buildBillingPacket, billingPacketCsv } from "@/lib/billing";
 import { absoluteTime } from "@/lib/format";
+import { computeGapReport } from "@/lib/gaps";
+import { getPendingChanges } from "@/lib/pending";
+import {
+  agingGaps,
+  dedupeTabData,
+  detectLateEntries,
+  detectOverplacement,
+  invoiceStatus,
+  officePipeline,
+  type AgingGap,
+  type LateEntry,
+  type OfficePipeline,
+  type OverplacementFinding,
+} from "@/lib/production";
+import { getSessionUser } from "@/lib/session";
+import { decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
+import { and, desc, eq, ne } from "drizzle-orm";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -47,7 +58,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   // aggregate across EVERY tracked tab
-  const unresolvedRows: { tab: string; status: string; key: string | null; values: string[]; cells: { header: string; from: string; to: string }[] }[] = [];
+  const unresolvedRows: {
+    tab: string;
+    status: string;
+    key: string | null;
+    values: string[];
+    cells: { header: string; from: string; to: string }[];
+  }[] = [];
   const allAgedGaps: (AgingGap & { tab?: string })[] = [];
   const officeByTab: { tab: string; pipeline: OfficePipeline }[] = [];
   const invoicesByTab: { tab: string; status: ReturnType<typeof invoiceStatus> }[] = [];
@@ -77,10 +94,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // the DATA clock: every timestamp, age, and the filename date derive from
   // the latest snapshot, never the export moment — the same data must export
   // to byte-identical files every time (audit diffing, idempotency)
-  const dataAsOf = Math.max(
-    0,
-    ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0),
-  ) || Date.now();
+  const dataAsOf = Math.max(0, ...trackedTabs.map((t) => latestByTab.get(t.id)?.createdAt ?? 0)) || Date.now();
   const { freshByTab, pureCopies, ownedRows } = dedupeTabData(tabData);
   for (const tab of trackedTabs) {
     const latestSnap = latestByTab.get(tab.id);
@@ -135,13 +149,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         createdAt: s.createdAt,
         data: s.id === latestSnap.id ? latestData : ownedSlice(s.dataBlob),
       }));
-        for (const g of agingGaps(walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })), dataAsOf)) {
-          allAgedGaps.push({ ...g, tab: tab.title });
-        }
-        if (walk.length > 1) {
-          for (const e of detectLateEntries(walk)) allLateEntries.push(e);
-        }
+      for (const g of agingGaps(
+        walk.map((w) => ({ createdAt: w.createdAt, report: computeGapReport(w.data) })),
+        dataAsOf,
+      )) {
+        allAgedGaps.push({ ...g, tab: tab.title });
       }
+      if (walk.length > 1) {
+        for (const e of detectLateEntries(walk)) allLateEntries.push(e);
+      }
+    }
 
     // the office-entry backlog comes from the sheet's own entered-column —
     // aged against the DATA clock so re-exports are byte-identical

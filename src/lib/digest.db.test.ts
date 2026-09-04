@@ -17,9 +17,9 @@ vi.mock("nodemailer", () => ({
   },
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { eq } from "drizzle-orm";
+import { beforeAll, describe, expect, it } from "vitest";
 
 process.env.SMTP_HOST ??= "smtp.test";
 process.env.SMTP_USER ??= "user";
@@ -34,39 +34,80 @@ const { setAck } = await import("./sync");
 const { buildDigestSheets, sendDigestTo } = await import("./digest");
 
 const NOW = Date.now();
-const GRID_A0 = [["ID", "Qty"], ["1", "40"]];
-const GRID_A1 = [["ID", "Qty"], ["1", "40"], ["2", "10"]]; // added row
-const GRID_B0 = [["ID", "Qty"], ["9", "5"]];
-const GRID_B1 = [["ID", "Qty"], ["9", "7"]]; // changed row
+const GRID_A0 = [
+  ["ID", "Qty"],
+  ["1", "40"],
+];
+const GRID_A1 = [
+  ["ID", "Qty"],
+  ["1", "40"],
+  ["2", "10"],
+]; // added row
+const GRID_B0 = [
+  ["ID", "Qty"],
+  ["9", "5"],
+];
+const GRID_B1 = [
+  ["ID", "Qty"],
+  ["9", "7"],
+]; // changed row
 
-const trackedTabs = async () => (await db.select().from(tabs).where(eq(tabs.spreadsheetId, "sh1"))).filter((t) => t.tracked);
+const trackedTabs = async () =>
+  (await db.select().from(tabs).where(eq(tabs.spreadsheetId, "sh1"))).filter((t) => t.tracked);
 
 beforeAll(async () => {
   await db.insert(users).values({
-    id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x",
-    digestEmail: "me@x.com", digestTime: "07:00", digestDay: null, createdAt: 1,
+    id: "u1",
+    googleSub: "s1",
+    email: "u@x.com",
+    name: "u1",
+    tokensEnc: "x",
+    digestEmail: "me@x.com",
+    digestTime: "07:00",
+    digestDay: null,
+    createdAt: 1,
   });
   await db.insert(spreadsheets).values({
-    id: "sh1", userId: "u1", googleId: "g1", title: "Digest Sheet", url: "https://x",
-    createdAt: 1, scheduleKind: "daily", lastSnapshotAt: NOW - 3_600_000,
+    id: "sh1",
+    userId: "u1",
+    googleId: "g1",
+    title: "Digest Sheet",
+    url: "https://x",
+    createdAt: 1,
+    scheduleKind: "daily",
+    lastSnapshotAt: NOW - 3_600_000,
   });
-  await db.insert(tabs).values({ id: "ta", spreadsheetId: "sh1", title: "A", position: 0, tracked: true, keyColumn: 0 });
-  await db.insert(tabs).values({ id: "tb", spreadsheetId: "sh1", title: "B", position: 1, tracked: true, keyColumn: 0 });
-  await db.insert(tabs).values({ id: "tc", spreadsheetId: "sh1", title: "C", position: 2, tracked: false, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "ta", spreadsheetId: "sh1", title: "A", position: 0, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "tb", spreadsheetId: "sh1", title: "B", position: 1, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "tc", spreadsheetId: "sh1", title: "C", position: 2, tracked: false, keyColumn: 0 });
   const snapRow = (id: string, tabId: string, runId: string, baseline: boolean, at: number, grid: string[][]) => {
     const data = toSnapshotData(grid);
     return {
-      id, tabId, runId, trigger: "manual" as const, isBaseline: baseline,
-      rowCount: data.rows.length, colCount: data.headers.length,
-      dataBlob: encodeSnapshot(data), createdAt: at,
+      id,
+      tabId,
+      runId,
+      trigger: "manual" as const,
+      isBaseline: baseline,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt: at,
     };
   };
-  await db.insert(snapshots).values([
-    snapRow("sa0", "ta", "r1", true, 1000, GRID_A0),
-    snapRow("sa1", "ta", "r2", false, 2000, GRID_A1),
-    snapRow("sb0", "tb", "r1", true, 1000, GRID_B0),
-    snapRow("sb1", "tb", "r2", false, 2000, GRID_B1),
-  ]);
+  await db
+    .insert(snapshots)
+    .values([
+      snapRow("sa0", "ta", "r1", true, 1000, GRID_A0),
+      snapRow("sa1", "ta", "r2", false, 2000, GRID_A1),
+      snapRow("sb0", "tb", "r1", true, 1000, GRID_B0),
+      snapRow("sb1", "tb", "r2", false, 2000, GRID_B1),
+    ]);
   await db.insert(snapshotStats).values([
     { snapshotId: "sa1", tabId: "ta", added: 1, removed: 0, changed: 0, createdAt: 2000 },
     { snapshotId: "sb1", tabId: "tb", added: 0, removed: 0, changed: 1, createdAt: 2000 },
@@ -114,13 +155,19 @@ describe("digest subject priority (staleness outranks the count)", () => {
 
     // stale: lastSnapshotAt pushed past the daily 48h window
     sent.length = 0;
-    await db.update(spreadsheets).set({ lastSnapshotAt: NOW - 72 * 3_600_000 }).where(eq(spreadsheets.id, "sh1"));
+    await db
+      .update(spreadsheets)
+      .set({ lastSnapshotAt: NOW - 72 * 3_600_000 })
+      .where(eq(spreadsheets.id, "sh1"));
     await sendDigestTo({ ...user, lastDigestAt: 0 });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.subject).toBe("SheetDiff: ⚠ 1 sheet may be stale · 2 to enter");
     // and the sheet entry itself is flagged with its age
     const sheets = await buildDigestSheets("u1", NOW);
     expect(sheets[0]!.lastSnapshotAgo).toBeTruthy();
-    await db.update(spreadsheets).set({ lastSnapshotAt: NOW - 3_600_000 }).where(eq(spreadsheets.id, "sh1"));
+    await db
+      .update(spreadsheets)
+      .set({ lastSnapshotAt: NOW - 3_600_000 })
+      .where(eq(spreadsheets.id, "sh1"));
   });
 });

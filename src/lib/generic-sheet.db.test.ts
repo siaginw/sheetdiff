@@ -16,9 +16,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -45,8 +43,8 @@ vi.mock("@/lib/google", () => ({
   googleConfigured: () => false,
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("generic");
 
@@ -101,14 +99,17 @@ function textOf(node: unknown, out: string[] = []): string[] {
     return out;
   }
   if (typeof node === "object") {
-    const props = "props" in (node as Record<string, unknown>) ? (node as { props?: Record<string, unknown> }).props ?? {} : node;
+    const props =
+      "props" in (node as Record<string, unknown>) ? ((node as { props?: Record<string, unknown> }).props ?? {}) : node;
     for (const v of Object.values(props)) textOf(v, out);
   }
   return out;
 }
 const pageText = (el: unknown) => textOf(el).join(" ").replace(/\s+/g, " ");
 
-async function csvBody(get: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>): Promise<string> {
+async function csvBody(
+  get: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>,
+): Promise<string> {
   const res = await get(new Request("http://localhost/"), { params: Promise.resolve({ id: SHEET }) });
   expect(res.status).toBe(200);
   return res.text();
@@ -116,10 +117,18 @@ async function csvBody(get: (req: Request, ctx: { params: Promise<{ id: string }
 
 beforeAll(async () => {
   state.userId = "owner";
-  await db.insert(users).values({ id: "owner", googleSub: "s", email: "o@x.com", name: "o", tokensEnc: "x", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id: "owner", googleSub: "s", email: "o@x.com", name: "o", tokensEnc: "x", createdAt: 1 });
   await db.insert(spreadsheets).values({
-    id: SHEET, userId: "owner", googleId: "g", title: "Inventory Tracker",
-    url: "https://x", createdAt: 1, scheduleKind: "off", lastSnapshotAt: T2,
+    id: SHEET,
+    userId: "owner",
+    googleId: "g",
+    title: "Inventory Tracker",
+    url: "https://x",
+    createdAt: 1,
+    scheduleKind: "off",
+    lastSnapshotAt: T2,
   });
   await db.insert(tabs).values([
     { id: TAB_STOCK, spreadsheetId: SHEET, title: "Stock", position: 0, tracked: true },
@@ -127,7 +136,17 @@ beforeAll(async () => {
   ]);
   const snap = (id: string, tabId: string, runId: string, isBaseline: boolean, createdAt: number, grid: string[][]) => {
     const data = toSnapshotData(grid);
-    return { id, tabId, runId, trigger: "manual" as const, isBaseline, rowCount: data.rows.length, colCount: data.headers.length, dataBlob: encodeSnapshot(data), createdAt };
+    return {
+      id,
+      tabId,
+      runId,
+      trigger: "manual" as const,
+      isBaseline,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt,
+    };
   };
   await db.insert(snapshots).values([
     snap("inv-s0", TAB_STOCK, "r0", true, T1, [STOCK_H, ...STOCK_BASE]),
@@ -171,7 +190,9 @@ describe("a generic inventory sheet (no stations, no construction vocabulary)", 
 
   it("the billing packet is HONEST about footage: unknown, never a confident 0 ft", async () => {
     const body = await csvBody(billingCsvGet);
-    expect(body).toMatch(/Placed since collection: COULD NOT DETERMINE — no collection marker or no station columns \(row-based sheet\)/);
+    expect(body).toMatch(
+      /Placed since collection: COULD NOT DETERMINE — no collection marker or no station columns \(row-based sheet\)/,
+    );
     // the to-enter worklist still ships — that part of billing day is universal
     expect(body).toContain("D-440");
     expect(body).toContain("E-550");

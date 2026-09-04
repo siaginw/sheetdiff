@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest something SheetDiff should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task or workflow — not the feature itself. "I'm trying to catch rows my office forgot to enter after Friday's pull."
+    validations:
+      required: true
+  - type: textarea
+    id: sheet-shape
+    attributes:
+      label: What does your sheet look like?
+      description: Column headers that matter (Activity/Start STA/End STA? SKU? Date? Entered-in-something?), roughly how many rows/tabs.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should SheetDiff do instead?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?

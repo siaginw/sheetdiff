@@ -34,9 +34,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -48,8 +46,8 @@ vi.mock("@/lib/google", () => ({
   fetchTabValues: async () => ({}),
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("billing");
 
@@ -62,15 +60,17 @@ const { GET } = await import("./route");
 const signIn = (id: string | null) => {
   state.userId = id;
 };
-const get = (id: string) =>
-  GET(new Request("http://localhost/"), { params: Promise.resolve({ id }) });
+const get = (id: string) => GET(new Request("http://localhost/"), { params: Promise.resolve({ id }) });
 
 async function seedUser(id: string, email: string) {
   await db.insert(users).values({ id, googleSub: `sub-${id}`, email, name: id, tokensEnc: "unused", createdAt: 1 });
 }
 async function seedSheet(id: string, userId: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId, googleId: `gid-${id}`, title,
+    id,
+    userId,
+    googleId: `gid-${id}`,
+    title,
     url: `https://docs.google.com/spreadsheets/d/gid-${id}/edit`,
     createdAt: 1,
   });
@@ -78,12 +78,26 @@ async function seedSheet(id: string, userId: string, title: string) {
 async function seedTab(id: string, spreadsheetId: string, tracked = true) {
   await db.insert(tabs).values({ id, spreadsheetId, title: id, position: 0, tracked, keyColumn: 0 });
 }
-async function seedSnapshot(id: string, tabId: string, runId: string, trigger: "manual" | "import", isBaseline: boolean, createdAt: number, grid: string[][]) {
+async function seedSnapshot(
+  id: string,
+  tabId: string,
+  runId: string,
+  trigger: "manual" | "import",
+  isBaseline: boolean,
+  createdAt: number,
+  grid: string[][],
+) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger, isBaseline,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt,
+    id,
+    tabId,
+    runId,
+    trigger,
+    isBaseline,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt,
   });
 }
 
@@ -122,34 +136,48 @@ beforeAll(async () => {
   // Tab A: baseline plow 0-500 (CREW A) -> mid adds bore 700-900 + crew fix ->
   // latest adds a LATE bore 900-1000 dated 8/10/2026. Chain hole 500-700 opens
   // at T1 and is still open at T2 (200 ft).
-  await seedSnapshot("ba-base", TAB_A, "ba0", "manual", true, T0,
-    grid(["Plow", "0", "500", "CREW A", d(9)]));
-  await seedSnapshot("ba-mid", TAB_A, "ba1", "manual", false, T1,
+  await seedSnapshot("ba-base", TAB_A, "ba0", "manual", true, T0, grid(["Plow", "0", "500", "CREW A", d(9)]));
+  await seedSnapshot(
+    "ba-mid",
+    TAB_A,
+    "ba1",
+    "manual",
+    false,
+    T1,
     grid(
       ["Plow", "0", "500", "CREW Z", d(9)], // crew changed vs baseline
       ["Bore", "700", "900", "HAIDER 1", d(3)], // entered same-week: NOT late
-    ));
-  await seedSnapshot("ba-last", TAB_A, "ba2", "manual", false, T2,
+    ),
+  );
+  await seedSnapshot(
+    "ba-last",
+    TAB_A,
+    "ba2",
+    "manual",
+    false,
+    T2,
     grid(
       ["Plow", "0", "500", "CREW Z", d(9)],
       ["Bore", "700", "900", "HAIDER 1", d(3)],
       ["Bore", "900", "1000", "HAIDER 1", d(19)], // entered 2+ weeks late
-    ));
-  await seedSnapshot("ba-import", TAB_A, "ba3", "import", false, T3,
-    grid(["Plow", "0", "9999", "X", d(4)])); // must never leak in
+    ),
+  );
+  await seedSnapshot("ba-import", TAB_A, "ba3", "import", false, T3, grid(["Plow", "0", "9999", "X", d(4)])); // must never leak in
 
   // Tab B: contiguous chain, one new bore since baseline (no holes, no lates).
-  await seedSnapshot("bb-base", TAB_B, "bb0", "manual", true, T0,
-    grid(["Plow", "0", "1000", "CREW B", d(10)]));
-  await seedSnapshot("bb-last", TAB_B, "bb1", "manual", false, T2,
-    grid(
-      ["Plow", "0", "1000", "CREW B", d(10)],
-      ["Bore", "1000", "1100", "CREW C", d(1)],
-    ));
+  await seedSnapshot("bb-base", TAB_B, "bb0", "manual", true, T0, grid(["Plow", "0", "1000", "CREW B", d(10)]));
+  await seedSnapshot(
+    "bb-last",
+    TAB_B,
+    "bb1",
+    "manual",
+    false,
+    T2,
+    grid(["Plow", "0", "1000", "CREW B", d(10)], ["Bore", "1000", "1100", "CREW C", d(1)]),
+  );
 
   // Untracked tab with wild numbers — must contribute nothing.
-  await seedSnapshot("bg-last", TAB_GAMMA, "bg0", "manual", true, T2,
-    grid(["Plow", "0", "5000", "G", d(4)]));
+  await seedSnapshot("bg-last", TAB_GAMMA, "bg0", "manual", true, T2, grid(["Plow", "0", "5000", "G", d(4)]));
 
   // A sheet with snapshots but NO baseline (sinceFt unknowable) and a sheet
   // whose tabs are all untracked (400).
@@ -187,18 +215,35 @@ beforeAll(async () => {
   // hole and every placed foot on copy-tab sheets while the dashboard page
   // showed the honest numbers.
   await seedSheet("csv-copy", "owner", "CSV Copy Tracker");
-  await db.insert(tabs).values({ id: "cd-a", spreadsheetId: "csv-copy", title: "cd-a", position: 0, tracked: true, keyColumn: 0 });
-  await db.insert(tabs).values({ id: "cd-b", spreadsheetId: "csv-copy", title: "cd-b", position: 1, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "cd-a", spreadsheetId: "csv-copy", title: "cd-a", position: 0, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "cd-b", spreadsheetId: "csv-copy", title: "cd-b", position: 1, tracked: true, keyColumn: 0 });
   await seedSnapshot("cc-a-base", "cd-a", "cc0", "manual", true, T0, grid(["Plow", "0", "500", "CREW A", d(9)]));
-  await seedSnapshot("cc-a-last", "cd-a", "cc1", "manual", false, T2, grid(
-    ["Plow", "0", "500", "CREW A", d(9)],
-    ["Bore", "700", "900", "CREW A", d(1)], // opens the 500-700 hole, +200 ft since baseline
-  ));
+  await seedSnapshot(
+    "cc-a-last",
+    "cd-a",
+    "cc1",
+    "manual",
+    false,
+    T2,
+    grid(
+      ["Plow", "0", "500", "CREW A", d(9)],
+      ["Bore", "700", "900", "CREW A", d(1)], // opens the 500-700 hole, +200 ft since baseline
+    ),
+  );
   await seedSnapshot("cc-b-base", "cd-b", "cc2", "manual", true, T1, grid(["Plow", "0", "500", "CREW A", d(9)]));
-  await seedSnapshot("cc-b-last", "cd-b", "cc3", "manual", false, T3, grid(
-    ["Plow", "0", "500", "CREW A", d(9)],
-    ["Bore", "700", "900", "CREW A", d(1)],
-  ));
+  await seedSnapshot(
+    "cc-b-last",
+    "cd-b",
+    "cc3",
+    "manual",
+    false,
+    T3,
+    grid(["Plow", "0", "500", "CREW A", d(9)], ["Bore", "700", "900", "CREW A", d(1)]),
+  );
 });
 
 describe("temp-db harness", () => {
@@ -245,9 +290,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
     // must not win; both tracked tabs' latest is T2 so tab order can't matter)
     expect(lines[1]).toBe(`# Snapshot: ${absoluteTime(T2)} · run ba2`);
     // the whole-sheet aggregates: 400 placed, one 200 ft hole, 4 to enter, 1 late
-    expect(lines[2]).toBe(
-      "# Placed since collection: 400 ft | Open holes: 200 ft | To enter: 4 | Late entries: 1",
-    );
+    expect(lines[2]).toBe("# Placed since collection: 400 ft | Open holes: 200 ft | To enter: 4 | Late entries: 1");
     expect(lines[3]).toBe("Kind,Detail,Ft,Note");
 
     const body = lines.slice(4);
@@ -255,7 +298,11 @@ describe("billing route: packet assembly across every tracked tab", () => {
     expect(body).toContain("FOOTAGE,Placed footage since last collection,400,");
     // the open hole, with its do-not-invoice note tagged with its tab (days-open
     // grows with the wall clock — match, don't pin)
-    expect(body.some((l) => /^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(bill-a\)$/.test(l))).toBe(true);
+    expect(
+      body.some((l) =>
+        /^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(bill-a\)$/.test(l),
+      ),
+    ).toBe(true);
     // tab A's crew fix is on the worklist, tagged with its tab
     expect(body).toContain("TO ENTER,Crew #: CREW A -> CREW Z,,enter in office system (bill-a)");
     // NEW rows from both tabs carry the tab tag too (to-enter count 4 = 1
@@ -270,7 +317,11 @@ describe("billing route: packet assembly across every tracked tab", () => {
     // timezone-adjacent — match, don't pin). The detail contains a comma, so
     // it ships as ONE quoted field — this regex used to match the SPLIT
     // output of the quoting bug itself.
-    expect(body.some((l) => /^LATE ENTRY,"Row 3 \(Bore\) dated \d+\/\d+\/\d+, entered \d+d late",,verify office system has it$/.test(l))).toBe(true);
+    expect(
+      body.some((l) =>
+        /^LATE ENTRY,"Row 3 \(Bore\) dated \d+\/\d+\/\d+, entered \d+d late",,verify office system has it$/.test(l),
+      ),
+    ).toBe(true);
   });
 
   it("an ack on the tab-A change drops exactly that row from the worklist", async () => {
@@ -281,9 +332,7 @@ describe("billing route: packet assembly across every tracked tab", () => {
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\n");
     // 3 to enter now: the crew fix resolved, the two additions remain
-    expect(lines[2]).toBe(
-      "# Placed since collection: 400 ft | Open holes: 200 ft | To enter: 3 | Late entries: 1",
-    );
+    expect(lines[2]).toBe("# Placed since collection: 400 ft | Open holes: 200 ft | To enter: 3 | Late entries: 1");
     expect(lines.join("\n")).not.toContain("Crew #: CREW A -> CREW Z");
   });
 });
@@ -308,8 +357,22 @@ describe("billing route: office-entry backlog reaches the packet", () => {
     const body = (await res.text()).split("\n").slice(4);
     // stuck + aging rows, attributed to the sheet's own entered column and tab
     // (the entered-column name appears ONLY in the office-backlog meta)
-    expect(body.some((l) => l.includes("Stuck Bore") && l.includes("not entered in the office system") && l.includes("Entered in InEight"))).toBe(true);
-    expect(body.some((l) => l.includes("Aging Bore") && l.includes("not entered in the office system") && l.includes("Entered in InEight"))).toBe(true);
+    expect(
+      body.some(
+        (l) =>
+          l.includes("Stuck Bore") &&
+          l.includes("not entered in the office system") &&
+          l.includes("Entered in InEight"),
+      ),
+    ).toBe(true);
+    expect(
+      body.some(
+        (l) =>
+          l.includes("Aging Bore") &&
+          l.includes("not entered in the office system") &&
+          l.includes("Entered in InEight"),
+      ),
+    ).toBe(true);
     // the normal-bucket row and the already-entered row never become office
     // lines (the fresh row still shows as a NEW to-enter row from the diff —
     // just never with the unentered-downstream office meta)
@@ -328,12 +391,12 @@ describe("billing route: a copy tab must not double the CSV (the dead seenRows r
     // nothing. The copy tab's worklist is skipped too (same behavior as the
     // dashboard page): its "NEW row" is the same work cd-a already queued,
     // and asking the office to enter it twice is the bug, not the fix.
-    expect(lines[2]).toBe(
-      "# Placed since collection: 200 ft | Open holes: 200 ft | To enter: 1 | Late entries: 0",
-    );
+    expect(lines[2]).toBe("# Placed since collection: 200 ft | Open holes: 200 ft | To enter: 1 | Late entries: 0");
     const holeLines = lines.filter((l) => l.startsWith("DO NOT INVOICE,"));
     expect(holeLines).toHaveLength(1);
     // the hole is attributed to the FIRST tab in position order, never the copy
-    expect(holeLines[0]).toMatch(/^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(cd-a\)$/);
+    expect(holeLines[0]).toMatch(
+      /^DO NOT INVOICE,Unaccounted 500-700 \(open \d+d\),200,do not invoice — unbooked footage \(cd-a\)$/,
+    );
   });
 });

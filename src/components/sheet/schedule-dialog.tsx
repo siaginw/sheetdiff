@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,17 +10,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateSchedule } from "@/lib/actions";
 import type { Spreadsheet } from "@/lib/db/schema";
+import { CalendarClock } from "lucide-react";
+import { useState } from "react";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -63,9 +57,7 @@ export function ScheduleDialog({ sheet }: { sheet: Spreadsheet }) {
 
           <DialogHeader>
             <DialogTitle>Snapshot schedule</DialogTitle>
-            <DialogDescription>
-              Automatic snapshots run while the SheetDiff app is running.
-            </DialogDescription>
+            <DialogDescription>Automatic snapshots run while the SheetDiff app is running.</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
@@ -94,7 +86,10 @@ export function ScheduleDialog({ sheet }: { sheet: Spreadsheet }) {
               <div className="grid grid-cols-4 items-center gap-2">
                 <Label className="text-right text-sm">Every</Label>
                 <Select
-                  items={[1, 2, 3, 6, 12].map((h) => ({ value: String(h), label: `${h} ${h === 1 ? "hour" : "hours"}` }))}
+                  items={[1, 2, 3, 6, 12].map((h) => ({
+                    value: String(h),
+                    label: `${h} ${h === 1 ? "hour" : "hours"}`,
+                  }))}
                   value={hours}
                   onValueChange={(v) => {
                     if (typeof v === "string") setHours(v);
@@ -116,7 +111,9 @@ export function ScheduleDialog({ sheet }: { sheet: Spreadsheet }) {
 
             {kind === "daily" || kind === "weekly" ? (
               <div className="grid grid-cols-4 items-center gap-2">
-                <Label htmlFor="sched-time" className="text-right text-sm">At</Label>
+                <Label htmlFor="sched-time" className="text-right text-sm">
+                  At
+                </Label>
                 <Input
                   id="sched-time"
                   type="time"

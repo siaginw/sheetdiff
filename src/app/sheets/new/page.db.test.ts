@@ -17,9 +17,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -33,8 +31,8 @@ vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => 
 vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
 vi.mock("@/lib/actions", () => ({ startTracking: async () => {} }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("add-sheet");
 
@@ -68,8 +66,12 @@ beforeAll(async () => {
   // tokensEnc "x" is not decryptable — with Google configured, getUserClient
   // throws inside the page's try and lands in the genuine-read-error branch
   await db.insert(users).values({
-    id: "owner", googleSub: "sub-owner", email: "owner@corp.com", name: "owner",
-    tokensEnc: "x", createdAt: 1,
+    id: "owner",
+    googleSub: "sub-owner",
+    email: "owner@corp.com",
+    name: "owner",
+    tokensEnc: "x",
+    createdAt: 1,
   });
 });
 
@@ -78,7 +80,9 @@ describe("add-sheet error taxonomy", () => {
     state.userId = "owner";
     delete process.env.GOOGLE_CLIENT_ID;
     delete process.env.GOOGLE_CLIENT_SECRET;
-    const text = textOf(await render({ url: URL_PARAM })).join(" ").replace(/\s+/g, " ");
+    const text = textOf(await render({ url: URL_PARAM }))
+      .join(" ")
+      .replace(/\s+/g, " ");
     expect(text).toContain("GOOGLE_CLIENT_ID");
     expect(text).toContain("GOOGLE_CLIENT_SECRET");
     expect(text).not.toContain("shared with your Google account");
@@ -88,7 +92,9 @@ describe("add-sheet error taxonomy", () => {
     state.userId = "owner";
     process.env.GOOGLE_CLIENT_ID = "test-id.apps.googleusercontent.com";
     process.env.GOOGLE_CLIENT_SECRET = "test-secret";
-    const text = textOf(await render({ url: URL_PARAM })).join(" ").replace(/\s+/g, " ");
+    const text = textOf(await render({ url: URL_PARAM }))
+      .join(" ")
+      .replace(/\s+/g, " ");
     expect(text).toContain("shared with your Google account (Viewer is enough)");
     expect(text).not.toContain("GOOGLE_CLIENT_SECRET");
     delete process.env.GOOGLE_CLIENT_ID;
@@ -98,7 +104,9 @@ describe("add-sheet error taxonomy", () => {
   it("a malformed URL keeps its own message regardless of configuration", async () => {
     state.userId = "owner";
     delete process.env.GOOGLE_CLIENT_ID;
-    const text = textOf(await render({ url: "not-a-link" })).join(" ").replace(/\s+/g, " ");
+    const text = textOf(await render({ url: "not-a-link" }))
+      .join(" ")
+      .replace(/\s+/g, " ");
     expect(text).toContain("doesn't look like a Google Sheets link");
   });
 

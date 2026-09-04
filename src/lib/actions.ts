@@ -1,20 +1,19 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import crypto from "node:crypto";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
-import { db } from "./db";
-import { spreadsheets, tabs, snapshots, type ScheduleKind } from "./db/schema";
-import { getSessionUserId, SESSION_COOKIE } from "./session";
-import { parseSpreadsheetId, fetchSpreadsheetMeta } from "./google";
-import { captureSnapshot, computeNextRun, toSnapshotData, encodeSnapshot } from "./snapshots";
-import { setAck } from "./sync";
-import { getPendingChanges } from "./pending";
-import { parseImportFile } from "./import";
 import { getSheetAccess } from "./access";
-import { notes as notesTable, users, members } from "./db/schema";
+import { db } from "./db";
+import { members, notes as notesTable, snapshots, spreadsheets, tabs, users, type ScheduleKind } from "./db/schema";
+import { fetchSpreadsheetMeta, parseSpreadsheetId } from "./google";
+import { parseImportFile } from "./import";
+import { getPendingChanges } from "./pending";
+import { getSessionUserId, SESSION_COOKIE } from "./session";
+import { captureSnapshot, computeNextRun, encodeSnapshot, toSnapshotData } from "./snapshots";
+import { setAck } from "./sync";
 
 async function requireUser(): Promise<typeof users.$inferSelect> {
   const id = await getSessionUserId();
@@ -175,9 +174,7 @@ export async function setBaseline(fd: FormData): Promise<void> {
           await db
             .selectDistinct({ tabId: snapshots.tabId })
             .from(snapshots)
-            .where(
-              and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")),
-            )
+            .where(and(inArray(snapshots.tabId, tabIds), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")))
         ).map((r) => r.tabId)
       : [];
   const runExists = coveredTabIds.length > 0;
@@ -200,11 +197,7 @@ export async function setBaseline(fd: FormData): Promise<void> {
       .selectDistinct({ tabId: snapshots.tabId, runId: snapshots.runId })
       .from(snapshots)
       .where(
-        and(
-          inArray(snapshots.tabId, coveredTabIds),
-          eq(snapshots.isBaseline, true),
-          ne(snapshots.trigger, "import"),
-        ),
+        and(inArray(snapshots.tabId, coveredTabIds), eq(snapshots.isBaseline, true), ne(snapshots.trigger, "import")),
       );
     const payload = Buffer.from(
       JSON.stringify({ r: runId, p: prevRows.map((x) => [x.tabId, x.runId]) }),
@@ -255,8 +248,7 @@ export async function undoBaseline(fd: FormData): Promise<void> {
   const markedRun = typeof parsed.r === "string" ? parsed.r : null;
   const pairs = Array.isArray(parsed.p)
     ? parsed.p.filter(
-        (x): x is [string, string] =>
-          Array.isArray(x) && typeof x[0] === "string" && typeof x[1] === "string",
+        (x): x is [string, string] => Array.isArray(x) && typeof x[0] === "string" && typeof x[1] === "string",
       )
     : [];
   if (!markedRun) redirect(`/sheets/${spreadsheetId}?error=bad-undo`);
@@ -269,7 +261,9 @@ export async function undoBaseline(fd: FormData): Promise<void> {
     await db
       .selectDistinct({ tabId: snapshots.tabId })
       .from(snapshots)
-      .where(and(inArray(snapshots.tabId, [...tabIds]), eq(snapshots.runId, markedRun), ne(snapshots.trigger, "import")))
+      .where(
+        and(inArray(snapshots.tabId, [...tabIds]), eq(snapshots.runId, markedRun), ne(snapshots.trigger, "import")),
+      )
   ).map((r) => r.tabId);
   if (covered.length === 0) redirect(`/sheets/${spreadsheetId}?error=bad-undo`);
 
@@ -278,13 +272,14 @@ export async function undoBaseline(fd: FormData): Promise<void> {
   const restore = new Map<string, string>();
   for (const [tabId, runId] of pairs) {
     if (!tabIds.has(tabId) || !covered.includes(tabId)) continue;
-    const ok = (
-      await db
-        .select({ tabId: snapshots.tabId })
-        .from(snapshots)
-        .where(and(eq(snapshots.tabId, tabId), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")))
-        .limit(1)
-    ).length > 0;
+    const ok =
+      (
+        await db
+          .select({ tabId: snapshots.tabId })
+          .from(snapshots)
+          .where(and(eq(snapshots.tabId, tabId), eq(snapshots.runId, runId), ne(snapshots.trigger, "import")))
+          .limit(1)
+      ).length > 0;
     if (ok) restore.set(tabId, runId);
   }
 
@@ -295,9 +290,7 @@ export async function undoBaseline(fd: FormData): Promise<void> {
       const prevRun = restore.get(tabId);
       tx.update(snapshots)
         .set({
-          isBaseline: prevRun
-            ? sql`(run_id = ${prevRun} AND trigger <> 'import')`
-            : sql`0`,
+          isBaseline: prevRun ? sql`(run_id = ${prevRun} AND trigger <> 'import')` : sql`0`,
         })
         .where(eq(snapshots.tabId, tabId))
         .run();
@@ -551,26 +544,26 @@ export async function importGis(fd: FormData): Promise<void> {
 
   const store = (tabId: string, grid: string[][]) => {
     const data = toSnapshotData(grid);
-    db.insert(snapshots).values({
-      id: crypto.randomUUID(),
-      tabId,
-      runId,
-      trigger: "import",
-      isBaseline: false,
-      rowCount: data.rows.length,
-      colCount: data.headers.length,
-      dataBlob: encodeSnapshot(data),
-      createdAt: now,
-    }).run();
+    db.insert(snapshots)
+      .values({
+        id: crypto.randomUUID(),
+        tabId,
+        runId,
+        trigger: "import",
+        isBaseline: false,
+        rowCount: data.rows.length,
+        colCount: data.headers.length,
+        dataBlob: encodeSnapshot(data),
+        createdAt: now,
+      })
+      .run();
     stored++;
     if (!firstTabId) firstTabId = tabId;
   };
 
   if (parsed.kind === "csv") {
     const target =
-      tracked.find((t) => t.id === str(fd, "tabId") && t.tracked) ??
-      tracked.find((t) => t.tracked) ??
-      null;
+      tracked.find((t) => t.id === str(fd, "tabId") && t.tracked) ?? tracked.find((t) => t.tracked) ?? null;
     if (target) store(target.id, parsed.tables.csv);
   } else {
     for (const [sheetName, grid] of Object.entries(parsed.tables)) {
@@ -586,7 +579,9 @@ export async function importGis(fd: FormData): Promise<void> {
   revalidatePath(`/sheets/${spreadsheetId}`);
   revalidatePath("/");
   // land on the diff: latest sheet snapshot -> the fresh import
-  redirect(`/sheets/${spreadsheetId}?tab=${encodeURIComponent(
-    tracked.find((t) => t.id === firstTabId)?.title ?? "",
-  )}&imported=${runId}`);
+  redirect(
+    `/sheets/${spreadsheetId}?tab=${encodeURIComponent(
+      tracked.find((t) => t.id === firstTabId)?.title ?? "",
+    )}&imported=${runId}`,
+  );
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { diffSnapshots, type SnapshotData } from "./engine";
 import { columnWidths } from "./widths";
 
@@ -7,7 +7,13 @@ const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, 
 describe("columnWidths (lines-mode layout math)", () => {
   it("headers set the minimum, cells grow it, everything caps at 22ch", () => {
     const a = snap(["Shot", "Notes"], [["s1", "short"]]);
-    const b = snap(["Shot", "Notes"], [["s1", "short"], ["s2", "a-much-longer-note-value-here"]]);
+    const b = snap(
+      ["Shot", "Notes"],
+      [
+        ["s1", "short"],
+        ["s2", "a-much-longer-note-value-here"],
+      ],
+    );
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     const w = columnWidths(r, r.rows);
     expect(w[0]).toBe(Math.max(3, "Shot".length)); // header minimum ("s2" doesn't beat it)
@@ -24,7 +30,13 @@ describe("columnWidths (lines-mode layout math)", () => {
 
   it("visible-only: hidden rows never stretch columns", () => {
     const a = snap(["ID", "Note"], [["1", ""]]);
-    const b = snap(["ID", "Note"], [["1", ""], ["2", "wide-hidden-value"]]);
+    const b = snap(
+      ["ID", "Note"],
+      [
+        ["1", ""],
+        ["2", "wide-hidden-value"],
+      ],
+    );
     const r = diffSnapshots(a, b, { keyColumn: 0 });
     const added = r.rows.find((x) => x.status === "added")!;
     const unchanged = r.rows.find((x) => x.status === "unchanged")!;

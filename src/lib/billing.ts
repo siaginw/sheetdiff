@@ -1,5 +1,5 @@
-import type { LateEntry, AgingGap, OverplacementFinding, OfficePipeline, InvoiceStatus } from "./production";
 import { csvSafe } from "./csv";
+import type { AgingGap, InvoiceStatus, LateEntry, OfficePipeline, OverplacementFinding } from "./production";
 /** What buildBillingPacket actually reads — any richer type (like DiffRow[])
  *  satisfies this structurally, so callers pass pending.unresolved directly. */
 export interface BillingUnresolvedRow {
@@ -78,7 +78,11 @@ export function buildBillingPacket(input: {
         : r.status === "removed"
           ? `DELETED row: ${r.values.slice(0, 4).filter(Boolean).join(" | ")}`
           : r.cells.map((c) => `${c.header}: ${c.from} -> ${c.to}`).join("; ");
-    rows.push({ kind: "to-enter", detail: what, meta: `enter in office system${(r as { tab?: string }).tab ? ` (${(r as { tab?: string }).tab})` : ""}` });
+    rows.push({
+      kind: "to-enter",
+      detail: what,
+      meta: `enter in office system${(r as { tab?: string }).tab ? ` (${(r as { tab?: string }).tab})` : ""}`,
+    });
   }
   for (const o of input.invoices ?? []) {
     // the A/R backlog: completed, GIS-checked, never entered — aged by
@@ -145,13 +149,17 @@ export function billingPacketCsv(p: BillingPacket, opts?: { sinceFtKnown?: boole
       return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
     };
     const KIND_LABELS: Record<BillingRow["kind"], string> = {
-    footage: "FOOTAGE",
-    hole: "DO NOT INVOICE",
-    "to-enter": "TO ENTER",
-    late: "LATE ENTRY",
-    over: "OVER-PLACED",
-  };
-    lines.push([KIND_LABELS[r.kind] ?? r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(","));
+      footage: "FOOTAGE",
+      hole: "DO NOT INVOICE",
+      "to-enter": "TO ENTER",
+      late: "LATE ENTRY",
+      over: "OVER-PLACED",
+    };
+    lines.push(
+      [KIND_LABELS[r.kind] ?? r.kind, esc(r.detail), r.ft !== undefined ? String(r.ft) : "", esc(r.meta ?? "")].join(
+        ",",
+      ),
+    );
   }
   return lines.join("\n");
 }

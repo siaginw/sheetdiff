@@ -17,8 +17,8 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: () => ({ sendMail: async () => {} }) },
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 process.env.SMTP_HOST ??= "smtp.test";
 process.env.SMTP_USER ??= "user";
@@ -38,8 +38,14 @@ const PE = ["Activity", "Start STA", "End STA", "Date Complete", "Permit Package
 
 async function seedSheet(id: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId: "u1", googleId: `g-${id}`, title, url: "https://x",
-    createdAt: 1, scheduleKind: "daily", lastSnapshotAt: NOW - 3_600_000,
+    id,
+    userId: "u1",
+    googleId: `g-${id}`,
+    title,
+    url: "https://x",
+    createdAt: 1,
+    scheduleKind: "daily",
+    lastSnapshotAt: NOW - 3_600_000,
   });
 }
 async function seedTab(id: string, spreadsheetId: string, title: string, position: number, tracked: boolean) {
@@ -48,9 +54,15 @@ async function seedTab(id: string, spreadsheetId: string, title: string, positio
 async function seedSnapshot(id: string, tabId: string, runId: string, grid: string[][]) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger: "manual", isBaseline: false,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt: NOW - 2 * DAY,
+    id,
+    tabId,
+    runId,
+    trigger: "manual",
+    isBaseline: false,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt: NOW - 2 * DAY,
   });
 }
 
@@ -63,8 +75,15 @@ const HP3 = "hp3";
 
 beforeAll(async () => {
   await db.insert(users).values({
-    id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x",
-    digestEmail: "me@x.com", digestTime: "07:00", digestDay: null, createdAt: 1,
+    id: "u1",
+    googleSub: "s1",
+    email: "u@x.com",
+    name: "u1",
+    tokensEnc: "x",
+    digestEmail: "me@x.com",
+    digestTime: "07:00",
+    digestDay: null,
+    createdAt: 1,
   });
 
   await seedSheet(HP1, "Highlight Tracker");

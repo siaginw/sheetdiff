@@ -1,62 +1,60 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { AppHeader } from "@/components/app-header";
+import { DiffView } from "@/components/diff/diff-view";
+import { ChecksPanel } from "@/components/sheet/checks-panel";
+import { GapReportPanel } from "@/components/sheet/gap-report-panel";
+import { ImportDialog } from "@/components/sheet/import-dialog";
+import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
+import { NoteDialog } from "@/components/sheet/note-dialog";
+import { ProductionPanel } from "@/components/sheet/production-panel";
+import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
+import { SheetMenu } from "@/components/sheet/sheet-menu";
+import { SnapshotSelect } from "@/components/sheet/snapshot-select";
+import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
+import { TracePanel } from "@/components/sheet/trace-panel";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { getSheetAccess } from "@/lib/access";
+import { snapshotNow, undoBaseline } from "@/lib/actions";
+import { computeFootage, runChecks, type CheckFinding, type TabChecksInput } from "@/lib/checks";
+import { db } from "@/lib/db";
+import { changeAcks, notes, snapshots, snapshotStats, tabs } from "@/lib/db/schema";
+import { detectKeyColumn, diffSnapshots } from "@/lib/diff/engine";
+import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
+import { computeGapReport } from "@/lib/gaps";
+import { getPendingChanges } from "@/lib/pending";
+import { detectPermitTab, isPermitTabTitle, permitFindings, type PermitFinding } from "@/lib/permits";
+import {
+  agingGaps,
+  computeCrewBoard,
+  dateHygiene,
+  dedupeTabData,
+  detectLateEntries,
+  detectOverplacement,
+  invoiceStatus,
+  officePipeline,
+  reconcileTotals,
+  sheetBillableNow,
+} from "@/lib/production";
+import { getSessionUser } from "@/lib/session";
+import { decodeSnapshot, getTabDiff, latestNonImportSnapshots } from "@/lib/snapshots";
+import { captureIsStale } from "@/lib/staleness";
+import { computeIntroductions, isResolved, keySetsFor } from "@/lib/sync";
+import { traceKey as traceKeyFn } from "@/lib/trace";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
   AlertTriangle,
   ArrowLeft,
-  Undo2,
   ArrowUpRight,
   Camera,
-  CheckCircle2,
   Clock,
   ExternalLink,
   FileText,
   ReceiptText,
   Star,
+  Undo2,
 } from "lucide-react";
-import { AppHeader } from "@/components/app-header";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { DiffView } from "@/components/diff/diff-view";
-import { SnapshotSelect } from "@/components/sheet/snapshot-select";
-import { ScheduleDialog } from "@/components/sheet/schedule-dialog";
-import { TabSettingsDialog } from "@/components/sheet/tab-settings-dialog";
-import { SheetMenu } from "@/components/sheet/sheet-menu";
-import { db } from "@/lib/db";
-import { tabs, snapshots, snapshotStats, notes, changeAcks } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
-import { getTabDiff, decodeSnapshot, latestNonImportSnapshots } from "@/lib/snapshots";
-import { diffSnapshots, detectKeyColumn } from "@/lib/diff/engine";
-import { runChecks, computeFootage, type CheckFinding, type TabChecksInput } from "@/lib/checks";
-import { computeIntroductions, isResolved, keySetsFor } from "@/lib/sync";
-import { getPendingChanges } from "@/lib/pending";
-import { MarkCollectedButton } from "@/components/sheet/mark-collected-button";
-import { getSheetAccess } from "@/lib/access";
-import { absoluteTime, relativeTime, scheduleLabel } from "@/lib/format";
-import { captureIsStale } from "@/lib/staleness";
-import { snapshotNow, undoBaseline } from "@/lib/actions";
-import { ChecksPanel } from "@/components/sheet/checks-panel";
-import { ImportDialog } from "@/components/sheet/import-dialog";
-import { NoteDialog } from "@/components/sheet/note-dialog";
-import { TracePanel } from "@/components/sheet/trace-panel";
-import { GapReportPanel } from "@/components/sheet/gap-report-panel";
-import { ProductionPanel } from "@/components/sheet/production-panel";
-import { computeGapReport } from "@/lib/gaps";
-import {
-  dateHygiene,
-  detectLateEntries,
-  reconcileTotals,
-  detectOverplacement,
-  officePipeline,
-  invoiceStatus,
-  computeCrewBoard,
-  agingGaps,
-  dedupeTabData,
-  sheetBillableNow,
-} from "@/lib/production";
-import { detectPermitTab, isPermitTabTitle, permitFindings, type PermitFinding } from "@/lib/permits";
-import { traceKey as traceKeyFn } from "@/lib/trace";
-
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
 
 const TIMELINE_RENDER_CAP = 60;
 const INTRO_WALK_WINDOW = 31; // blob budget: latest + baseline + walk
@@ -83,7 +81,10 @@ export default async function SheetPage({
   if (allTabs.length === 0) notFound();
 
   const trackedTabs = allTabs.filter((t) => t.tracked);
-  const latestDataByTab = new Map<string, { title: string; data: ReturnType<typeof decodeSnapshot>; keyColumn?: number | null }>();
+  const latestDataByTab = new Map<
+    string,
+    { title: string; data: ReturnType<typeof decodeSnapshot>; keyColumn?: number | null }
+  >();
 
   // The pending resolver for every tracked tab — computed ONCE at the top,
   // BEFORE activeTab selection (so the default tab can be the first one with
@@ -106,9 +107,7 @@ export default async function SheetPage({
     if (s) latestDataByTab.set(t.id, { title: t.title, data: decodeSnapshot(s.dataBlob), keyColumn: t.keyColumn });
   }
   const sheetDedup = dedupeTabData([...latestDataByTab.values()]);
-  const copyTabIds = new Set(
-    trackedTabs.filter((t) => sheetDedup.pureCopies.has(t.title)).map((t) => t.id),
-  );
+  const copyTabIds = new Set(trackedTabs.filter((t) => sheetDedup.pureCopies.has(t.title)).map((t) => t.id));
 
   const tabParam = typeof sp.tab === "string" ? sp.tab : null;
   // Default to the first tab WITH pending changes (not just the first tracked
@@ -117,9 +116,11 @@ export default async function SheetPage({
   const firstChangedTabId = [...pendingByTab.entries()].find(
     ([tabId, p]) => p && p.counts.unresolved > 0 && !copyTabIds.has(tabId),
   )?.[0];
-  const activeTab = allTabs.find((t) => t.title === tabParam) ??
+  const activeTab =
+    allTabs.find((t) => t.title === tabParam) ??
     (firstChangedTabId ? allTabs.find((t) => t.id === firstChangedTabId) : null) ??
-    allTabs.find((t) => t.tracked) ?? allTabs[0];
+    allTabs.find((t) => t.tracked) ??
+    allTabs[0];
 
   // timeline rows (no blobs)
   const timeline = await db
@@ -157,7 +158,12 @@ export default async function SheetPage({
     ? await db
         .select()
         .from(snapshotStats)
-        .where(inArray(snapshotStats.snapshotId, recentMeta.map((m) => m.id)))
+        .where(
+          inArray(
+            snapshotStats.snapshotId,
+            recentMeta.map((m) => m.id),
+          ),
+        )
     : [];
   const statsById = new Map(statsRows.map((r) => [r.snapshotId, r]));
 
@@ -171,7 +177,10 @@ export default async function SheetPage({
   if (baselineMeta) neededIds.add(baselineMeta.id);
   for (const m of recentMeta.slice(0, INTRO_WALK_WINDOW)) neededIds.add(m.id);
   const blobRows = neededIds.size
-    ? await db.select().from(snapshots).where(inArray(snapshots.id, [...neededIds]))
+    ? await db
+        .select()
+        .from(snapshots)
+        .where(inArray(snapshots.id, [...neededIds]))
     : [];
   const blobById = new Map(blobRows.map((r) => [r.id, r]));
 
@@ -190,9 +199,13 @@ export default async function SheetPage({
     }
     const prev = recentMeta[i + 1];
     if (prev && blobById.has(cur.id) && blobById.has(prev.id)) {
-      const d = diffSnapshots(decodeSnapshot(blobById.get(prev.id)!.dataBlob), decodeSnapshot(blobById.get(cur.id)!.dataBlob), {
-        keyColumn: activeTab.keyColumn ?? null,
-      });
+      const d = diffSnapshots(
+        decodeSnapshot(blobById.get(prev.id)!.dataBlob),
+        decodeSnapshot(blobById.get(cur.id)!.dataBlob),
+        {
+          keyColumn: activeTab.keyColumn ?? null,
+        },
+      );
       statsFor.set(cur.id, { add: d.summary.addedRows, rem: d.summary.removedRows, chg: d.summary.changedRows });
     } else {
       statsFor.set(cur.id, null); // unknown — render "—"
@@ -200,12 +213,15 @@ export default async function SheetPage({
   }
 
   const latest = latestMeta;
-  const latestData = latest ? (blobById.get(latest.id) ? decodeSnapshot(blobById.get(latest.id)!.dataBlob) : null) : null;
+  const latestData = latest
+    ? blobById.get(latest.id)
+      ? decodeSnapshot(blobById.get(latest.id)!.dataBlob)
+      : null
+    : null;
   const detectedKey = latestData ? detectKeyColumn(latestData) : null;
 
   // resolve from/to (after a GIS import, land on sheet → import)
-  const validId = (v: unknown): string | null =>
-    typeof v === "string" && timeline.some((s) => s.id === v) ? v : null;
+  const validId = (v: unknown): string | null => (typeof v === "string" && timeline.some((s) => s.id === v) ? v : null);
 
   const importedParam = typeof sp.imported === "string" ? sp.imported : null;
   let toId: string | null;
@@ -213,7 +229,7 @@ export default async function SheetPage({
   if (importedParam && !fromId) {
     const importedSnap = timeline.find((s) => s.runId === importedParam && s.trigger === "import");
     toId = importedSnap?.id ?? null;
-    fromId = importedSnap ? latest?.id ?? null : null;
+    fromId = importedSnap ? (latest?.id ?? null) : null;
   } else {
     toId = validId(sp.to) ?? timeline.find((s) => s.trigger !== "import")?.id ?? timeline[0]?.id ?? null;
   }
@@ -285,9 +301,7 @@ export default async function SheetPage({
     if (exact && activePending) {
       introduced = activePending.introducedAt;
     } else {
-      const between = recent.filter(
-        (s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt,
-      );
+      const between = recent.filter((s) => s.createdAt > fromSnap.createdAt && s.createdAt <= toSnap.createdAt);
       const fromBlob = blobById.get(fromSnap.id)?.dataBlob;
       const walkSnaps = between.filter((s) => s.dataBlob);
       const walk =
@@ -297,7 +311,8 @@ export default async function SheetPage({
               ...(fromBlob ? [{ createdAt: fromSnap.createdAt, data: decodeSnapshot(fromBlob) }] : []),
             ]
           : [];
-      introduced = walk.length > 1 ? computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) }) : new Map();
+      introduced =
+        walk.length > 1 ? computeIntroductions(walk, diff.rows, { keySets: keySetsFor(diff, walk) }) : new Map();
     }
     for (const r of diff.rows) {
       if (r.status === "unchanged" || r.status === "moved") continue;
@@ -311,7 +326,10 @@ export default async function SheetPage({
   const traceEvents =
     traceParam && recent.length > 1
       ? traceKeyFn(
-          [...recent].filter((s) => s.dataBlob).reverse().map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
+          [...recent]
+            .filter((s) => s.dataBlob)
+            .reverse()
+            .map((s) => ({ createdAt: s.createdAt, data: decodeSnapshot(s.dataBlob!) })),
           traceParam,
         )
       : [];
@@ -335,7 +353,10 @@ export default async function SheetPage({
   // any earlier snapshot of the active tab, filtered to rows it owns
   const ownedSlice = (blob: Buffer) => {
     const d = decodeSnapshot(blob);
-    return { headers: d.headers, rows: sheetDedup.ownedRows(new Map([[activeTab.title, d]])).get(activeTab.title) ?? [] };
+    return {
+      headers: d.headers,
+      rows: sheetDedup.ownedRows(new Map([[activeTab.title, d]])).get(activeTab.title) ?? [],
+    };
   };
   if (latestData) {
     // checks run on RAW latest data per tab — duplicate identities on a
@@ -351,9 +372,7 @@ export default async function SheetPage({
     // tab shows (reformatted strays) — those are excluded from every
     // aggregate, so SAY SO instead of hiding the exclusion
     for (const copyTitle of sheetDedup.pureCopies) {
-      const strays = (sheetDedup.freshByTab.get(copyTitle) ?? []).filter((r) =>
-        r.some((v) => v !== ""),
-      ).length;
+      const strays = (sheetDedup.freshByTab.get(copyTitle) ?? []).filter((r) => r.some((v) => v !== "")).length;
       if (strays > 0) {
         checkFindings.push({
           kind: "cross-tab",
@@ -372,7 +391,10 @@ export default async function SheetPage({
       if (f.stations) {
         activeFootage = f;
         const baselineSnap = recent.find((s) => s.isBaseline && s.id !== latest.id);
-        const base = (baselineSnap && baselineSnap.dataBlob ? baselineSnap : recent.find((r) => r.dataBlob && r.id !== latest.id)) ?? null;
+        const base =
+          (baselineSnap && baselineSnap.dataBlob
+            ? baselineSnap
+            : recent.find((r) => r.dataBlob && r.id !== latest.id)) ?? null;
         if (base) {
           const baseFootage = computeFootage(ownedSlice(base.dataBlob!));
           footageDelta = f.ft - baseFootage.ft;
@@ -403,7 +425,11 @@ export default async function SheetPage({
     crewBoard = computeCrewBoard(activeFresh);
     if (latestDataByTab.size > 0) {
       billableNowCount = sheetBillableNow(
-        [...latestDataByTab.values()].map((e) => ({ title: e.title, data: e.data })),
+        [...latestDataByTab.values()].map((e) => ({
+          title: e.title,
+          data: e.data,
+          keyColumn: e.keyColumn ?? null,
+        })),
       );
     }
     if (recent.length > 1) {
@@ -484,14 +510,14 @@ export default async function SheetPage({
   );
 
   const IMPORT_ERRORS: Record<string, string> = {
-    "snapshot-failed": "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
+    "snapshot-failed":
+      "Couldn't reach Google for the snapshot — check the sheet is shared with your account and try again.",
     "import-no-file": "Pick a file to import first.",
     "import-bad-file": "Couldn't read that file — use .csv or .xlsx.",
     "import-no-match":
       "Nothing imported: no tracked tab matched the file. For .csv, pick the tab it maps to; for .xlsx, sheet names must match your tabs.",
   };
-  const importError =
-    typeof sp.error === "string" ? (IMPORT_ERRORS[sp.error] ?? null) : null;
+  const importError = typeof sp.error === "string" ? (IMPORT_ERRORS[sp.error] ?? null) : null;
 
   return (
     <div className="min-h-dvh bg-muted/30">
@@ -522,7 +548,7 @@ export default async function SheetPage({
         ) : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <Button variant="ghost" size="sm" className="-ml-2 mb-1 text-muted-foreground" render={<Link href="/" />}>
+            <Button variant="ghost" size="sm" className="mb-1 -ml-2 text-muted-foreground" render={<Link href="/" />}>
               <ArrowLeft className="size-4" /> All sheets
             </Button>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -540,16 +566,25 @@ export default async function SheetPage({
             <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
               {trackedCount}/{allTabs.length} tracked · {scheduleLabel(sheet).toLowerCase()}
               {captureIsStale(sheet) ? (
-                <span className="ml-1 font-medium text-amber-600 dark:text-amber-400" title="Snapshots look overdue — check that SheetDiff is running and connected to Google. The numbers below are computed from stale data.">
+                <span
+                  className="ml-1 font-medium text-amber-600 dark:text-amber-400"
+                  title="Snapshots look overdue — check that SheetDiff is running and connected to Google. The numbers below are computed from stale data."
+                >
                   · ⚠ data may be stale
                 </span>
-              ) : ""}
-              {sheet.nextRunAt ? (sheet.nextRunAt > nextRunThreshold ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}` : " · run overdue") : ""}
-            {sheet.captureFailStreak > 0 ? (
-              <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>
-                · captures failing ({sheet.captureFailStreak}×)
-              </span>
-            ) : null}
+              ) : (
+                ""
+              )}
+              {sheet.nextRunAt
+                ? sheet.nextRunAt > nextRunThreshold
+                  ? ` · next ${relativeTime(sheet.nextRunAt).replace(" ago", "")}`
+                  : " · run overdue"
+                : ""}
+              {sheet.captureFailStreak > 0 ? (
+                <span className="text-amber-600 dark:text-amber-400" title={sheet.lastCaptureError ?? undefined}>
+                  · captures failing ({sheet.captureFailStreak}×)
+                </span>
+              ) : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -578,7 +613,7 @@ export default async function SheetPage({
               <ReceiptText className="size-4" /> Billing day
               {billableNowCount > 0 ? (
                 <span
-                  className="ml-0.5 rounded-full bg-diff-move-bg px-1.5 font-mono text-[10px] font-semibold leading-4 text-diff-move-fg"
+                  className="ml-0.5 rounded-full bg-diff-move-bg px-1.5 font-mono text-[10px] leading-4 font-semibold text-diff-move-fg"
                   title={`${billableNowCount} completed, GIS-checked, never entered — open Billing day`}
                 >
                   {billableNowCount}
@@ -586,12 +621,12 @@ export default async function SheetPage({
               ) : null}
             </Button>
             {isOwner ? (
-            <form action={snapshotNow}>
-              <input type="hidden" name="spreadsheetId" value={sheet.id} />
-              <Button type="submit" size="sm">
-                <Camera className="size-4" /> Snapshot now
-              </Button>
-            </form>
+              <form action={snapshotNow}>
+                <input type="hidden" name="spreadsheetId" value={sheet.id} />
+                <Button type="submit" size="sm">
+                  <Camera className="size-4" /> Snapshot now
+                </Button>
+              </form>
             ) : null}
             <SheetMenu spreadsheetId={sheet.id} title={sheet.title} sheetUrl={sheet.url} isOwner={isOwner} />
           </div>
@@ -601,7 +636,7 @@ export default async function SheetPage({
           {/* timeline */}
           <aside className="order-2 rounded-xl border bg-card lg:order-1">
             <div className="border-b px-4 py-3">
-              <h2 className="font-mono text-xs font-semibold uppercase tracking-wide">History</h2>
+              <h2 className="font-mono text-xs font-semibold tracking-wide uppercase">History</h2>
               <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                 {activeTab.title} · {timeline.length} snapshot{timeline.length === 1 ? "" : "s"}
               </p>
@@ -630,7 +665,7 @@ export default async function SheetPage({
             ) : (
               <ol className="relative max-h-[70vh] overflow-auto py-3">
                 {/* the branch line */}
-                <span aria-hidden className="absolute bottom-3 left-[13px] top-3 w-px bg-border" />
+                <span aria-hidden className="absolute top-3 bottom-3 left-[13px] w-px bg-border" />
                 {timeline.slice(0, timelineOpen ? timeline.length : TIMELINE_RENDER_CAP).map((s) => {
                   const isTo = s.id === toId;
                   const isFrom = s.id === fromId;
@@ -638,7 +673,7 @@ export default async function SheetPage({
                   const runNotes = notesByRun.get(s.runId) ?? [];
                   const isImport = s.trigger === "import";
                   return (
-                    <li key={s.id} className="relative pl-7 pr-2">
+                    <li key={s.id} className="relative pr-2 pl-7">
                       <Link
                         href={`/sheets/${sheet.id}?tab=${encodeURIComponent(activeTab.title)}&from=${fromId ?? ""}&to=${s.id}`}
                         className="group block rounded-md px-2 py-1.5 transition-colors hover:bg-muted/70"
@@ -647,7 +682,7 @@ export default async function SheetPage({
                         {/* commit dot */}
                         <span
                           aria-hidden
-                          className={`absolute left-[7px] top-[11px] size-[13px] rounded-full border-2 ${
+                          className={`absolute top-[11px] left-[7px] size-[13px] rounded-full border-2 ${
                             isTo
                               ? "border-primary bg-primary"
                               : isFrom
@@ -680,24 +715,37 @@ export default async function SheetPage({
                           {st == null ? (
                             <span
                               className="text-muted-foreground/40"
-                              title={isImport ? "GIS imports replace the tracked state — they don't record change counts" : "Change counts weren't recorded for snapshots this old"}
+                              title={
+                                isImport
+                                  ? "GIS imports replace the tracked state — they don't record change counts"
+                                  : "Change counts weren't recorded for snapshots this old"
+                              }
                             >
                               {isImport ? "n/a" : "—"}
                             </span>
                           ) : st.add + st.rem + st.chg > 0 ? (
                             <span className="flex gap-1.5">
                               {st.add > 0 && (
-                                <span className="text-diff-add-fg" title={`${st.add} row${st.add === 1 ? "" : "s"} added since the previous snapshot`}>
+                                <span
+                                  className="text-diff-add-fg"
+                                  title={`${st.add} row${st.add === 1 ? "" : "s"} added since the previous snapshot`}
+                                >
                                   +{st.add}
                                 </span>
                               )}
                               {st.rem > 0 && (
-                                <span className="text-diff-del-fg" title={`${st.rem} row${st.rem === 1 ? "" : "s"} removed since the previous snapshot`}>
+                                <span
+                                  className="text-diff-del-fg"
+                                  title={`${st.rem} row${st.rem === 1 ? "" : "s"} removed since the previous snapshot`}
+                                >
                                   −{st.rem}
                                 </span>
                               )}
                               {st.chg > 0 && (
-                                <span className="text-diff-move-fg" title={`${st.chg} row${st.chg === 1 ? "" : "s"} changed since the previous snapshot`}>
+                                <span
+                                  className="text-diff-move-fg"
+                                  title={`${st.chg} row${st.chg === 1 ? "" : "s"} changed since the previous snapshot`}
+                                >
                                   ~{st.chg}
                                 </span>
                               )}
@@ -713,7 +761,7 @@ export default async function SheetPage({
                         ) : null}
                       </Link>
                       {runNotes.length > 0 ? (
-                        <div className="mb-1 ml-2 mr-1 rounded-md bg-diff-hunk-bg/40 px-2 py-1">
+                        <div className="mr-1 mb-1 ml-2 rounded-md bg-diff-hunk-bg/40 px-2 py-1">
                           {runNotes.slice(0, 2).map((n) => (
                             <p key={n.id} className="line-clamp-2 text-[11px] leading-snug text-foreground/75">
                               🗒 {n.body}
@@ -722,7 +770,7 @@ export default async function SheetPage({
                         </div>
                       ) : null}
                       {!isImport ? (
-                        <div className="absolute right-1 top-1.5 opacity-50 transition-opacity hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
+                        <div className="absolute top-1.5 right-1 opacity-50 transition-opacity focus-within:opacity-100 hover:opacity-100 max-md:opacity-100">
                           <NoteDialog
                             spreadsheetId={sheet.id}
                             runId={s.runId}
@@ -740,7 +788,9 @@ export default async function SheetPage({
                       href={`${traceHrefBase}${fromId ? `&from=${fromId}` : ""}${toId ? `&to=${toId}` : ""}${traceParam ? `&trace=${encodeURIComponent(traceParam)}` : ""}${timelineOpen ? "" : "&older=1"}`}
                       className="font-mono text-[10.5px] text-muted-foreground hover:text-foreground hover:underline"
                     >
-                      {timelineOpen ? "show recent only" : `show ${timeline.length - 60} older snapshot${timeline.length - 60 === 1 ? "" : "s"}…`}
+                      {timelineOpen
+                        ? "show recent only"
+                        : `show ${timeline.length - 60} older snapshot${timeline.length - 60 === 1 ? "" : "s"}…`}
                     </a>
                   </li>
                 ) : null}
@@ -753,9 +803,10 @@ export default async function SheetPage({
             {/* footage ledger */}
             {activeFootage?.stations ? (
               <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border bg-card px-4 py-2.5 font-mono text-xs">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">footage</span>
+                <span className="text-[10px] tracking-wide text-muted-foreground uppercase">footage</span>
                 <span className="text-sm font-semibold">
-                  {activeFootage.ft.toLocaleString("en-US")} <span className="font-normal text-muted-foreground">ft</span>
+                  {activeFootage.ft.toLocaleString("en-US")}{" "}
+                  <span className="font-normal text-muted-foreground">ft</span>
                 </span>
                 <span className="text-muted-foreground">· {activeTab.title}</span>
                 {activeFootage.handholes > 0 ? (
@@ -770,11 +821,7 @@ export default async function SheetPage({
                   </span>
                 ) : null}
                 {footageDelta !== null && footageDelta !== 0 ? (
-                  <span
-                    className={`font-semibold ${
-                      footageDelta > 0 ? "text-diff-add-fg" : "text-diff-del-fg"
-                    }`}
-                  >
+                  <span className={`font-semibold ${footageDelta > 0 ? "text-diff-add-fg" : "text-diff-del-fg"}`}>
                     {footageDelta > 0 ? "+" : "−"}
                     {Math.abs(footageDelta).toLocaleString("en-US")} ft {footageBaseLabel}
                   </span>
@@ -790,9 +837,7 @@ export default async function SheetPage({
             ) : null}
 
             {/* auto gap report */}
-            {timeline.length > 0 && gapReport ? (
-              <GapReportPanel report={gapReport} tabTitle={activeTab.title} />
-            ) : null}
+            {timeline.length > 0 && gapReport ? <GapReportPanel report={gapReport} tabTitle={activeTab.title} /> : null}
 
             {/* production analytics */}
             {timeline.length > 0 && latestData ? (
@@ -821,7 +866,7 @@ export default async function SheetPage({
                   <Link
                     key={t.id}
                     href={`/sheets/${sheet.id}?tab=${encodeURIComponent(t.title)}`}
-                    className={`-mb-px flex items-center gap-1.5 rounded-t-lg border border-b-0 px-3.5 pb-2 pt-2 text-sm transition-colors ${
+                    className={`-mb-px flex items-center gap-1.5 rounded-t-lg border border-b-0 px-3.5 pt-2 pb-2 text-sm transition-colors ${
                       isActive
                         ? "border-border bg-card font-medium text-foreground shadow-[inset_0_2px_0_0_#fd8c73]"
                         : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -855,16 +900,18 @@ export default async function SheetPage({
                 );
               })}
               <div className="ml-auto pb-2">
-                {isOwner ? <TabSettingsDialog
-              key={activeTab.id}
-                  spreadsheetId={sheet.id}
-                  tabId={activeTab.id}
-                  tabTitle={activeTab.title}
-                  headers={latestData?.headers ?? []}
-                  keyColumn={activeTab.keyColumn}
-                  tracked={activeTab.tracked}
-                  detectedKey={detectedKey}
-                /> : null}
+                {isOwner ? (
+                  <TabSettingsDialog
+                    key={activeTab.id}
+                    spreadsheetId={sheet.id}
+                    tabId={activeTab.id}
+                    tabTitle={activeTab.title}
+                    headers={latestData?.headers ?? []}
+                    keyColumn={activeTab.keyColumn}
+                    tracked={activeTab.tracked}
+                    detectedKey={detectedKey}
+                  />
+                ) : null}
               </div>
             </div>
 
@@ -910,7 +957,10 @@ export default async function SheetPage({
                     to={toId ?? ""}
                   />
                   {fromSnap?.isBaseline ? (
-                    <Badge variant="outline" className="gap-1 border-amber-300 bg-diff-move-bg font-mono text-[11px] text-diff-move-fg">
+                    <Badge
+                      variant="outline"
+                      className="gap-1 border-amber-300 bg-diff-move-bg font-mono text-[11px] text-diff-move-fg"
+                    >
                       <Clock className="size-3" /> since last collection
                     </Badge>
                   ) : (

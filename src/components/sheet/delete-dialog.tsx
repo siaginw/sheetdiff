@@ -34,8 +34,7 @@ export function DeleteSheetDialog({
           <DialogHeader>
             <DialogTitle>Stop tracking “{title}”?</DialogTitle>
             <DialogDescription>
-              This deletes every snapshot SheetDiff has taken of it. The Google Sheet itself is
-              never touched.
+              This deletes every snapshot SheetDiff has taken of it. The Google Sheet itself is never touched.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-4">

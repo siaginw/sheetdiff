@@ -1,7 +1,26 @@
-import { CalendarClock, ClipboardCheck, FileCheck2, HardHat, Receipt, Ruler, Scale, TriangleAlert, Users } from "lucide-react";
-import type { DateHygieneFinding, LateEntry, TotalsMismatch, OverplacementFinding, CrewBoard, AgingGap, OfficePipeline, InvoiceStatus } from "@/lib/production";
-import type { PermitFinding } from "@/lib/permits";
 import { absoluteTime } from "@/lib/format";
+import type { PermitFinding } from "@/lib/permits";
+import type {
+  AgingGap,
+  CrewBoard,
+  DateHygieneFinding,
+  InvoiceStatus,
+  LateEntry,
+  OfficePipeline,
+  OverplacementFinding,
+  TotalsMismatch,
+} from "@/lib/production";
+import {
+  CalendarClock,
+  ClipboardCheck,
+  FileCheck2,
+  HardHat,
+  Receipt,
+  Ruler,
+  Scale,
+  TriangleAlert,
+  Users,
+} from "lucide-react";
 
 const ft = (n: number) => n.toLocaleString("en-US");
 
@@ -18,7 +37,7 @@ function Section({
 }) {
   return (
     <div className="border-t px-4 py-2.5 first:border-t-0">
-      <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
         {icon} {title}
       </p>
       <div className={tone === "warn" ? "space-y-0.5" : "space-y-0.5"}>{children}</div>
@@ -26,7 +45,15 @@ function Section({
   );
 }
 
-function Line({ tone, title, children }: { tone?: "danger" | "warn" | "muted" | "good"; title?: string; children: React.ReactNode }) {
+function Line({
+  tone,
+  title,
+  children,
+}: {
+  tone?: "danger" | "warn" | "muted" | "good";
+  title?: string;
+  children: React.ReactNode;
+}) {
   const cls =
     tone === "danger"
       ? "bg-diff-del-bg text-diff-del-fg"
@@ -76,7 +103,8 @@ export function ProductionPanel({
   const problems =
     hygiene.length + lateEntries.length + totalsMismatches.length + overplacements.length + (permits?.length ?? 0);
   const oldHoles = agedGaps.filter((g) => g.daysOpen >= 7);
-  const officeWaiting = office && office.enteredColumn ? office.stuck.length + office.aging.length + office.normal.length : 0;
+  const officeWaiting =
+    office && office.enteredColumn ? office.stuck.length + office.aging.length + office.normal.length : 0;
   // invoice findings count toward "clean"/empty-state the same as every other
   // section — the chips above used to render while the summary still said clean
   const invoiceChase =
@@ -84,7 +112,9 @@ export function ProductionPanel({
       ? invoices.billableNow.length + invoices.missedRun.reduce((n, m) => n + m.rows, 0)
       : 0;
   const billableStuck = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion >= 15) : [];
-  const billableAging = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion >= 3 && r.daysSinceCompletion < 15) : [];
+  const billableAging = invoices
+    ? invoices.billableNow.filter((r) => r.daysSinceCompletion >= 3 && r.daysSinceCompletion < 15)
+    : [];
   const billableFresh = invoices ? invoices.billableNow.filter((r) => r.daysSinceCompletion < 3) : [];
 
   return (
@@ -101,7 +131,11 @@ export function ProductionPanel({
               {ft(crewBoard.crews.reduce((n, c) => n + c.ft, 0))} ft placed
             </span>
           )}
-          {hygiene.length > 0 && <span className="text-diff-del-fg">{hygiene.length} date issue{hygiene.length === 1 ? "" : "s"}</span>}
+          {hygiene.length > 0 && (
+            <span className="text-diff-del-fg">
+              {hygiene.length} date issue{hygiene.length === 1 ? "" : "s"}
+            </span>
+          )}
           {lateEntries.length > 0 && (
             <span className="text-diff-del-fg">
               {lateEntries.length} late entr{lateEntries.length === 1 ? "y" : "ies"}
@@ -113,7 +147,9 @@ export function ProductionPanel({
             </span>
           )}
           {totalsMismatches.length > 0 && (
-            <span className="text-diff-del-fg">{totalsMismatches.length} TOTALS mismatch{totalsMismatches.length === 1 ? "" : "es"}</span>
+            <span className="text-diff-del-fg">
+              {totalsMismatches.length} TOTALS mismatch{totalsMismatches.length === 1 ? "" : "es"}
+            </span>
           )}
           {overplacements.length > 0 && (
             <span className="text-diff-del-fg">
@@ -132,7 +168,9 @@ export function ProductionPanel({
             </span>
           )}
           {invoices && invoices.missedRun.length > 0 && (
-            <span className="text-diff-del-fg">{invoices.missedRun.reduce((n, m) => n + m.rows, 0)} missed invoice run</span>
+            <span className="text-diff-del-fg">
+              {invoices.missedRun.reduce((n, m) => n + m.rows, 0)} missed invoice run
+            </span>
           )}
           {office && office.stuck.length > 0 && (
             <span className="text-diff-del-fg">
@@ -142,7 +180,10 @@ export function ProductionPanel({
           {office && office.aging.length > 0 && (
             <span className="text-diff-move-fg">{office.aging.length} waiting on office entry</span>
           )}
-          {problems === 0 && oldHoles.length === 0 && !(office && (office.stuck.length > 0 || office.aging.length > 0)) && invoiceChase === 0 && <span className="text-diff-add-fg">clean</span>}
+          {problems === 0 &&
+            oldHoles.length === 0 &&
+            !(office && (office.stuck.length > 0 || office.aging.length > 0)) &&
+            invoiceChase === 0 && <span className="text-diff-add-fg">clean</span>}
         </span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground group-open:hidden">expand</span>
         <span className="ml-auto hidden font-mono text-[10px] text-muted-foreground group-open:inline">collapse</span>
@@ -154,8 +195,12 @@ export function ProductionPanel({
             <Line key={c.crew}>
               {c.crew}: {ft(c.ft)} ft · {c.shots} shot{c.shots === 1 ? "" : "s"} · {c.days} day{c.days === 1 ? "" : "s"}
               {c.spellings && c.spellings > 1 ? (
-                <span className="text-muted-foreground" title="Hand-spellings collapsed into this crew — the name shown is the one typed most">
-                  {" "}· {c.spellings} spellings merged
+                <span
+                  className="text-muted-foreground"
+                  title="Hand-spellings collapsed into this crew — the name shown is the one typed most"
+                >
+                  {" "}
+                  · {c.spellings} spellings merged
                 </span>
               ) : null}
             </Line>
@@ -167,16 +212,21 @@ export function ProductionPanel({
       ) : null}
 
       {officeWaiting > 0 && office ? (
-        <Section icon={<ClipboardCheck className="size-3.5" />} title={`Waiting on office entry (per the sheet's “${office.enteredColumn}” column)`}>
+        <Section
+          icon={<ClipboardCheck className="size-3.5" />}
+          title={`Waiting on office entry (per the sheet's “${office.enteredColumn}” column)`}
+        >
           {office.stuck.slice(0, 5).map((r) => (
             <Line key={`stuck-${r.row}`} tone="danger">
-              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"} unentered
+              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"}{" "}
+              unentered
             </Line>
           ))}
           {office.stuck.length > 5 && <Line tone="muted">+{office.stuck.length - 5} more stuck…</Line>}
           {office.aging.slice(0, 5).map((r) => (
             <Line key={`aging-${r.row}`} tone="warn">
-              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"} unentered
+              row {r.row} · {r.activity} completed {r.completedOn} — {r.daysWaiting} day{r.daysWaiting === 1 ? "" : "s"}{" "}
+              unentered
             </Line>
           ))}
           {office.aging.length > 5 && <Line tone="muted">+{office.aging.length - 5} more aging…</Line>}
@@ -186,8 +236,16 @@ export function ProductionPanel({
         </Section>
       ) : null}
 
-      {invoices && invoices.enteredColumn && (invoices.billableNow.length > 0 || invoices.billedByInvoice.length > 0 || invoices.missedRun.length > 0 || invoices.unclassifiedCount > 0) ? (
-        <Section icon={<Receipt className="size-3.5" />} title={`Invoice ledger (per the sheet's “${invoices.enteredColumn}” column)`}>
+      {invoices &&
+      invoices.enteredColumn &&
+      (invoices.billableNow.length > 0 ||
+        invoices.billedByInvoice.length > 0 ||
+        invoices.missedRun.length > 0 ||
+        invoices.unclassifiedCount > 0) ? (
+        <Section
+          icon={<Receipt className="size-3.5" />}
+          title={`Invoice ledger (per the sheet's “${invoices.enteredColumn}” column)`}
+        >
           {invoices.missedRun.map((m) => (
             <Line key={`missed-${m.invoice}`} tone="danger">
               {m.invoice} run already passed — {m.rows} row{m.rows === 1 ? "" : "s"} never invoiced (chase the office)
@@ -215,13 +273,21 @@ export function ProductionPanel({
                 : `Invoice ${b.invoice} — ${b.rows} row${b.rows === 1 ? "" : "s"}`}
             </Line>
           ))}
-          {invoices.billedByInvoice.length > 5 && <Line tone="muted">+{invoices.billedByInvoice.length - 5} more ledger lines…</Line>}
+          {invoices.billedByInvoice.length > 5 && (
+            <Line tone="muted">+{invoices.billedByInvoice.length - 5} more ledger lines…</Line>
+          )}
           {invoices.unclassified.slice(0, 3).map((u) => (
-            <Line key={`uncls-${u.row}`} tone="warn" title={`A value in the ledger column that is neither an invoice number nor a month-named run. The row is treated as entered; classify it so the ledger rollup can count it.`}>
+            <Line
+              key={`uncls-${u.row}`}
+              tone="warn"
+              title={`A value in the ledger column that is neither an invoice number nor a month-named run. The row is treated as entered; classify it so the ledger rollup can count it.`}
+            >
               row {u.row} keyed “{u.value}” in {u.column} — not an invoice # or month run we recognize
             </Line>
           ))}
-          {invoices.unclassifiedCount > 3 && <Line tone="muted">+{invoices.unclassifiedCount - 3} more keyed-but-unrecognized…</Line>}
+          {invoices.unclassifiedCount > 3 && (
+            <Line tone="muted">+{invoices.unclassifiedCount - 3} more keyed-but-unrecognized…</Line>
+          )}
         </Section>
       ) : null}
 
@@ -229,7 +295,8 @@ export function ProductionPanel({
         <Section icon={<CalendarClock className="size-3.5" />} title="Late entries — showed up days after their date">
           {lateEntries.slice(0, 5).map((e, i) => (
             <Line key={i} tone="danger">
-              sheet row {e.row} · {e.activity} dated {e.completedOn} — showed up {e.daysLate} days later ({absoluteTime(e.appearedAt)})
+              sheet row {e.row} · {e.activity} dated {e.completedOn} — showed up {e.daysLate} days later (
+              {absoluteTime(e.appearedAt)})
             </Line>
           ))}
           {lateEntries.length > 5 && <Line tone="muted">+{lateEntries.length - 5} more…</Line>}
@@ -240,7 +307,12 @@ export function ProductionPanel({
         <Section icon={<CalendarClock className="size-3.5" />} title="Date Complete issues">
           {hygiene.slice(0, 5).map((h, i) => (
             <Line key={i} tone="danger">
-              row {h.row}: {h.kind === "undated" ? "no date" : h.kind === "unreadable" ? `unreadable date “${h.raw}”` : `dated in the future (${h.raw})`}
+              row {h.row}:{" "}
+              {h.kind === "undated"
+                ? "no date"
+                : h.kind === "unreadable"
+                  ? `unreadable date “${h.raw}”`
+                  : `dated in the future (${h.raw})`}
             </Line>
           ))}
           {hygiene.length > 5 && <Line tone="muted">+{hygiene.length - 5} more…</Line>}
@@ -251,7 +323,8 @@ export function ProductionPanel({
         <Section icon={<Scale className="size-3.5" />} title="TOTALS doesn't add up">
           {totalsMismatches.slice(0, 5).map((m, i) => (
             <Line key={i} tone="danger">
-              {m.tabTitle}: TOTALS says {ft(m.totalsSays)} ft · tab adds up to {ft(m.tabAddsUp)} ft ({m.delta > 0 ? "+" : "−"}
+              {m.tabTitle}: TOTALS says {ft(m.totalsSays)} ft · tab adds up to {ft(m.tabAddsUp)} ft (
+              {m.delta > 0 ? "+" : "−"}
               {ft(Math.abs(m.delta))}) — stale formula range?
             </Line>
           ))}
@@ -262,8 +335,8 @@ export function ProductionPanel({
         <Section icon={<Ruler className="size-3.5" />} title="Placed more than designed">
           {overplacements.slice(0, 5).map((o, i) => (
             <Line key={i} tone="danger">
-              {o.tabTitle}: placed {ft(o.placed)} ft of {ft(o.designed)} ft designed — {ft(o.overBy)} ft nobody
-              designed (double-counted rows?)
+              {o.tabTitle}: placed {ft(o.placed)} ft of {ft(o.designed)} ft designed — {ft(o.overBy)} ft nobody designed
+              (double-counted rows?)
             </Line>
           ))}
           {overplacements.length > 5 && <Line tone="muted">+{overplacements.length - 5} more…</Line>}
@@ -283,7 +356,10 @@ export function ProductionPanel({
             ))}
           {permits.filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved").length > 5 ? (
             <Line tone="muted">
-              +{permits.filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved").length - 5} more…
+              +
+              {permits.filter((p) => p.kind === "designed-no-permit" || p.kind === "placed-under-unapproved").length -
+                5}{" "}
+              more…
             </Line>
           ) : null}
           {permits
@@ -310,8 +386,14 @@ export function ProductionPanel({
         </Section>
       ) : null}
 
-      {problems === 0 && agedGaps.length === 0 && officeWaiting === 0 && invoiceChase === 0 && (!crewBoard || crewBoard.crews.length === 0) ? (
-        <p className="border-t px-4 py-3 text-sm text-muted-foreground">No production analytics available for this tab.</p>
+      {problems === 0 &&
+      agedGaps.length === 0 &&
+      officeWaiting === 0 &&
+      invoiceChase === 0 &&
+      (!crewBoard || crewBoard.crews.length === 0) ? (
+        <p className="border-t px-4 py-3 text-sm text-muted-foreground">
+          No production analytics available for this tab.
+        </p>
       ) : null}
     </details>
   );

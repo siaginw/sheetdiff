@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { diffSnapshots, detectKeyColumn, type SnapshotData } from "./engine";
-import { parseNumberLike, sameValue, colLetter } from "./normalize";
+import { describe, expect, it } from "vitest";
+import { detectKeyColumn, diffSnapshots, type SnapshotData } from "./engine";
+import { colLetter, parseNumberLike, sameValue } from "./normalize";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 
@@ -62,45 +62,60 @@ describe("colLetter", () => {
 
 describe("detectKeyColumn", () => {
   it("finds a unique column", () => {
-    const s = snap(["Name", "ID"], [
-      ["Ann", "101"],
-      ["Bob", "102"],
-      ["Cid", "103"],
-    ]);
+    const s = snap(
+      ["Name", "ID"],
+      [
+        ["Ann", "101"],
+        ["Bob", "102"],
+        ["Cid", "103"],
+      ],
+    );
     expect(detectKeyColumn(s)).toBe(1);
   });
   it("prefers id-like headers when several columns are unique", () => {
-    const s = snap(["Employee ID", "Name"], [
-      ["1", "Ann"],
-      ["2", "Bob"],
-      ["3", "Cid"],
-    ]);
+    const s = snap(
+      ["Employee ID", "Name"],
+      [
+        ["1", "Ann"],
+        ["2", "Bob"],
+        ["3", "Cid"],
+      ],
+    );
     expect(detectKeyColumn(s)).toBe(0);
   });
   it("returns null when nothing is unique", () => {
-    const s = snap(["A", "B"], [
-      ["x", "1"],
-      ["x", "1"],
-      ["y", "2"],
-    ]);
+    const s = snap(
+      ["A", "B"],
+      [
+        ["x", "1"],
+        ["x", "1"],
+        ["y", "2"],
+      ],
+    );
     expect(detectKeyColumn(s)).toBeNull();
   });
   it("never promotes a column with zero identifier evidence, however unique", () => {
     // padded label-only tab: every Notes value unique -> the old score-0
     // promotion keyed the diff on the label text, flipping a label edit into
     // remove+add (the flood the blank-key machinery exists to prevent)
-    const s = snap(["Activity", "Start STA", "End STA", "Notes"], [
-      ["Plow", "0", "500", "ZONE 2"],
-      ["Plow", "0", "500", "ZONE 3"],
-      ["Plow", "0", "500", "ZONE 4"],
-    ]);
+    const s = snap(
+      ["Activity", "Start STA", "End STA", "Notes"],
+      [
+        ["Plow", "0", "500", "ZONE 2"],
+        ["Plow", "0", "500", "ZONE 3"],
+        ["Plow", "0", "500", "ZONE 4"],
+      ],
+    );
     expect(detectKeyColumn(s)).toBeNull();
     // consequence: a label edit is a CHANGE, not remove+add
-    const b = snap(["Activity", "Start STA", "End STA", "Notes"], [
-      ["Plow", "0", "500", "ZONE 2"],
-      ["Plow", "0", "500", "ZONE 3 DONE"],
-      ["Plow", "0", "500", "ZONE 4"],
-    ]);
+    const b = snap(
+      ["Activity", "Start STA", "End STA", "Notes"],
+      [
+        ["Plow", "0", "500", "ZONE 2"],
+        ["Plow", "0", "500", "ZONE 3 DONE"],
+        ["Plow", "0", "500", "ZONE 4"],
+      ],
+    );
     const r = diffSnapshots(s, b);
     expect(r.summary.changedRows).toBe(1);
     expect(r.summary.addedRows + r.summary.removedRows).toBe(0);
@@ -115,16 +130,26 @@ describe("detectKeyColumn", () => {
     expect(detectKeyColumn(snap(wide, rows))).toBe(12);
   });
   it("counts 'Shot #' and 'Emp #' as identifier headers", () => {
-    const s = snap(["Shot #", "Activity"], [
-      ["s1", "Plow"],
-      ["s2", "Bore"],
-    ]);
+    const s = snap(
+      ["Shot #", "Activity"],
+      [
+        ["s1", "Plow"],
+        ["s2", "Bore"],
+      ],
+    );
     expect(detectKeyColumn(s)).toBe(0);
   });
   it("tokenizes multi-word headers: 'EMP NO', 'PO Number', 'Drawing Number' are identifiers", () => {
     // concatenation alone reads "empno"/"ponumber" — the WORDS carry the
     // meaning, and these are real key columns on non-production tabs
-    const mk = (h: string) => snap([h, "Filler"], [["x1", "a"], ["x2", "b"]]);
+    const mk = (h: string) =>
+      snap(
+        [h, "Filler"],
+        [
+          ["x1", "a"],
+          ["x2", "b"],
+        ],
+      );
     expect(detectKeyColumn(mk("EMP NO"))).toBe(0);
     expect(detectKeyColumn(mk("PO Number"))).toBe(0);
     expect(detectKeyColumn(mk("Drawing Number"))).toBe(0);
@@ -194,11 +219,14 @@ describe("composite keys (Activity + stations — trackers without ID columns)",
 });
 
 describe("diffSnapshots", () => {
-  const base = snap(["ID", "Name", "Qty"], [
-    ["1", "Nails", "40"],
-    ["2", "Screws", "100"],
-    ["3", "Bolts", "55"],
-  ]);
+  const base = snap(
+    ["ID", "Name", "Qty"],
+    [
+      ["1", "Nails", "40"],
+      ["2", "Screws", "100"],
+      ["3", "Bolts", "55"],
+    ],
+  );
 
   it("reports nothing for identical snapshots", () => {
     const r = diffSnapshots(base, structuredClone(base));
@@ -228,11 +256,14 @@ describe("diffSnapshots", () => {
   });
 
   it("reports added and removed rows", () => {
-    const next = snap(["ID", "Name", "Qty"], [
-      ["1", "Nails", "40"],
-      ["2", "Screws", "100"],
-      ["4", "Washers", "12"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["1", "Nails", "40"],
+        ["2", "Screws", "100"],
+        ["4", "Washers", "12"],
+      ],
+    );
     const r = diffSnapshots(base, next);
     expect(r.summary.addedRows).toBe(1);
     expect(r.summary.removedRows).toBe(1);
@@ -241,38 +272,50 @@ describe("diffSnapshots", () => {
   });
 
   it("survives a full sort without false changes (key column)", () => {
-    const sorted = snap(["ID", "Name", "Qty"], [
-      ["3", "Bolts", "55"],
-      ["1", "Nails", "40"],
-      ["2", "Screws", "100"],
-    ]);
+    const sorted = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["3", "Bolts", "55"],
+        ["1", "Nails", "40"],
+        ["2", "Screws", "100"],
+      ],
+    );
     const r = diffSnapshots(base, sorted);
     expect(r.summary.changedRows).toBe(0);
     expect(r.summary.movedRows).toBe(3);
   });
 
   it("survives a sort without any key column (content matching)", () => {
-    const noKey = snap(["Name", "Color"], [
-      ["Nails", "silver"],
-      ["Screws", "black"],
-      ["Bolts", "silver"],
-    ]);
-    const sorted = snap(["Name", "Color"], [
-      ["Bolts", "silver"],
-      ["Nails", "silver"],
-      ["Screws", "black"],
-    ]);
+    const noKey = snap(
+      ["Name", "Color"],
+      [
+        ["Nails", "silver"],
+        ["Screws", "black"],
+        ["Bolts", "silver"],
+      ],
+    );
+    const sorted = snap(
+      ["Name", "Color"],
+      [
+        ["Bolts", "silver"],
+        ["Nails", "silver"],
+        ["Screws", "black"],
+      ],
+    );
     const r = diffSnapshots(noKey, sorted);
     expect(r.summary.changedRows).toBe(0);
     expect(r.summary.movedRows).toBe(3);
   });
 
   it("combines moved + changed into a changed row with movedFrom", () => {
-    const next = snap(["ID", "Name", "Qty"], [
-      ["3", "Bolts", "55"],
-      ["1", "Nails", "40"],
-      ["2", "Screws", "200"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["3", "Bolts", "55"],
+        ["1", "Nails", "40"],
+        ["2", "Screws", "200"],
+      ],
+    );
     const r = diffSnapshots(base, next);
     expect(r.summary.changedRows).toBe(1);
     expect(r.summary.movedRows).toBe(2);
@@ -292,16 +335,22 @@ describe("diffSnapshots", () => {
   });
 
   it("pairs duplicate keys in order without crashing", () => {
-    const dupA = snap(["Date", "Crew"], [
-      ["mon", "a"],
-      ["mon", "b"],
-      ["tue", "c"],
-    ]);
-    const dupB = snap(["Date", "Crew"], [
-      ["mon", "a2"],
-      ["mon", "b"],
-      ["tue", "c"],
-    ]);
+    const dupA = snap(
+      ["Date", "Crew"],
+      [
+        ["mon", "a"],
+        ["mon", "b"],
+        ["tue", "c"],
+      ],
+    );
+    const dupB = snap(
+      ["Date", "Crew"],
+      [
+        ["mon", "a2"],
+        ["mon", "b"],
+        ["tue", "c"],
+      ],
+    );
     // Force keying on Date (col 0): duplicate keys must pair in order.
     // Left alone, auto-detect would (correctly) key on the unique Crew column.
     const r = diffSnapshots(dupA, dupB, { keyColumn: 0 });
@@ -310,11 +359,14 @@ describe("diffSnapshots", () => {
   });
 
   it("keeps cell pairing stable when a column is inserted mid-sheet", () => {
-    const next = snap(["ID", "Name", "Unit", "Qty"], [
-      ["1", "Nails", "box", "40"],
-      ["2", "Screws", "box", "100"],
-      ["3", "Bolts", "bag", "55"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Unit", "Qty"],
+      [
+        ["1", "Nails", "box", "40"],
+        ["2", "Screws", "box", "100"],
+        ["3", "Bolts", "bag", "55"],
+      ],
+    );
     const r = diffSnapshots(base, next);
     expect(r.summary.columnsAdded).toEqual(["Unit"]);
     expect(r.summary.changedRows).toBe(0); // existing cols unchanged
@@ -329,58 +381,75 @@ describe("diffSnapshots", () => {
   });
 
   it("detects cell changes inside a renamed column", () => {
-    const next = snap(["ID", "Name", "Quantity"], [
-      ["1", "Nails", "40"],
-      ["2", "Screws", "999"],
-      ["3", "Bolts", "55"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Quantity"],
+      [
+        ["1", "Nails", "40"],
+        ["2", "Screws", "999"],
+        ["3", "Bolts", "55"],
+      ],
+    );
     const r = diffSnapshots(base, next);
     expect(r.summary.changedRows).toBe(1);
     expect(r.rows.find((x) => x.status === "changed")!.cells[0].header).toBe("Quantity");
   });
 
   it("interleaves removed rows near their old position", () => {
-    const next = snap(["ID", "Name", "Qty"], [
-      ["1", "Nails", "40"],
-      ["3", "Bolts", "55"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["1", "Nails", "40"],
+        ["3", "Bolts", "55"],
+      ],
+    );
     const r = diffSnapshots(base, next);
     // removed row 2 ("Screws") should sit between the two kept rows
     const statuses = r.rows.map((x) => x.status);
     expect(statuses.indexOf("removed")).toBe(1);
   });
 
-
   it("respects an explicit key column choice", () => {
     // Two unique columns; force keying on Name (col 1) instead of auto ID
-    const next = snap(["ID", "Name", "Qty"], [
-      ["1", "Nails", "40"],
-      ["2", "Screws", "100"],
-      ["3", "Bolts", "56"],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["1", "Nails", "40"],
+        ["2", "Screws", "100"],
+        ["3", "Bolts", "56"],
+      ],
+    );
     const r = diffSnapshots(base, next, { keyColumn: 1 });
     expect(r.summary.changedRows).toBe(1);
     expect(r.rows.find((x) => x.status === "changed")!.key).toBe("bolts");
     // change the ID column too — keyed on Name, ID is just a normal column
-    const next2 = snap(["ID", "Name", "Qty"], [
-      ["7", "Nails", "40"],
-      ["2", "Screws", "100"],
-      ["3", "Bolts", "55"],
-    ]);
+    const next2 = snap(
+      ["ID", "Name", "Qty"],
+      [
+        ["7", "Nails", "40"],
+        ["2", "Screws", "100"],
+        ["3", "Bolts", "55"],
+      ],
+    );
     const r2 = diffSnapshots(base, next2, { keyColumn: 1 });
     expect(r2.summary.changedRows).toBe(1);
     expect(r2.summary.addedRows).toBe(0);
   });
 
   it("provides a stable rowKey even without a key column", () => {
-    const a = snap(["Name", "Qty"], [
-      ["Nails", "40"],
-      ["Screws", "10"],
-    ]);
-    const b = snap(["Name", "Qty"], [
-      ["Nails", "41"],
-      ["Screws", "10"],
-    ]);
+    const a = snap(
+      ["Name", "Qty"],
+      [
+        ["Nails", "40"],
+        ["Screws", "10"],
+      ],
+    );
+    const b = snap(
+      ["Name", "Qty"],
+      [
+        ["Nails", "41"],
+        ["Screws", "10"],
+      ],
+    );
     const r = diffSnapshots(a, b);
     const changed = r.rows.find((x) => x.status === "changed")!;
     // content-hash identity is stable across the value edit
@@ -396,16 +465,22 @@ describe("diffSnapshots", () => {
   });
 
   it("reports a stray blank row as added/removed, never as a change from blank", () => {
-    const a = snap(["Name", "Qty"], [
-      ["Nails", "40"],
-      ["", ""], // stray blank row in A
-      ["Screws", "10"],
-    ]);
-    const b = snap(["Name", "Qty"], [
-      ["Nails", "40"],
-      ["Screws", "10"],
-      ["Bolts", "5"], // genuinely new row, no key column
-    ]);
+    const a = snap(
+      ["Name", "Qty"],
+      [
+        ["Nails", "40"],
+        ["", ""], // stray blank row in A
+        ["Screws", "10"],
+      ],
+    );
+    const b = snap(
+      ["Name", "Qty"],
+      [
+        ["Nails", "40"],
+        ["Screws", "10"],
+        ["Bolts", "5"], // genuinely new row, no key column
+      ],
+    );
     const r = diffSnapshots(a, b);
     expect(r.summary.changedRows).toBe(0);
     expect(r.summary.addedRows).toBe(1);
@@ -414,11 +489,14 @@ describe("diffSnapshots", () => {
   });
 
   it("reports an added-column value change correctly via summary", () => {
-    const next = snap(["ID", "Name", "Qty", "Note"], [
-      ["1", "Nails", "40", "ok"],
-      ["2", "Screws", "100", ""],
-      ["3", "Bolts", "55", ""],
-    ]);
+    const next = snap(
+      ["ID", "Name", "Qty", "Note"],
+      [
+        ["1", "Nails", "40", "ok"],
+        ["2", "Screws", "100", ""],
+        ["3", "Bolts", "55", ""],
+      ],
+    );
     const r = diffSnapshots(base, next);
     expect(r.summary.columnsAdded).toEqual(["Note"]);
     expect(r.columns[3]).toMatchObject({ header: "Note", status: "added" });

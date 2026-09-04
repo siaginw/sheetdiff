@@ -1,7 +1,7 @@
 # SheetDiff — version tracking for Google Sheets
 
 SheetDiff snapshots your team's Google Sheets and shows **GitHub-style diffs** between any two
-snapshots — added rows, removed rows, changed cells as `old → new` — so the people who *collect*
+snapshots — added rows, removed rows, changed cells as `old → new` — so the people who _collect_
 your data always know what changed since they last pulled it.
 
 **It works with any sheet.** Inventory, budgets, pipelines, logs, production trackers — the
@@ -18,17 +18,17 @@ way when it doesn't.
 **In one line:** automatic snapshots, human-readable diffs, and an audit trail of who changed what — with a gap linter that catches missing footage and overlapping stations in utility-construction production logs before invoicing or GIS upload. Self-hosted and open source: keep your spreadsheets, keep your data, gain the accountability enterprise trackers charge $40–150 per user per month for.
 
 **The workflow it fixes:** a team enters data into shared sheets, a manager pulls that data daily
-into another system (an ERP, GIS, anywhere). Someone fixes a number *after* the pull — the
+into another system (an ERP, GIS, anywhere). Someone fixes a number _after_ the pull — the
 manager never finds out, the downstream system goes stale. SheetDiff makes that change impossible
 to miss: **"Mark as collected"** sets a baseline, and every change since shows up as a red badge
 on the dashboard.
 
 ## Screenshots
 
-| | |
-|---|---|
-| ![Billing day](docs/img/billing.png) | ![Weekly report](docs/img/report.png) |
-| ![Landing](docs/img/landing.png) | ![Dashboard](docs/img/dashboard.png) |
+|                                              |                                            |
+| -------------------------------------------- | ------------------------------------------ |
+| ![Billing day](docs/img/billing.png)         | ![Weekly report](docs/img/report.png)      |
+| ![Landing](docs/img/landing.png)             | ![Dashboard](docs/img/dashboard.png)       |
 | ![Diff in dark mode](docs/img/diff-dark.png) | ![Audit workflow](docs/img/audit-dark.png) |
 
 ## Highlights
@@ -44,10 +44,10 @@ on the dashboard.
 - **Gap report.** Reconstructs each tab's footage chain (bore/plow/trench/gap rows only) and reconciles the math: placed + known gaps − overlaps vs. designed span.
 - **Shot history.** Trace a single row through every snapshot by station number, free text, or key.
 - **Checks (the gap linter).** Station-continuity breaks (`2 ft gap: row 3 ends at 15741 but
-  row 4 starts at 15743`), duplicate shots, and the same key stranded in two tabs — caught on
+row 4 starts at 15743`), duplicate shots, and the same key stranded in two tabs — caught on
   every snapshot. Understands plain feet and survey notation (`4+47`).
-- **Audit workflow.** Attach notes explaining *why* things changed; tick changes off as
-  *entered downstream*; download the unresolved changes as a CSV worklist; diff a GIS export
+- **Audit workflow.** Attach notes explaining _why_ things changed; tick changes off as
+  _entered downstream_; download the unresolved changes as a CSV worklist; diff a GIS export
   (CSV/XLSX) against the sheet; get a daily digest email with everything still waiting to be
   entered in the office system.
 - **Footage ledger.** Per-tab footage totals from your station columns, with the change since
@@ -78,7 +78,7 @@ gets an identity through a hierarchy that needs **zero configuration**:
 That identity drives **everything**: diffing, acknowledgment tracking, compilation-tab detection
 (a "Master List" that re-lists your working tab is tagged `copy` and counted zero times), and the
 to-enter counts that agree across every surface. And the math stays honest on sheets without
-stations — the billing packet says *"COULD NOT DETERMINE — no station columns (row-based sheet)"*
+stations — the billing packet says _"COULD NOT DETERMINE — no station columns (row-based sheet)"_
 instead of a confident `0 ft`, while the to-enter worklist, late entries, and office backlog (if
 your sheet tracks an "entered" column) work exactly the same as on a tracker.
 
@@ -138,9 +138,9 @@ npm run seed-demo
 ```
 
 This seeds a fake "US2 Daily Production" sheet whose snapshots tell a real audit story — a
-wrong ending station (15741 → 15743, the 2 ft gap), a shot entered twice as plow *and* bore,
+wrong ending station (15741 → 15743, the 2 ft gap), a shot entered twice as plow _and_ bore,
 a survey-notation correction (164+80 → 164+82), and a shot stranded in two tabs for the
-cross-tab check to catch. It also seeds a demo *viewer* — sign in at `/auth/demo?as=viewer`
+cross-tab check to catch. It also seeds a demo _viewer_ — sign in at `/auth/demo?as=viewer`
 to see exactly what a shared teammate (your data collector) sees. `ENABLE_DEMO` is opt-in and
 should stay off on any real deployment.
 
@@ -227,7 +227,7 @@ keep it alive).
 
 ## Google setup (one-time, ~10 minutes)
 
-SheetDiff needs its own OAuth client so it can read sheets with *your* account.
+SheetDiff needs its own OAuth client so it can read sheets with _your_ account.
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and create a project
    (any name, e.g. "SheetDiff").
@@ -241,7 +241,7 @@ SheetDiff needs its own OAuth client so it can read sheets with *your* account.
      after 7 days**, and an always-on snapshotter silently stops working a week
      in. A sensitive-but-not-restricted scope like `spreadsheets.readonly` runs
      fine unverified — your users click through the "app not verified" warning
-     once. (Google Workspace *internal* user type skips the warning entirely if
+     once. (Google Workspace _internal_ user type skips the warning entirely if
      all your users share your Workspace.) Each SheetDiff install uses its own
      project, so the 100-user cap never binds.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
@@ -266,27 +266,27 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
 1. **Add sheet** — paste a Google Sheets URL. Pick which tabs to track and (optionally) which
    column identifies rows on each tab; auto-detection usually gets it right. The first snapshot
    is taken immediately.
-2. **Snapshot** — manually with *Snapshot now*, or set a schedule per sheet (Schedule button).
+2. **Snapshot** — manually with _Snapshot now_, or set a schedule per sheet (Schedule button).
    Scheduled snapshots run while the app is running.
 3. **Diff** — the sheet page shows the diff between any two snapshots (defaults to
-   *last collection → latest*), rendered like a code review: red `−` lines, green `+` lines,
+   _last collection → latest_), rendered like a code review: red `−` lines, green `+` lines,
    and a `~ column: old → new` annotation spelling out every changed value. Timeline on the
    left; click an entry to diff up to it.
 4. **Mark as collected** — after pulling data into your downstream system, click
-   *Mark as collected* on the snapshot you pulled from. The dashboard then shows
-   *"N changes since collection"* for each sheet — that badge is the whole point.
+   _Mark as collected_ on the snapshot you pulled from. The dashboard then shows
+   _"N changes since collection"_ for each sheet — that badge is the whole point.
 
 ## Audit workflow features
 
-- **Audit notes** — attach the *why* to any snapshot (timeline 💬 button) or changed row
+- **Audit notes** — attach the _why_ to any snapshot (timeline 💬 button) or changed row
   (per-row note button): "ending station was entered wrong — GIS has 15743, 2 ft gap". Notes
   appear next to the diff, in the timeline, and in the daily digest, so nobody has to dig
   through chat history.
 - **Per-change acknowledgment** — hover any changed/added/removed row and click ✓ to mark it
-  *entered downstream* (InEight or wherever). The dashboard counts what's still to enter;
+  _entered downstream_ (InEight or wherever). The dashboard counts what's still to enter;
   if a row changes again after being acknowledged, it re-flags itself automatically.
 - **"Mark as collected" + exact undo** — one click re-baselines the whole sheet and drops
-  every to-enter count to zero; the banner that follows offers *Undo*, which restores each
+  every to-enter count to zero; the banner that follows offers _Undo_, which restores each
   tab's previous collection point exactly (acks and notes survive either way).
 - **Compilation-tab aware** — tabs that re-list other tabs (a "Line List") are tagged
   `copy` and counted zero times: every rollup, every to-enter count, and the digest read
@@ -296,22 +296,23 @@ The tool requests these scopes: `spreadsheets.readonly` (read sheet data), plus 
   cross-tab checks: `2 ft gap: row 3 ends at 15741 but row 4 starts at 15743`,
   `"S3" appears 2× — duplicate shot?`, `"S5" appears in PE4 and PE7`. Station formats
   understood: plain feet (`15743`) and survey notation (`4+47`, `164+82`).
-- **GIS import** — *Compare GIS export* takes a `.csv` or `.xlsx` export from your GIS and
+- **GIS import** — _Compare GIS export_ takes a `.csv` or `.xlsx` export from your GIS and
   diffs it against the latest sheet snapshot: shots missing on either side, station
   mismatches, type disagreements. Excel tabs are matched to tracked tabs by name; CSV maps
   to a tab you pick. Imports appear in the timeline as `⭳ GIS import` entries.
-- **Entry queue export** — one CSV row per *shot* in the tab's own column order, oldest
+- **Entry queue export** — one CSV row per _shot_ in the tab's own column order, oldest
   introduction first: the typing list for the office system, not a cell-change log. Removed
   rows ship as delete-downstream summaries.
 - **Weekly production report** — `…/report`: footage per week (as dated by crews),
   week-over-week delta, printable one-pager.
-- **Daily/weekly digest email** — account menu → *Digest email…*: pick daily or a weekday, and
+- **Daily/weekly digest email** — account menu → _Digest email…_: pick daily or a weekday, and
   each send includes what changed since the last collection, unresolved changes, check findings,
   footage movement, and audit notes. Needs SMTP settings in `.env` (Gmail App Password works — see the commented block in `.env.example`).
 
 For deliverability on your own domain, consider signing with DKIM — nodemailer
 supports it via `dkim: { domainName, keySelector, privateKey }` transport options
 (see nodemailer.com/dkim).
+
 - **Production report.** Date hygiene, backdated late entries, TOTALS-tab reconciliation, a per-crew per-day footage board, and an aging ledger of unaccounted holes — generated from the snapshots you already take. The **invoice ledger** reads your sheet's own "Entered in InEight" + "Invoice #" columns: what's billable right now (aged, with footage), what's billed under which invoice number, and runs already missed.
 - **Billing-day packet.** Placed footage since collection, open holes (do-not-invoice),
   over-placement warnings (TOTALS Placed beyond Designed), the office-entry backlog per the
@@ -325,7 +326,7 @@ supports it via `dkim: { domainName, keySelector, privateKey }` transport option
 - **Self-maintaining data** — automatic nightly backups (`data/backups/`, keep 14 by default)
   and snapshot retention (keep the newest 200 per tab, baselines always kept). Both tunable via
   `SHEETDIFF_KEEP_SNAPSHOTS` / `SHEETDIFF_BACKUPS` in `.env`.
-- **Sharing** — account menu → *Share access…*: add teammates by email. When they sign in with
+- **Sharing** — account menu → _Share access…_: add teammates by email. When they sign in with
   that Google account they see your sheets, read diffs and audit notes, tick changes off as
   entered, and mark collections — the exact workflow of the person collecting your data —
   while all destructive controls (schedules, imports, deletes, settings) stay owner-only.
@@ -348,31 +349,37 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 ## Development
 
 ```bash
-npm test           # domain test suite (312 tests: engine, checks, gaps, trace, acks, imports, production, billing, DB gates)
+npm run verify       # everything CI checks: format + lint + typecheck + tests — run before pushing
+npm test             # the domain suite alone (367 tests: engine, checks, gaps, dedupe, billing, DB gates)
+npm run test:coverage # the suite with v8 coverage and enforced thresholds
+npm run format       # Prettier (also runs automatically on staged files via the pre-commit hook)
+npm run knip         # dead code / unused exports sweep
 npm run db:generate  # turn schema edits into a committed migration (applied on next start)
-npm run build      # production build
+npm run build        # production build
 ```
+
+Commits run lint-staged (ESLint --fix + Prettier on staged files); hooks are skipped in CI.
 
 Stack: Next.js (App Router) + TypeScript, Tailwind + shadcn/ui, SQLite via Drizzle ORM,
 `googleapis` for OAuth + Sheets API, TanStack Virtual for large diff tables.
 
 ### Where things live
 
-| Path | What |
-|---|---|
-| `src/lib/diff/engine.ts` | The diff engine — pure logic, fully unit-tested |
-| `src/lib/diff/normalize.ts` | Value/key normalization (numeric equivalence etc.) |
-| `src/lib/snapshots.ts` | Capture runs, gzip'd snapshot storage, schedule math |
-| `src/lib/google.ts` | OAuth, token refresh + encrypted storage, Sheets reads |
-| `src/lib/scheduler.ts` | In-process scheduler (checks every minute) |
-| `src/lib/actions.ts` | Server actions (snapshot, baseline, schedule, settings) |
-| `src/components/diff/diff-view.tsx` | The GitHub-style diff UI (client) |
-| `src/lib/gaps.ts` | Auto gap report — chain reconstruction and reconciliation |
-| `src/lib/detect.ts` | Station parsing + column auto-detection |
-| `src/lib/production.ts` | Production analytics — dates, crews, TOTALS, aging |
-| `src/lib/billing.ts` | The billing-day packet |
-| `src/lib/db/migrate.ts` | Startup migrations (legacy DBs stamped non-destructively) |
-| `data/sheetdiff.db` | SQLite database (snapshots as gzip'd JSON blobs) |
+| Path                                | What                                                      |
+| ----------------------------------- | --------------------------------------------------------- |
+| `src/lib/diff/engine.ts`            | The diff engine — pure logic, fully unit-tested           |
+| `src/lib/diff/normalize.ts`         | Value/key normalization (numeric equivalence etc.)        |
+| `src/lib/snapshots.ts`              | Capture runs, gzip'd snapshot storage, schedule math      |
+| `src/lib/google.ts`                 | OAuth, token refresh + encrypted storage, Sheets reads    |
+| `src/lib/scheduler.ts`              | In-process scheduler (checks every minute)                |
+| `src/lib/actions.ts`                | Server actions (snapshot, baseline, schedule, settings)   |
+| `src/components/diff/diff-view.tsx` | The GitHub-style diff UI (client)                         |
+| `src/lib/gaps.ts`                   | Auto gap report — chain reconstruction and reconciliation |
+| `src/lib/detect.ts`                 | Station parsing + column auto-detection                   |
+| `src/lib/production.ts`             | Production analytics — dates, crews, TOTALS, aging        |
+| `src/lib/billing.ts`                | The billing-day packet                                    |
+| `src/lib/db/migrate.ts`             | Startup migrations (legacy DBs stamped non-destructively) |
+| `data/sheetdiff.db`                 | SQLite database (snapshots as gzip'd JSON blobs)          |
 
 ### How diffs stay honest
 
@@ -387,7 +394,7 @@ Stack: Next.js (App Router) + TypeScript, Tailwind + shadcn/ui, SQLite via Drizz
 
 ## Not in v1 (by design)
 
-Excel *tracking* (imports are supported), direct InEight/ERP APIs, multi-workspace tenancy,
+Excel _tracking_ (imports are supported), direct InEight/ERP APIs, multi-workspace tenancy,
 editing data, formula/formatting diffs. Each is a clean future addition — the data model and
 scopes leave room.
 

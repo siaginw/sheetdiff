@@ -1,13 +1,13 @@
-import { NextResponse } from "next/server";
-import Papa from "papaparse";
-import { eq } from "drizzle-orm";
+import { getSheetAccess } from "@/lib/access";
+import { csvSafe } from "@/lib/csv";
 import { db } from "@/lib/db";
 import { tabs } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
-import { getSheetAccess } from "@/lib/access";
-import { getPendingChanges, hasCollectedBaseline, pureCopyTabIds } from "@/lib/pending";
 import { absoluteTime } from "@/lib/format";
-import { csvSafe } from "@/lib/csv";
+import { getPendingChanges, hasCollectedBaseline, pureCopyTabIds } from "@/lib/pending";
+import { getSessionUser } from "@/lib/session";
+import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import Papa from "papaparse";
 
 export const runtime = "nodejs";
 
@@ -95,7 +95,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     });
     sections.push({
       tabTitle: tab.title,
-      oldestAt: ordered[0] ? pending.introducedAt.get(ordered[0].rowKey) ?? pending.latestAt : pending.latestAt,
+      oldestAt: ordered[0] ? (pending.introducedAt.get(ordered[0].rowKey) ?? pending.latestAt) : pending.latestAt,
       header,
       lines: sortedLines,
     });

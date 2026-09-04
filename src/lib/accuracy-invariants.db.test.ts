@@ -43,9 +43,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -72,8 +70,8 @@ vi.mock("@/lib/google", () => ({
   googleConfigured: () => false,
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("accuracy");
 
@@ -119,14 +117,36 @@ const dayStr = (daysAgo: number) => {
   const d = new Date(T2 - daysAgo * DAY);
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 };
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 /** next month's run, pre-queued early — still owed, not missed */
 const QUEUED_MONTH = MONTHS[(new Date().getMonth() + 1) % 12];
 /** two months back — that invoice run has already happened */
 const MISSED_MONTH = MONTHS[(new Date().getMonth() + 10) % 12];
 
 // the working tab carries the office's own ledger vocabulary
-const PE = ["Activity", "Start STA", "End STA", "Crew #", "Date Complete", "Bore Log in GIS?", "Entered in InEight", "Invoice #"];
+const PE = [
+  "Activity",
+  "Start STA",
+  "End STA",
+  "Crew #",
+  "Date Complete",
+  "Bore Log in GIS?",
+  "Entered in InEight",
+  "Invoice #",
+];
 
 // ---- the working tab's rows (hand-computable footage in the comments) ----
 const B1 = (crew: string) => ["Plow", "0", "500", crew, dayStr(30), "y", dayStr(28), "1001"]; // 500 ft, keyed + invoiced 1001
@@ -195,13 +215,22 @@ const ROW_KEY_M1 = "bore·1200·1500";
 beforeAll(async () => {
   state.userId = "owner";
   await db.insert(users).values({
-    id: "owner", googleSub: "sub-owner", email: "owner@corp.com", name: "owner",
-    tokensEnc: "unused", createdAt: 1,
+    id: "owner",
+    googleSub: "sub-owner",
+    email: "owner@corp.com",
+    name: "owner",
+    tokensEnc: "unused",
+    createdAt: 1,
   });
   await db.insert(spreadsheets).values({
-    id: SHEET, userId: "owner", googleId: "gid-acc", title: "Accuracy Tracker",
+    id: SHEET,
+    userId: "owner",
+    googleId: "gid-acc",
+    title: "Accuracy Tracker",
     url: "https://docs.google.com/spreadsheets/d/gid-acc/edit",
-    createdAt: 1, scheduleKind: "off", lastSnapshotAt: T2,
+    createdAt: 1,
+    scheduleKind: "off",
+    lastSnapshotAt: T2,
   });
   await db.insert(tabs).values([
     { id: TAB_A, spreadsheetId: SHEET, title: "A", position: 0, tracked: true },
@@ -212,9 +241,15 @@ beforeAll(async () => {
   const snap = (id: string, tabId: string, runId: string, isBaseline: boolean, createdAt: number, grid: string[][]) => {
     const data = toSnapshotData(grid);
     return {
-      id, tabId, runId, trigger: "manual" as const, isBaseline,
-      rowCount: data.rows.length, colCount: data.headers.length,
-      dataBlob: encodeSnapshot(data), createdAt,
+      id,
+      tabId,
+      runId,
+      trigger: "manual" as const,
+      isBaseline,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt,
     };
   };
   await db.insert(snapshots).values([
@@ -237,13 +272,34 @@ beforeAll(async () => {
   // acks on some changes: B1's crew rename was already keyed downstream,
   // acked an hour after the mid capture that introduced it
   await db.insert(changeAcks).values({
-    id: "acc-ack-1", tabId: TAB_A, rowKey: ROW_KEY_B1, ackedAt: T1 + 3_600_000,
+    id: "acc-ack-1",
+    tabId: TAB_A,
+    rowKey: ROW_KEY_B1,
+    ackedAt: T1 + 3_600_000,
   });
 
   // audit notes: one on a snapshot run, one on a pending row
   await db.insert(notes).values([
-    { id: "acc-note-1", spreadsheetId: SHEET, tabId: TAB_A, runId: "run1", rowKey: null, body: "crew rename batch", authorUserId: "owner", createdAt: T1 + 60_000 },
-    { id: "acc-note-2", spreadsheetId: SHEET, tabId: TAB_A, runId: null, rowKey: ROW_KEY_M1, body: "waiting on crew timesheet", authorUserId: "owner", createdAt: T1 + 120_000 },
+    {
+      id: "acc-note-1",
+      spreadsheetId: SHEET,
+      tabId: TAB_A,
+      runId: "run1",
+      rowKey: null,
+      body: "crew rename batch",
+      authorUserId: "owner",
+      createdAt: T1 + 60_000,
+    },
+    {
+      id: "acc-note-2",
+      spreadsheetId: SHEET,
+      tabId: TAB_A,
+      runId: null,
+      rowKey: ROW_KEY_M1,
+      body: "waiting on crew timesheet",
+      authorUserId: "owner",
+      createdAt: T1 + 120_000,
+    },
   ]);
 });
 
@@ -265,7 +321,8 @@ function textOf(node: unknown, out: string[] = []): string[] {
     return out;
   }
   if (typeof node === "object") {
-    const props = "props" in (node as Record<string, unknown>) ? (node as { props?: Record<string, unknown> }).props ?? {} : node;
+    const props =
+      "props" in (node as Record<string, unknown>) ? ((node as { props?: Record<string, unknown> }).props ?? {}) : node;
     for (const v of Object.values(props)) textOf(v, out);
   }
   return out;
@@ -329,11 +386,14 @@ function unenteredCountProp(el: unknown): number | null {
 }
 
 /** The gap report handed to the sheet page's GapReportPanel. */
-function gapReportProp(el: unknown): { placedFt: number; unaccounted: { from: number; to: number; ft: number }[] } | null {
+function gapReportProp(
+  el: unknown,
+): { placedFt: number; unaccounted: { from: number; to: number; ft: number }[] } | null {
   let report: { placedFt: number; unaccounted: { from: number; to: number; ft: number }[] } | null = null;
   walkProps(el, (props) => {
     const r = props.report as { placedFt?: number; unaccounted?: unknown } | undefined;
-    if (r && typeof r.placedFt === "number" && Array.isArray(r.unaccounted) && !report) report = r as unknown as typeof report;
+    if (r && typeof r.placedFt === "number" && Array.isArray(r.unaccounted) && !report)
+      report = r as unknown as typeof report;
   });
   return report;
 }
@@ -354,7 +414,9 @@ function invoicesProp(el: unknown): {
 }
 
 /** The office-entry backlog handed to the sheet page's ProductionPanel. */
-function officeProp(el: unknown): { stuck: unknown[]; aging: unknown[]; normal: unknown[]; enteredColumn: string | null } | null {
+function officeProp(
+  el: unknown,
+): { stuck: unknown[]; aging: unknown[]; normal: unknown[]; enteredColumn: string | null } | null {
   let o: Record<string, unknown> | null = null;
   walkProps(el, (props) => {
     const p = props.office as Record<string, unknown> | undefined;
@@ -406,7 +468,10 @@ async function queueDataRows(): Promise<number> {
 
 async function billingCsvNumbers(): Promise<{ placedSince: number; holes: number; toEnter: number; late: number }> {
   const body = await csvBody(billingCsvGet);
-  const m = /Placed since collection: ([\d,]+) ft \| Open holes: ([\d,]+) ft \| To enter: (\d+) \| Late entries: (\d+)/.exec(body);
+  const m =
+    /Placed since collection: ([\d,]+) ft \| Open holes: ([\d,]+) ft \| To enter: (\d+) \| Late entries: (\d+)/.exec(
+      body,
+    );
   expect(m).not.toBeNull();
   return {
     placedSince: Number(m![1]!.replace(/,/g, "")),
@@ -504,7 +569,7 @@ describe("invariants 1–7: one seeded sheet, every number agrees", () => {
     expect(csv.holes).toBe(EXP.holesFt);
   });
 
-  it("INVARIANT 5: tab pill (5) === per-tab pending resolver (5) === DiffView's \"Mark all entered\" count (5); pills sum to the sheet-wide count", async () => {
+  it('INVARIANT 5: tab pill (5) === per-tab pending resolver (5) === DiffView\'s "Mark all entered" count (5); pills sum to the sheet-wide count', async () => {
     const sheet = await renderSheet();
     const pills = pillCounts(sheet);
     expect(pills).toEqual([EXP.pillTotals, EXP.pillA]); // TOTALS: 1, working tab: 5
@@ -623,7 +688,7 @@ describe("invariant 8: ack ONE row — every count surface drops by exactly 1", 
   });
 });
 
-describe("invariant 9: \"Mark as collected\" — every count surface drops to 0; the dashboard says up to date", () => {
+describe('invariant 9: "Mark as collected" — every count surface drops to 0; the dashboard says up to date', () => {
   it("collecting the latest run zeroes every count and shows the up-to-date state", async () => {
     const fd = new FormData();
     fd.set("spreadsheetId", SHEET);
@@ -697,7 +762,9 @@ describe("invariant 10: undo restores the pre-collect state on every surface", (
 
     // the money numbers came back with it
     expect((await billingCsvNumbers()).placedSince).toBe(EXP.placedSinceFt);
-    expect(cardValue(await renderBilling(), "placed since collection")).toBe(`${EXP.placedSinceFt.toLocaleString("en-US")} ft`);
+    expect(cardValue(await renderBilling(), "placed since collection")).toBe(
+      `${EXP.placedSinceFt.toLocaleString("en-US")} ft`,
+    );
     expect(pageText(await renderReport())).toContain(`${EXP.placedLatestFt.toLocaleString("en-US")} ft`);
     // and the collected banner is gone
     expect(pageText(await renderSheet())).not.toContain("Collection point moved.");

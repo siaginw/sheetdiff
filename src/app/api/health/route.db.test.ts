@@ -3,8 +3,8 @@
  * non-zero staleCaptures must be visible while pages still render fine from
  * old data. DB harness, standard temp DATABASE_PATH pattern.
  */
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("health");
 
@@ -16,11 +16,20 @@ const DAY = 86_400_000;
 const NOW = Date.now();
 
 beforeAll(async () => {
-  await db.insert(users).values({ id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x", createdAt: 1 });
   const sheet = (id: string, kind: "hourly" | "daily" | "off", last: number | null) =>
     db.insert(spreadsheets).values({
-      id, userId: "u1", googleId: id, title: id, url: "https://x", createdAt: 1,
-      scheduleKind: kind, scheduleHours: kind === "hourly" ? 1 : null, lastSnapshotAt: last,
+      id,
+      userId: "u1",
+      googleId: id,
+      title: id,
+      url: "https://x",
+      createdAt: 1,
+      scheduleKind: kind,
+      scheduleHours: kind === "hourly" ? 1 : null,
+      lastSnapshotAt: last,
     });
   await sheet("h-stale", "hourly", NOW - 5 * DAY); // dead 5 days — 3h window blown
   await sheet("h-fresh", "hourly", NOW - 3_600_000); // fine

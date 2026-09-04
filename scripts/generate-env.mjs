@@ -60,7 +60,10 @@ fs2.mkdirSync(path2.join(process.cwd(), "data"), { recursive: true });
 // is DEP0190 on modern Node, and the shell adds nothing here
 const push = spawnSync(process.execPath, [path2.join(process.cwd(), "scripts", "migrate.mjs")], {
   stdio: "inherit",
-  env: { ...process.env, DATABASE_PATH: process.env.DATABASE_PATH ?? path2.join(process.cwd(), "data", "sheetdiff.db") },
+  env: {
+    ...process.env,
+    DATABASE_PATH: process.env.DATABASE_PATH ?? path2.join(process.cwd(), "data", "sheetdiff.db"),
+  },
 });
 if (push.status !== 0) {
   console.log("Database creation skipped — run `npm run db:migrate` manually.");

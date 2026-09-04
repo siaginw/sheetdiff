@@ -1,26 +1,19 @@
 import Link from "next/link";
 
-import {
-  AlertCircle,
-  CheckCircle2,
-  ExternalLink,
-  GitCompareArrows,
-  Plus,
-  Star,
-} from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { db } from "@/lib/db";
-import { eq, inArray } from "drizzle-orm";
-import { tabs } from "@/lib/db/schema";
-import { getSessionUser } from "@/lib/session";
-import { googleConfigured } from "@/lib/google";
-import { relativeTime, scheduleLabel } from "@/lib/format";
-import { captureIsStale } from "@/lib/staleness";
-import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
+import { Button } from "@/components/ui/button";
 import { listAccessibleSpreadsheets } from "@/lib/access";
+import { db } from "@/lib/db";
+import { tabs } from "@/lib/db/schema";
+import { relativeTime, scheduleLabel } from "@/lib/format";
+import { googleConfigured } from "@/lib/google";
+import { getPendingChanges, pureCopyTabIds } from "@/lib/pending";
+import { getSessionUser } from "@/lib/session";
+import { captureIsStale } from "@/lib/staleness";
+import { eq, inArray } from "drizzle-orm";
+import { AlertCircle, CheckCircle2, ExternalLink, GitCompareArrows, Plus, Star } from "lucide-react";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "google-not-configured":
@@ -29,10 +22,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Google didn't return a refresh token. Revoke the app in your Google account permissions and try connecting again.",
   "demo-disabled":
     "The demo login is off on this server. Whoever runs SheetDiff can enable it to let people explore with sample data.",
-  "app-secret-missing": "This server isn't configured completely — whoever runs SheetDiff needs to finish setup (see the README).",
+  "app-secret-missing":
+    "This server isn't configured completely — whoever runs SheetDiff needs to finish setup (see the README).",
   "oauth-failed": "Google sign-in failed. Please try again.",
-    "demo-not-seeded":
-      "The demo data isn't loaded. Whoever runs this server needs to run 'npm run seed-demo' first.",
+  "demo-not-seeded": "The demo data isn't loaded. Whoever runs this server needs to run 'npm run seed-demo' first.",
   "oauth-state-mismatch": "Sign-in session expired. Please try again.",
   "oauth-missing-code": "Sign-in was incomplete. Please try again.",
 };
@@ -49,7 +42,13 @@ interface SheetStatus {
  *  dashboard, CSV export, and digest in exact agreement). Distinguishes
  *  "no baseline" from "quiet day / nothing pending" so the badge never lies. */
 async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<SheetStatus> {
-  const status: SheetStatus = { changes: 0, unresolved: 0, detail: { added: 0, removed: 0, changed: 0 }, baselineAt: null, latestAt: null };
+  const status: SheetStatus = {
+    changes: 0,
+    unresolved: 0,
+    detail: { added: 0, removed: 0, changed: 0 },
+    baselineAt: null,
+    latestAt: null,
+  };
   const tracked = tabRows.filter((t) => t.tracked);
   // compilation tabs' pending changes are echoes of the working tabs — the
   // badge counts work to enter, and the same shot listed twice is one entry
@@ -65,7 +64,16 @@ async function getSheetStatus(tabRows: (typeof tabs.$inferSelect)[]): Promise<Sh
     const baselines = await db
       .select({ tabId: snapshots.tabId, createdAt: snapshots.createdAt })
       .from(snapshots)
-      .where(and(inArray(snapshots.tabId, tracked.map((t) => t.id)), eqOp(snapshots.isBaseline, true), neOp(snapshots.trigger, "import")));
+      .where(
+        and(
+          inArray(
+            snapshots.tabId,
+            tracked.map((t) => t.id),
+          ),
+          eqOp(snapshots.isBaseline, true),
+          neOp(snapshots.trigger, "import"),
+        ),
+      );
     if (baselines.length > 0) {
       status.baselineAt = Math.max(...baselines.map((b) => b.createdAt));
     }
@@ -135,16 +143,14 @@ function MiniSep() {
 
 function MiniNum({ v }: { v: string }) {
   return (
-    <span className="w-7 shrink-0 text-right font-mono text-[10.5px] leading-none text-muted-foreground">
-      {v}
-    </span>
+    <span className="w-7 shrink-0 text-right font-mono text-[10.5px] leading-none text-muted-foreground">{v}</span>
   );
 }
 
 function MiniSign({ v, tone }: { v: string; tone: "add" | "del" }) {
   return (
     <span
-      className={`w-4 shrink-0 text-center font-mono text-sm font-bold leading-none ${
+      className={`w-4 shrink-0 text-center font-mono text-sm leading-none font-bold ${
         tone === "add" ? "text-diff-add-fg" : "text-diff-del-fg"
       }`}
     >
@@ -223,7 +229,7 @@ function Landing({ error }: { error: string | null }) {
         </div>
         <ThemeToggle />
       </div>
-      <main className="mx-auto max-w-4xl px-4 pb-24 pt-8 sm:px-6">
+      <main className="mx-auto max-w-4xl px-4 pt-8 pb-24 sm:px-6">
         {error ? (
           <div className="mb-8 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
@@ -231,19 +237,19 @@ function Landing({ error }: { error: string | null }) {
           </div>
         ) : null}
 
-        <section className="bg-graph-paper -mx-4 px-4 pb-14 pt-8 sm:-mx-6 sm:px-6">
+        <section className="bg-graph-paper -mx-4 px-4 pt-8 pb-14 sm:-mx-6 sm:px-6">
           <p className="font-mono text-xs font-medium text-muted-foreground">
             $ sheetdiff init --sheets &ldquo;your team&rsquo;s google sheets&rdquo;
           </p>
-          <h1 className="mt-4 max-w-2xl text-balance font-mono text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
+          <h1 className="mt-4 max-w-2xl font-mono text-4xl leading-[1.1] font-bold tracking-tight text-balance sm:text-5xl">
             Your spreadsheets,
             <br />
             <span className="text-diff-add-fg">version controlled</span>
             <span className="text-diff-del-fg">.</span>
           </h1>
-          <p className="mt-5 max-w-xl text-balance text-lg text-muted-foreground">
-            SheetDiff snapshots your team&rsquo;s sheets and shows every change the way Word shows tracked changes
-            — so nothing slips past the person who collects the data.
+          <p className="mt-5 max-w-xl text-lg text-balance text-muted-foreground">
+            SheetDiff snapshots your team&rsquo;s sheets and shows every change the way Word shows tracked changes — so
+            nothing slips past the person who collects the data.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {googleConfigured() ? (
@@ -264,7 +270,8 @@ function Landing({ error }: { error: string | null }) {
               ) : (
                 <code className="rounded bg-muted px-1.5 py-0.5">npm run seed-demo</code>
               )}
-            </span>          </div>
+            </span>{" "}
+          </div>
         </section>
 
         {/* trust strip: the questions every first-time visitor has */}
@@ -273,22 +280,22 @@ function Landing({ error }: { error: string | null }) {
             <div>
               <p className="font-mono text-xs font-semibold text-foreground">Self-hosted and free</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Runs on your own machine — your sheet data never leaves it. No signup,
-                no subscription, about 10 minutes of one-time setup.
+                Runs on your own machine — your sheet data never leaves it. No signup, no subscription, about 10 minutes
+                of one-time setup.
               </p>
             </div>
             <div>
               <p className="font-mono text-xs font-semibold text-foreground">Read-only, forever</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Connects to Google with a view-only key. It can look at your sheets;
-                it cannot edit, add, or delete anything in them.
+                Connects to Google with a view-only key. It can look at your sheets; it cannot edit, add, or delete
+                anything in them.
               </p>
             </div>
             <div>
               <p className="font-mono text-xs font-semibold text-foreground">Your team changes nothing</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                They keep typing in the same Google Sheet. SheetDiff just watches —
-                no add-on to install, no new tool to learn.
+                They keep typing in the same Google Sheet. SheetDiff just watches — no add-on to install, no new tool to
+                learn.
               </p>
             </div>
           </div>
@@ -303,14 +310,21 @@ function Landing({ error }: { error: string | null }) {
 
         <section className="mt-16 grid gap-x-10 gap-y-6 sm:grid-cols-3">
           {[
-            ["snapshot", "Hourly, daily or weekly captures. Filters left on by teammates can never corrupt one — the API sees through them."],
-            ["diff", "Added rows, removed rows, changed cells as old → new. Sorts and moves don't cry wolf — rows match by their key column."],
-            ["collect", "One click marks everything as pulled. The dashboard answers the only question that matters: what changed since the last pull?"],
+            [
+              "snapshot",
+              "Hourly, daily or weekly captures. Filters left on by teammates can never corrupt one — the API sees through them.",
+            ],
+            [
+              "diff",
+              "Added rows, removed rows, changed cells as old → new. Sorts and moves don't cry wolf — rows match by their key column.",
+            ],
+            [
+              "collect",
+              "One click marks everything as pulled. The dashboard answers the only question that matters: what changed since the last pull?",
+            ],
           ].map(([term, text]) => (
             <div key={term}>
-              <p className="font-mono text-xs font-semibold text-foreground">
-                {term}
-              </p>
+              <p className="font-mono text-xs font-semibold text-foreground">{term}</p>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
             </div>
           ))}
@@ -369,11 +383,10 @@ export default async function Home({
         </div>
 
         {sheets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed bg-graph-paper py-20 text-center">
+          <div className="bg-graph-paper flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
             <p className="font-mono text-sm font-medium">No sheets tracked yet</p>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              Paste a Google Sheets link and SheetDiff will snapshot it and diff every change from
-              here on.
+              Paste a Google Sheets link and SheetDiff will snapshot it and diff every change from here on.
             </p>
             <Button className="mt-5" render={<Link href="/sheets/new" />}>
               <Plus className="size-4" /> Track your first sheet
@@ -386,7 +399,10 @@ export default async function Home({
                 const st = statuses.get(sheet.id)!;
                 const d = st.detail;
                 return (
-                  <li key={sheet.id} className="group flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5">
+                  <li
+                    key={sheet.id}
+                    className="group flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5"
+                  >
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/sheets/${sheet.id}`}
@@ -433,7 +449,10 @@ export default async function Home({
                             ) : null}
                           </Link>
                         ) : (
-                          <Badge variant="secondary" className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg">
+                          <Badge
+                            variant="secondary"
+                            className="gap-1 bg-diff-add-bg font-mono text-[11px] font-medium text-diff-add-fg"
+                          >
                             <CheckCircle2 className="size-3" /> up to date since collection
                           </Badge>
                         )

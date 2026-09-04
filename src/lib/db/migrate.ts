@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 /**
  * Boot-time migrations: every server start (dev, `npm start`, Docker) applies
@@ -24,23 +24,21 @@ export function ensureMigrated(): void {
   try {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("busy_timeout = 30000");
-    const journal = JSON.parse(
-      fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"),
-    ) as { entries: { tag: string; when: number }[] };
+    const journal = JSON.parse(fs.readFileSync(path.join(folder, "meta", "_journal.json"), "utf8")) as {
+      entries: { tag: string; when: number }[];
+    };
     // hash each journal entry's SQL once — used by the backup gate AND stamping
     const journalEntries = journal.entries.map((e) => {
       const sqlText = fs.readFileSync(path.join(folder, `${e.tag}.sql`), "utf8");
       return { tag: e.tag, when: e.when, hash: crypto.createHash("sha256").update(sqlText).digest("hex"), sqlText };
     });
     sqlite.exec(
-      'CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)',
+      "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)",
     );
     // applied ROW count, not table existence — an empty table (legacy DB, or a
     // prior run that crashed between CREATE and stamping) still needs stamping
     const appliedHashes = new Set(
-      (sqlite.prepare("SELECT hash FROM __drizzle_migrations").all() as { hash: string }[]).map(
-        (r) => r.hash,
-      ),
+      (sqlite.prepare("SELECT hash FROM __drizzle_migrations").all() as { hash: string }[]).map((r) => r.hash),
     );
     const hasUsers = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
 
@@ -53,14 +51,18 @@ export function ensureMigrated(): void {
     // re-authored in place — warn regardless of count (fleet-10: the
     // count-equal-only condition missed the more-entries-than-applied shape)
     if (appliedHashes.size > 0 && [...appliedHashes].some((h) => !journalSet.has(h))) {
-      console.warn("[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING");
+      console.warn(
+        "[migrate] recorded migration hashes diverge from drizzle/meta (re-authored migrations?) — never hand-edit committed migrations; see CONTRIBUTING",
+      );
     }
     for (const j of journalEntries) {
       // drizzle's splitter keeps an empty tail chunk from a trailing
       // statement-breakpoint and FAILS THE BOOT with a cryptic query error —
       // reject the malformed file loudly at the door instead
       if (j.sqlText.trimEnd().endsWith("--> statement-breakpoint")) {
-        throw new Error(`[migrate] ${j.tag}.sql ends with a bare statement-breakpoint — remove it (boot splits strictly and fails on the empty tail)`);
+        throw new Error(
+          `[migrate] ${j.tag}.sql ends with a bare statement-breakpoint — remove it (boot splits strictly and fails on the empty tail)`,
+        );
       }
     }
     const pendingWork = journalEntries.some((j) => !appliedHashes.has(j.hash));
@@ -96,13 +98,13 @@ export function ensureMigrated(): void {
         if (!marker) return false; // unknown migration: never stamp, let it run
         return columnExists(marker.table, marker.col);
       });
-      const ins = sqlite.prepare(
-        'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
-      );
+      const ins = sqlite.prepare('INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)');
       for (const e of alreadyApplied) {
         ins.run(e.hash, e.when);
       }
-      console.log(`[migrate] stamped ${alreadyApplied.length}/${journalEntries.length} migration(s) already reflected in the legacy schema — the rest will apply normally`);
+      console.log(
+        `[migrate] stamped ${alreadyApplied.length}/${journalEntries.length} migration(s) already reflected in the legacy schema — the rest will apply normally`,
+      );
     }
 
     migrate(drizzle(sqlite), { migrationsFolder: folder });

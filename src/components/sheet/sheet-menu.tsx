@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { CalendarRange, Download, ExternalLink, MoreHorizontal, ReceiptText, Trash2 } from "lucide-react";
+import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,7 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DeleteSheetDialog } from "@/components/sheet/delete-dialog";
+import { CalendarRange, Download, ExternalLink, MoreHorizontal, ReceiptText, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 /**
  * The sheet page's "more options" menu + the delete dialog it launches.
@@ -72,12 +72,7 @@ export function SheetMenu({
       </DropdownMenu>
 
       {isOwner ? (
-        <DeleteSheetDialog
-          open={deleteOpen}
-          onOpenChange={setDeleteOpen}
-          spreadsheetId={spreadsheetId}
-          title={title}
-        />
+        <DeleteSheetDialog open={deleteOpen} onOpenChange={setDeleteOpen} spreadsheetId={spreadsheetId} title={title} />
       ) : null}
     </>
   );

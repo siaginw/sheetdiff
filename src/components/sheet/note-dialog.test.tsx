@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { test, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, expect, test, vi } from "vitest";
 import { NoteDialog } from "./note-dialog";
 
 vi.mock("@/lib/actions", () => ({ addNote: vi.fn() }));

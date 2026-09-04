@@ -41,7 +41,10 @@ describe("dedupeTabData — work identity, not cell text", () => {
       { title: "Line List", data: llLatest },
     ]);
     expect(out.pureCopies.size).toBe(0);
-    expect(out.freshByTab.get("Line List")).toEqual([["", "", "", "", ""], ["Plow", "500", "600", "B", "8/5/2026"]]);
+    expect(out.freshByTab.get("Line List")).toEqual([
+      ["", "", "", "", ""],
+      ["Plow", "500", "600", "B", "8/5/2026"],
+    ]);
 
     // the copy's BASELINE re-listed the PE rows too: raw decode would put
     // 500+100 on the copy's side of the ledger and swing placed-since
@@ -51,11 +54,19 @@ describe("dedupeTabData — work identity, not cell text", () => {
       ["Plow", "500", "600", "B", "8/5/2026"],
     ]);
     const owned = out.ownedRows(new Map([["Line List", llBaseline]]));
-    expect(owned.get("Line List")).toEqual([["", "", "", "", ""], ["Plow", "500", "600", "B", "8/5/2026"]]);
+    expect(owned.get("Line List")).toEqual([
+      ["", "", "", "", ""],
+      ["Plow", "500", "600", "B", "8/5/2026"],
+    ]);
     // and the working tab's baseline keeps its own row even though the copy
     // re-listed it
     const peBaseline = snap(HEAD, [["Bore", "0", "500", "A", "8/1/2026"]]);
-    const ownedPe = out.ownedRows(new Map([["PE-1", peBaseline], ["Line List", llBaseline]]));
+    const ownedPe = out.ownedRows(
+      new Map([
+        ["PE-1", peBaseline],
+        ["Line List", llBaseline],
+      ]),
+    );
     expect(ownedPe.get("PE-1")).toEqual([["Bore", "0", "500", "A", "8/1/2026"]]);
   });
 
@@ -157,11 +168,14 @@ describe("dedupeTabData — smart identifiers on ANY sheet", () => {
       ["B-220", "Valve 6in", "12", "Yard 2"],
       ["C-330", "Coupler", "40", "Trailer 3"],
     ]);
-    const masterList = snap(["Part", "Description", "On Hand", "Yard"], [
-      ["a-100", "Pump 2\"", "4", "Yard 1"], // retyped description, same key
-      ["B-220", "Valve 6in", "12", "Yard 2"],
-      ["C-330", "Coupler", "40", "Trailer 3"],
-    ]);
+    const masterList = snap(
+      ["Part", "Description", "On Hand", "Yard"],
+      [
+        ["a-100", 'Pump 2"', "4", "Yard 1"], // retyped description, same key
+        ["B-220", "Valve 6in", "12", "Yard 2"],
+        ["C-330", "Coupler", "40", "Trailer 3"],
+      ],
+    );
     const out = dedupeTabData([
       { title: "Stock", data: stock, keyColumn: null },
       { title: "Master List", data: masterList, keyColumn: null },
@@ -244,5 +258,135 @@ describe("dedupeTabData — smart identifiers on ANY sheet", () => {
     // the baseline plow row keys k:plow at latest AND k:plaw at the slice —
     // same tier, same namespace, still owned by A
     expect((owned.get("A") ?? [])[0]).toEqual(["Plow", "0", "500"]);
+  });
+});
+
+describe("audit-pass regression tests (identity stability + copy bounds)", () => {
+  it("C1: the auto-detected key column is resolved on LATEST and applied to the baseline", () => {
+    // latest: Date is unique -> tier 3 keys by Date. Baseline: two rows share
+    // a date (ordinary) so detection there would flip to SKU — the SAME row
+    // must still key by Date (latest's column), or the baseline escapes
+    // ownership and placed-since goes wrong
+    const H = ["SKU", "Date", "Qty"];
+    const latest = snap(H, [
+      ["A1", "2026-08-01", "3"],
+      ["A2", "2026-08-02", "4"],
+      ["A3", "2026-08-03", "5"],
+    ]);
+    const baseline = snap(H, [
+      ["A1", "2026-08-01", "3"],
+      ["A2", "2026-08-01", "4"], // same day as A1 — Date NOT unique here
+      ["A3", "2026-08-03", "5"],
+    ]);
+    const out = dedupeTabData([{ title: "Work", data: latest, keyColumn: null }]);
+    const owned = out.ownedRows(new Map([["Work", baseline]]));
+    // all three baseline rows survive as the tab's own (no vanishing)
+    expect((owned.get("Work") ?? []).filter((r) => r.some((v) => v !== ""))).toHaveLength(3);
+  });
+
+  it("H1: a real ID column outranks a unique Date column", async () => {
+    const { detectKeyColumn } = await import("./diff/engine");
+    const H = ["SKU", "Date", "Qty"];
+    const data = snap(H, [
+      ["A1", "2026-08-01", "3"],
+      ["A2", "2026-08-02", "4"],
+      ["A3", "2026-08-03", "5"],
+    ]);
+    expect(detectKeyColumn(data)).toBe(0); // SKU, not Date
+    // a date-only sheet still keys by date (nothing better exists)
+    const D = ["Date", "Task"];
+    expect(
+      detectKeyColumn(
+        snap(D, [
+          ["2026-08-01", "a"],
+          ["2026-08-02", "b"],
+        ]),
+      ),
+    ).toBe(0);
+  });
+
+  it("C2: two same-period daily-log tabs are NOT copies of each other", () => {
+    // 21 unique dates each, completely different work — keying by date used
+    // to make the second tab a pure copy and vanish it from every rollup
+    const H = ["Date", "Task", "Qty"];
+    const days = (n: number) => `2026-08-${String(n).padStart(2, "0")}`;
+    const rows = (prefix: string) => Array.from({ length: 21 }, (_, i) => [days(i + 1), `${prefix} ${i + 1}`, "1"]);
+    const out = dedupeTabData([
+      { title: "Crew A log", data: snap(H, rows("inspect line")), keyColumn: null },
+      { title: "Crew B log", data: snap(H, rows("repair valve")), keyColumn: null },
+    ]);
+    expect(out.pureCopies.size).toBe(0);
+    expect(out.duplicatesDropped).toBe(0);
+  });
+
+  it("H3: a 95%-copy tab that owns real stragglers is NOT skipped (20 copies + 1 owned = 4.8%)", () => {
+    const H = ["SKU", "Qty"];
+    const work = snap(
+      H,
+      Array.from({ length: 20 }, (_, i) => [`S-${i}`, "1"]),
+    );
+    const mostlyCopy = snap(H, [
+      ...Array.from({ length: 20 }, (_, i) => [`S-${i}`, "1"]),
+      ["MINE-1", "7"], // the tab's OWN row
+    ]);
+    const out = dedupeTabData([
+      { title: "Work", data: work, keyColumn: null },
+      { title: "Mostly Copy", data: mostlyCopy, keyColumn: null },
+    ]);
+    expect(out.pureCopies.has("Mostly Copy")).toBe(false);
+    // its owned row survives in the fresh output
+    expect((out.freshByTab.get("Mostly Copy") ?? []).some((r) => r[0] === "MINE-1")).toBe(true);
+  });
+
+  it("H3 (the other side): a big copy with ~2% reformatted strays IS still a compilation tab", () => {
+    // the real Line List shape: 1354 rows, 26 strays = 1.9% — must classify
+    const H = ["SKU", "Qty"];
+    const n = 200;
+    const work = snap(
+      H,
+      Array.from({ length: n }, (_, i) => [`S-${i}`, "1"]),
+    );
+    const bigCopy = snap(H, [
+      ...Array.from({ length: n }, (_, i) => [`S-${i}`, "1"]),
+      ...Array.from({ length: 4 }, (_, i) => [`STRAY-${i}`, "9"]), // 4/204 = 2.0%
+    ]);
+    const out = dedupeTabData([
+      { title: "Work", data: work, keyColumn: null },
+      { title: "Big Copy", data: bigCopy, keyColumn: null },
+    ]);
+    expect(out.pureCopies.has("Big Copy")).toBe(true);
+  });
+
+  it("M1: k-namespace removals net out per tab — within-tab repeats kept, cross-tab repeats dropped", () => {
+    const H = ["SKU", "Qty"];
+    const override = 0;
+    const latest = snap(H, [["Y", "9"]]);
+    const baseline = snap(H, [
+      ["X", "1"],
+      ["X", "2"], // a second warehouse line for X, since removed
+      ["Y", "9"],
+    ]);
+    const out = dedupeTabData([{ title: "Work", data: latest, keyColumn: override }]);
+    const owned = out.ownedRows(new Map([["Work", baseline]]));
+    const kept = (owned.get("Work") ?? []).filter((r) => r.some((v) => v !== ""));
+    expect(kept).toHaveLength(3); // both X rows survive the slice walk
+
+    // cross-tab: A and B both carried the removed row — only A (first) keeps it
+    const aLatest = snap(H, [["Z", "1"]]);
+    const bLatest = snap(H, [["W", "1"]]);
+    const out2 = dedupeTabData([
+      { title: "A", data: aLatest, keyColumn: override },
+      { title: "B", data: bLatest, keyColumn: override },
+    ]);
+    const owned2 = out2.ownedRows(
+      new Map([
+        ["A", snap(H, [["GONE", "1"]])],
+        ["B", snap(H, [["GONE", "1"]])],
+      ]),
+    );
+    const aKept = (owned2.get("A") ?? []).filter((r) => r.some((v) => v !== "")).length;
+    const bKept = (owned2.get("B") ?? []).filter((r) => r.some((v) => v !== "")).length;
+    expect(aKept).toBe(1);
+    expect(bKept).toBe(0);
   });
 });

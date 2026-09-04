@@ -13,8 +13,8 @@
  *    remove+add.
  */
 
-import { norm, sameValue, normalizeKey, rowHash, colLetter, hashString, compositeKey } from "./normalize";
-import { detectStationColumns, detectActivityColumn } from "../detect";
+import { detectActivityColumn, detectStationColumns } from "../detect";
+import { colLetter, compositeKey, hashString, norm, normalizeKey, rowHash, sameValue } from "./normalize";
 
 export interface SnapshotData {
   headers: string[];
@@ -97,7 +97,19 @@ export interface DiffOptions {
   toWhen?: number | null;
 }
 
-const KEY_HEADER_RE = /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit|shot|order|part|invoice|asset|serial|email|client|customer|account|request|case|batch|lot|license|permit)$/;
+const KEY_HEADER_RE =
+  /^(id|key|code|ref|no|num|number|item|row|sku|po|job|ticket|emp|employee|date|week|site|unit|shot|order|part|invoice|asset|serial|email|client|customer|account|request|case|batch|lot|license|permit)$/;
+/** date/week columns identify a DAY, not a row — they qualify as identity only
+ *  when nothing better exists (two rows sharing a date are two rows, and two
+ *  daily-log tabs spanning the same period would otherwise dedupe into one) */
+const DATEISH_HEADER_RE = /^(date|week)$/;
+export function isDateishHeader(header: string): boolean {
+  return norm(header)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .some((t) => DATEISH_HEADER_RE.test(t));
+}
 
 /**
  * Auto-detect the column that identifies rows. A column qualifies when its
@@ -131,13 +143,18 @@ export function detectKeyColumn(s: SnapshotData): number | null {
 
     // "Shot #", "EMP NO" and "PO Number" are identifier headers — judge the
     // individual words, then the concatenated form for "EmployeeID"-style
-    // headers whose tokens alone don't match
+    // headers whose tokens alone don't match. Date/week headers score BELOW a
+    // real identifier (1 vs 2): a unique Date column still keys a bare log,
+    // but never outranks an ID/SKU/ticket column — keying by date makes a
+    // date correction look like a remove+add and can collapse two same-period
+    // log tabs into one
     const lowered = norm(headers[c]).toLowerCase();
     const tokens = lowered.split(/[^a-z0-9]+/).filter(Boolean);
     const joined = tokens.join("");
+    const dateish = tokens.some((t) => DATEISH_HEADER_RE.test(t));
     const score =
-      (tokens.some((t) => KEY_HEADER_RE.test(t)) ? 2 : 0) +
-      (joined.includes("id") || joined.includes("key") || joined.includes("date") || joined.includes("name") ? 1 : 0);
+      (tokens.some((t) => KEY_HEADER_RE.test(t)) ? (dateish ? 1 : 2) : 0) +
+      (joined.includes("id") || joined.includes("key") || joined.includes("name") ? 1 : 0);
     if (!best || score > best.score) best = { col: c, score };
   }
   return best && best.score > 0 ? best.col : null;
@@ -168,7 +185,10 @@ export function detectCompositeKey(s: SnapshotData): number[] | null {
 }
 
 /** Map B columns -> A columns (null = column is new in B). */
-function matchColumns(a: SnapshotData, b: SnapshotData): {
+function matchColumns(
+  a: SnapshotData,
+  b: SnapshotData,
+): {
   aToB: (number | null)[]; // A col index -> B col index
   bToA: (number | null)[]; // B col index -> A col index
   added: number[]; // B cols with no A counterpart
@@ -238,7 +258,7 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   let keyCol = opts.keyColumn ?? null;
   if (keyCol !== null && (keyCol < 0 || keyCol >= b.headers.length)) keyCol = null;
   if (keyCol === null) keyCol = detectKeyColumn(b);
-  const keyColA = keyCol !== null ? cols.bToA[keyCol] ?? null : null;
+  const keyColA = keyCol !== null ? (cols.bToA[keyCol] ?? null) : null;
 
   // composite identity (Activity + stations) when no single key exists —
   // usable only when every composite column maps into A
@@ -264,7 +284,6 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
   // matchB[k] = A row index matched to B row k (or -1)
   const matchedA = new Array(a.rows.length).fill(-1);
   const matchB = new Array(b.rows.length).fill(-1);
-
 
   // Track which rows have blank keys so they can fall through to content-hash
   // matching — real trackers pad tabs with hundreds of label-only rows whose
@@ -324,7 +343,10 @@ export function diffSnapshots(a: SnapshotData, b: SnapshotData, opts: DiffOption
     const unmatchedB: number[] = [];
     for (let k = 0; k < b.rows.length; k++) {
       if (matchB[k] !== -1 || !blankKeyedB.has(k)) continue;
-      const h = rowHash(b.rows[k], sharedACols.map((ac) => cols.aToB[ac]!));
+      const h = rowHash(
+        b.rows[k],
+        sharedACols.map((ac) => cols.aToB[ac]!),
+      );
       if (h === "\u0000".repeat(sharedACols.length)) {
         unmatchedB.push(k);
         continue;

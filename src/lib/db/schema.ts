@@ -1,5 +1,5 @@
-import { sqliteTable, text, integer, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { blob, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(), // uuid
@@ -82,10 +82,7 @@ export const snapshots = sqliteTable(
     dataBlob: blob("data_blob", { mode: "buffer" }).notNull(),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
-  (t) => [
-    index("snapshots_tab_created_idx").on(t.tabId, t.createdAt),
-    index("snapshots_run_idx").on(t.runId),
-  ],
+  (t) => [index("snapshots_tab_created_idx").on(t.tabId, t.createdAt), index("snapshots_run_idx").on(t.runId)],
 );
 
 export type User = typeof users.$inferSelect;
@@ -171,9 +168,7 @@ export const members = sqliteTable(
     email: text("email").notNull(),
     createdAt: integer("created_at", { mode: "number" }).notNull(),
   },
-  (t) => [
-    uniqueIndex("members_owner_email_idx").on(t.ownerUserId, sql`lower(${t.email})`),
-  ],
+  (t) => [uniqueIndex("members_owner_email_idx").on(t.ownerUserId, sql`lower(${t.email})`)],
 );
 
 export type Member = typeof members.$inferSelect;

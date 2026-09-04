@@ -39,10 +39,7 @@
       "indexes": {
         "change_acks_tab_row_idx": {
           "name": "change_acks_tab_row_idx",
-          "columns": [
-            "tab_id",
-            "row_key"
-          ],
+          "columns": ["tab_id", "row_key"],
           "isUnique": true
         }
       },
@@ -51,12 +48,8 @@
           "name": "change_acks_tab_id_tabs_id_fk",
           "tableFrom": "change_acks",
           "tableTo": "tabs",
-          "columnsFrom": [
-            "tab_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tab_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -100,10 +93,7 @@
       "indexes": {
         "members_owner_email_idx": {
           "name": "members_owner_email_idx",
-          "columns": [
-            "owner_user_id",
-            "lower(\"email\")"
-          ],
+          "columns": ["owner_user_id", "lower(\"email\")"],
           "isUnique": true
         }
       },
@@ -112,12 +102,8 @@
           "name": "members_owner_user_id_users_id_fk",
           "tableFrom": "members",
           "tableTo": "users",
-          "columnsFrom": [
-            "owner_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["owner_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -189,10 +175,7 @@
       "indexes": {
         "notes_sheet_created_idx": {
           "name": "notes_sheet_created_idx",
-          "columns": [
-            "spreadsheet_id",
-            "created_at"
-          ],
+          "columns": ["spreadsheet_id", "created_at"],
           "isUnique": false
         }
       },
@@ -201,12 +184,8 @@
           "name": "notes_spreadsheet_id_spreadsheets_id_fk",
           "tableFrom": "notes",
           "tableTo": "spreadsheets",
-          "columnsFrom": [
-            "spreadsheet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["spreadsheet_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -214,12 +193,8 @@
           "name": "notes_tab_id_tabs_id_fk",
           "tableFrom": "notes",
           "tableTo": "tabs",
-          "columnsFrom": [
-            "tab_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tab_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -277,10 +252,7 @@
       "indexes": {
         "snapshot_stats_tab_idx": {
           "name": "snapshot_stats_tab_idx",
-          "columns": [
-            "tab_id",
-            "created_at"
-          ],
+          "columns": ["tab_id", "created_at"],
           "isUnique": false
         }
       },
@@ -289,12 +261,8 @@
           "name": "snapshot_stats_snapshot_id_snapshots_id_fk",
           "tableFrom": "snapshot_stats",
           "tableTo": "snapshots",
-          "columnsFrom": [
-            "snapshot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["snapshot_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -374,17 +342,12 @@
       "indexes": {
         "snapshots_tab_created_idx": {
           "name": "snapshots_tab_created_idx",
-          "columns": [
-            "tab_id",
-            "created_at"
-          ],
+          "columns": ["tab_id", "created_at"],
           "isUnique": false
         },
         "snapshots_run_idx": {
           "name": "snapshots_run_idx",
-          "columns": [
-            "run_id"
-          ],
+          "columns": ["run_id"],
           "isUnique": false
         }
       },
@@ -393,12 +356,8 @@
           "name": "snapshots_tab_id_tabs_id_fk",
           "tableFrom": "snapshots",
           "tableTo": "tabs",
-          "columnsFrom": [
-            "tab_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["tab_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -502,12 +461,8 @@
           "name": "spreadsheets_user_id_users_id_fk",
           "tableFrom": "spreadsheets",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -567,17 +522,12 @@
       "indexes": {
         "tabs_spreadsheet_idx": {
           "name": "tabs_spreadsheet_idx",
-          "columns": [
-            "spreadsheet_id"
-          ],
+          "columns": ["spreadsheet_id"],
           "isUnique": false
         },
         "tabs_spreadsheet_title_idx": {
           "name": "tabs_spreadsheet_title_idx",
-          "columns": [
-            "spreadsheet_id",
-            "title"
-          ],
+          "columns": ["spreadsheet_id", "title"],
           "isUnique": true
         }
       },
@@ -586,12 +536,8 @@
           "name": "tabs_spreadsheet_id_spreadsheets_id_fk",
           "tableFrom": "tabs",
           "tableTo": "spreadsheets",
-          "columnsFrom": [
-            "spreadsheet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["spreadsheet_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -685,9 +631,7 @@
       "indexes": {
         "users_google_sub_unique": {
           "name": "users_google_sub_unique",
-          "columns": [
-            "google_sub"
-          ],
+          "columns": ["google_sub"],
           "isUnique": true
         }
       },

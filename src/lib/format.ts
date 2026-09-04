@@ -40,7 +40,9 @@ export function absoluteTime(ts: number): string {
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export function scheduleLabel(sheet: Pick<Spreadsheet, "scheduleKind" | "scheduleHours" | "scheduleTime" | "scheduleDay">): string {
+export function scheduleLabel(
+  sheet: Pick<Spreadsheet, "scheduleKind" | "scheduleHours" | "scheduleTime" | "scheduleDay">,
+): string {
   switch (sheet.scheduleKind) {
     case "hourly":
       return `Every ${sheet.scheduleHours ?? 1}h`;

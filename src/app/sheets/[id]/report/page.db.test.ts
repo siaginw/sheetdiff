@@ -19,9 +19,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -37,8 +35,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => children }));
 vi.mock("@/components/sheet/print-button", () => ({ PrintButton: () => null }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("report");
 
@@ -69,11 +67,16 @@ function textOf(node: unknown, out: string[] = []): string[] {
 const pageText = (el: unknown) => textOf(el).join(" ").replace(/\s+/g, " ");
 
 async function seedUser(id: string) {
-  await db.insert(users).values({ id, googleSub: `sub-${id}`, email: `${id}@corp.com`, name: id, tokensEnc: "unused", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id, googleSub: `sub-${id}`, email: `${id}@corp.com`, name: id, tokensEnc: "unused", createdAt: 1 });
 }
 async function seedSheet(id: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId: "owner", googleId: `gid-${id}`, title,
+    id,
+    userId: "owner",
+    googleId: `gid-${id}`,
+    title,
     url: `https://docs.google.com/spreadsheets/d/gid-${id}/edit`,
     createdAt: 1,
   });
@@ -84,9 +87,15 @@ async function seedTab(id: string, spreadsheetId: string, position: number) {
 async function seedSnapshot(id: string, tabId: string, runId: string, createdAt: number, grid: string[][]) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger: "manual", isBaseline: false,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt,
+    id,
+    tabId,
+    runId,
+    trigger: "manual",
+    isBaseline: false,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt,
   });
 }
 
@@ -108,10 +117,7 @@ beforeAll(async () => {
   // PE-4: one dated plow shot, 500 ft
   await seedSnapshot("rc-p4", "PE-4", "rc0", T, grid(["Plow", "0", "500", "8/20/2026"]));
   // PE7 copies PE4's row verbatim (plus blank padding rows)
-  await seedSnapshot("rc-p7", "PE7", "rc1", T + DAY, grid(
-    ["Plow", "0", "500", "8/20/2026"],
-    ["", "", "", ""],
-  ));
+  await seedSnapshot("rc-p7", "PE7", "rc1", T + DAY, grid(["Plow", "0", "500", "8/20/2026"], ["", "", "", ""]));
 
   await seedSheet(DISTINCT_SHEET, "Distinct Tabs Tracker");
   await seedTab("rep-a", DISTINCT_SHEET, 0);
@@ -126,7 +132,9 @@ beforeAll(async () => {
   await seedSheet(STOPPAGE_SHEET, "Stoppage Tracker");
   await seedTab("sp-prod", STOPPAGE_SHEET, 0);
   await seedSnapshot("sp-p", "sp-prod", "sp0", T, grid(["Plow", "0", "500", "8/20/2026"]));
-  await db.insert(tabs).values({ id: "sp-log", spreadsheetId: STOPPAGE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
+  await db
+    .insert(tabs)
+    .values({ id: "sp-log", spreadsheetId: STOPPAGE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
   await seedSnapshot("sp-l", "sp-log", "sp1", T, [
     SH,
     ["8/20/2026", "waiting on utility locate"], // same week as the footage
@@ -136,7 +144,9 @@ beforeAll(async () => {
   await seedSheet(STALE_SHEET, "Stale Stoppage Log");
   await seedTab("st-prod", STALE_SHEET, 0);
   await seedSnapshot("st-p", "st-prod", "st0", T, grid(["Plow", "0", "500", "8/28/2026"]));
-  await db.insert(tabs).values({ id: "st-log", spreadsheetId: STALE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
+  await db
+    .insert(tabs)
+    .values({ id: "st-log", spreadsheetId: STALE_SHEET, title: "Work Stoppages", position: 1, tracked: false });
   await seedSnapshot("st-l", "st-log", "st1", T, [SH, ["7/6/2026", "permit hold"]]); // six weeks stale
 });
 

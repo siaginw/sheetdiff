@@ -8,11 +8,10 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: () => ({ sendMail: async () => {} }) },
 }));
 
+import { setupMigratedTempDb } from "@/test/db-harness";
 import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import Database from "better-sqlite3";
-import { setupMigratedTempDb } from "@/test/db-harness";
 
 const { tmpDir } = setupMigratedTempDb("maint");
 
@@ -26,19 +25,53 @@ const { usersDueForDigest } = await import("./digest");
 const snapBlob = (grid: string[][]) => encodeSnapshot(toSnapshotData(grid));
 
 beforeAll(async () => {
-  await db.insert(users).values({ id: "u1", googleSub: "sub-u1", email: null, name: "u1", tokensEnc: "unused", createdAt: 1 });
-  await db.insert(spreadsheets).values({ id: "s1", userId: "u1", googleId: "g1", title: "T", url: "https://x", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id: "u1", googleSub: "sub-u1", email: null, name: "u1", tokensEnc: "unused", createdAt: 1 });
+  await db
+    .insert(spreadsheets)
+    .values({ id: "s1", userId: "u1", googleId: "g1", title: "T", url: "https://x", createdAt: 1 });
   await db.insert(tabs).values({ id: "t1", spreadsheetId: "s1", title: "A", position: 0, tracked: true });
   await db.insert(tabs).values({ id: "t2", spreadsheetId: "s1", title: "B", position: 1, tracked: true });
 
   const rows: (typeof snapshots.$inferInsert)[] = [
-    { id: "snap-base", tabId: "t1", runId: "r0", trigger: "manual", isBaseline: true, rowCount: 0, colCount: 0, dataBlob: snapBlob([["h"]]), createdAt: 0 },
+    {
+      id: "snap-base",
+      tabId: "t1",
+      runId: "r0",
+      trigger: "manual",
+      isBaseline: true,
+      rowCount: 0,
+      colCount: 0,
+      dataBlob: snapBlob([["h"]]),
+      createdAt: 0,
+    },
   ];
   for (let i = 1; i <= 6; i++) {
-    rows.push({ id: `snap-${i}`, tabId: "t1", runId: `r${i}`, trigger: "manual", isBaseline: false, rowCount: 0, colCount: 0, dataBlob: snapBlob([["h"]]), createdAt: i });
+    rows.push({
+      id: `snap-${i}`,
+      tabId: "t1",
+      runId: `r${i}`,
+      trigger: "manual",
+      isBaseline: false,
+      rowCount: 0,
+      colCount: 0,
+      dataBlob: snapBlob([["h"]]),
+      createdAt: i,
+    });
   }
   for (let i = 7; i <= 12; i++) {
-    rows.push({ id: `snap-${i}`, tabId: "t2", runId: `r${i}`, trigger: "manual", isBaseline: false, rowCount: 0, colCount: 0, dataBlob: snapBlob([["h"]]), createdAt: i });
+    rows.push({
+      id: `snap-${i}`,
+      tabId: "t2",
+      runId: `r${i}`,
+      trigger: "manual",
+      isBaseline: false,
+      rowCount: 0,
+      colCount: 0,
+      dataBlob: snapBlob([["h"]]),
+      createdAt: i,
+    });
   }
   await db.insert(snapshots).values(rows);
 });
@@ -77,7 +110,9 @@ describe("backupDatabase", () => {
     delete process.env.SHEETDIFF_BACKUPS;
     const dest = await backupDatabase();
     expect(dest && fs.existsSync(dest)).toBe(true);
-    await db.insert(users).values({ id: "u-extra", googleSub: "sub-x", email: null, name: "x", tokensEnc: "u", createdAt: 2 });
+    await db
+      .insert(users)
+      .values({ id: "u-extra", googleSub: "sub-x", email: null, name: "x", tokensEnc: "u", createdAt: 2 });
     expect(await backupDatabase()).toBe(dest); // same-day idempotent
   });
 
@@ -106,12 +141,12 @@ describe("backupDatabase", () => {
     const recentPre = `pre-migrate-${Date.now() - 3_600_000}.db`;
     fs.writeFileSync(path.join(dir, recentPre), "recent");
     process.env.SHEETDIFF_BACKUPS = "3";
-    fs.renameSync(
-      path.join(dir, path.basename((await backupDatabase())!)),
-      path.join(dir, "sheetdiff-2000-01-01.db"),
-    );
+    fs.renameSync(path.join(dir, path.basename((await backupDatabase())!)), path.join(dir, "sheetdiff-2000-01-01.db"));
     await backupDatabase(); // creates today's + evicts down to keep=3
-    const left = fs.readdirSync(dir).filter((f) => f.endsWith(".db")).sort();
+    const left = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".db"))
+      .sort();
     // the recent pre-migrate survives — it is NEWER than every old daily, so
     // "alphabetical pre-migrate first out" is dead
     expect(left).toContain(recentPre);
@@ -136,17 +171,49 @@ describe("usersDueForDigest", () => {
   it("selects exactly the users whose digest is due right now", async () => {
     const now = new Date(2026, 7, 30, 7, 30).getTime();
     const seed = [
-      { id: "d-due", digestEmail: "due@x.com", digestTime: "07:00", digestDay: null, lastDigestAt: now - 24 * 3_600_000 },
-      { id: "d-sent", digestEmail: "s@x.com", digestTime: "07:00", digestDay: null, lastDigestAt: new Date(2026, 7, 30, 6, 0).getTime() },
+      {
+        id: "d-due",
+        digestEmail: "due@x.com",
+        digestTime: "07:00",
+        digestDay: null,
+        lastDigestAt: now - 24 * 3_600_000,
+      },
+      {
+        id: "d-sent",
+        digestEmail: "s@x.com",
+        digestTime: "07:00",
+        digestDay: null,
+        lastDigestAt: new Date(2026, 7, 30, 6, 0).getTime(),
+      },
       { id: "d-early", digestEmail: "e@x.com", digestTime: "09:00", digestDay: null, lastDigestAt: 0 },
-      { id: "d-weekly", digestEmail: "w@x.com", digestTime: "07:00", digestDay: new Date(now).getDay(), lastDigestAt: now - 7 * 24 * 3_600_000 },
-      { id: "d-wrongday", digestEmail: "wd@x.com", digestTime: "07:00", digestDay: (new Date(now).getDay() + 1) % 7, lastDigestAt: 0 },
+      {
+        id: "d-weekly",
+        digestEmail: "w@x.com",
+        digestTime: "07:00",
+        digestDay: new Date(now).getDay(),
+        lastDigestAt: now - 7 * 24 * 3_600_000,
+      },
+      {
+        id: "d-wrongday",
+        digestEmail: "wd@x.com",
+        digestTime: "07:00",
+        digestDay: (new Date(now).getDay() + 1) % 7,
+        lastDigestAt: 0,
+      },
       { id: "d-noemail", digestEmail: null, digestTime: "07:00", digestDay: null, lastDigestAt: 0 },
     ];
     for (const u of seed) {
       await db.insert(users).values({
-        id: u.id, googleSub: `sub-${u.id}`, email: `${u.id}@x.com`, name: u.id, tokensEnc: "u",
-        digestEmail: u.digestEmail, digestTime: u.digestTime, digestDay: u.digestDay, lastDigestAt: u.lastDigestAt, createdAt: 1,
+        id: u.id,
+        googleSub: `sub-${u.id}`,
+        email: `${u.id}@x.com`,
+        name: u.id,
+        tokensEnc: "u",
+        digestEmail: u.digestEmail,
+        digestTime: u.digestTime,
+        digestDay: u.digestDay,
+        lastDigestAt: u.lastDigestAt,
+        createdAt: 1,
       });
     }
     const due = await usersDueForDigest(now);

@@ -1,15 +1,4 @@
-import {
-  Body,
-  Container,
-  Head,
-  Heading,
-  Hr,
-  Html,
-  Link,
-  Preview,
-  Section,
-  Text,
-} from "@react-email/components";
+import { Body, Container, Head, Heading, Hr, Html, Link, Preview, Section, Text } from "@react-email/components";
 
 export interface DigestChange {
   tab: string;
@@ -48,15 +37,7 @@ export interface DigestSheet {
   paused?: boolean;
 }
 
-export function DigestEmail({
-  name,
-  appUrl,
-  sheets,
-}: {
-  name: string;
-  appUrl: string;
-  sheets: DigestSheet[];
-}) {
+export function DigestEmail({ name, appUrl, sheets }: { name: string; appUrl: string; sheets: DigestSheet[] }) {
   const totalUnresolved = sheets.reduce((n, s) => n + s.unresolved, 0);
   const totalChecks = sheets.reduce((n, s) => n + s.checkCount, 0);
   const staleSheets = sheets.filter((s) => s.lastSnapshotAgo);
@@ -70,7 +51,14 @@ export function DigestEmail({
             ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} to enter in the office system`
             : "all sheets up to date since collection"}
       </Preview>
-      <Body style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif", margin: 0, padding: "24px 0", background: "#f6f8fa" }}>
+      <Body
+        style={{
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          margin: 0,
+          padding: "24px 0",
+          background: "#f6f8fa",
+        }}
+      >
         <Container style={{ maxWidth: 560, margin: "0 auto" }}>
           <Text style={{ fontSize: 12, color: "#57606a", margin: "0 0 8px", fontFamily: "ui-monospace, monospace" }}>
             sheetdiff · change digest
@@ -82,22 +70,44 @@ export function DigestEmail({
             {totalUnresolved > 0
               ? `${totalUnresolved} change${totalUnresolved === 1 ? "" : "s"} across ${sheets.length} sheet${sheets.length === 1 ? "" : "s"} since the last collection.`
               : "Every tracked sheet is up to date since its last collection."}
-            {totalChecks > 0 ? ` ${totalChecks} check finding${totalChecks === 1 ? "" : "s"} need${totalChecks === 1 ? "s" : ""} a look.` : ""}
+            {totalChecks > 0
+              ? ` ${totalChecks} check finding${totalChecks === 1 ? "" : "s"} need${totalChecks === 1 ? "s" : ""} a look.`
+              : ""}
           </Text>
 
           {staleSheets.length > 0 ? (
-            <div style={{ background: "#fff8c5", border: "1px solid #d4a72c", borderRadius: 8, padding: "10px 14px", margin: "0 0 16px" }}>
+            <div
+              style={{
+                background: "#fff8c5",
+                border: "1px solid #d4a72c",
+                borderRadius: 8,
+                padding: "10px 14px",
+                margin: "0 0 16px",
+              }}
+            >
               <Text style={{ fontSize: 13, margin: 0, color: "#4d3800", fontWeight: 600 }}>
-                ⚠ {staleSheets.length} sheet{staleSheets.length === 1 ? "" : "s"} hasn&rsquo;t synced recently — the numbers below may be out of date.
+                ⚠ {staleSheets.length} sheet{staleSheets.length === 1 ? "" : "s"} hasn&rsquo;t synced recently — the
+                numbers below may be out of date.
               </Text>
               <Text style={{ fontSize: 12, margin: "4px 0 0", color: "#4d3800" }}>
-                Last snapshot{staleSheets.length === 1 ? "" : "s"}: {staleSheets.map((s) => `${s.title} (${s.lastSnapshotAgo})`).join(", ")}. Check that SheetDiff is running and connected to Google.
+                Last snapshot{staleSheets.length === 1 ? "" : "s"}:{" "}
+                {staleSheets.map((s) => `${s.title} (${s.lastSnapshotAgo})`).join(", ")}. Check that SheetDiff is
+                running and connected to Google.
               </Text>
             </div>
           ) : null}
 
           {sheets.map((s) => (
-            <Section key={s.title} style={{ background: "#ffffff", border: "1px solid #d1d9e0", borderRadius: 8, padding: "16px 20px", margin: "0 0 16px" }}>
+            <Section
+              key={s.title}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #d1d9e0",
+                borderRadius: 8,
+                padding: "16px 20px",
+                margin: "0 0 16px",
+              }}
+            >
               <Text style={{ fontSize: 15, fontWeight: 600, margin: "0 0 2px", color: "#1f2328" }}>
                 <Link href={`${appUrl}/sheets/${s.id}`} style={{ color: "#1f2328", textDecoration: "none" }}>
                   {s.title}
@@ -125,17 +135,23 @@ export function DigestEmail({
                 {s.paused ? <span style={{ color: "#57606a" }}> · paused</span> : null}
                 {s.weekFt !== null ? (
                   <span style={{ color: "#57606a" }}>
-                    {" · this week "}{s.weekFt.toLocaleString("en-US")} ft
+                    {" · this week "}
+                    {s.weekFt.toLocaleString("en-US")} ft
                     {s.weekDeltaFt !== null && s.weekDeltaFt !== 0 ? (
                       <span style={{ color: s.weekDeltaFt > 0 ? "#1a7f37" : "#cf222e" }}>
-                        {" ("}{s.weekDeltaFt > 0 ? "+" : "−"}{Math.abs(s.weekDeltaFt).toLocaleString("en-US")}{")"}
+                        {" ("}
+                        {s.weekDeltaFt > 0 ? "+" : "−"}
+                        {Math.abs(s.weekDeltaFt).toLocaleString("en-US")}
+                        {")"}
                       </span>
                     ) : null}
                   </span>
                 ) : null}
                 {s.remainingFt !== null && s.placedFt !== null && s.designedFt ? (
                   <span style={{ color: "#57606a" }}>
-                    {" · "}{s.placedFt.toLocaleString("en-US")}/{s.designedFt.toLocaleString("en-US")} ft placed · {s.remainingFt.toLocaleString("en-US")} ft remaining
+                    {" · "}
+                    {s.placedFt.toLocaleString("en-US")}/{s.designedFt.toLocaleString("en-US")} ft placed ·{" "}
+                    {s.remainingFt.toLocaleString("en-US")} ft remaining
                   </span>
                 ) : null}
                 {s.footageDelta !== 0 ? (
@@ -152,15 +168,26 @@ export function DigestEmail({
               {/* permit + stoppage highlights — the same detectors the sheet and
                   report pages run, two or three lines beside the weekly position */}
               {s.permitCounts && s.permitCounts.unapprovedCrossings + s.permitCounts.designedNoPermit > 0 ? (
-                <div style={{ background: "#fff8c5", border: "1px solid #d4a72c", borderRadius: 6, padding: "6px 12px", margin: "0 0 8px" }}>
+                <div
+                  style={{
+                    background: "#fff8c5",
+                    border: "1px solid #d4a72c",
+                    borderRadius: 6,
+                    padding: "6px 12px",
+                    margin: "0 0 8px",
+                  }}
+                >
                   {s.permitCounts.unapprovedCrossings > 0 ? (
                     <Text style={{ fontSize: 12, margin: "3px 0", color: "#4d3800" }}>
-                      ⚠ {s.permitCounts.unapprovedCrossings} crossing{s.permitCounts.unapprovedCrossings === 1 ? "" : "s"} placed under permits the tracker hasn&rsquo;t approved
+                      ⚠ {s.permitCounts.unapprovedCrossings} crossing
+                      {s.permitCounts.unapprovedCrossings === 1 ? "" : "s"} placed under permits the tracker
+                      hasn&rsquo;t approved
                     </Text>
                   ) : null}
                   {s.permitCounts.designedNoPermit > 0 ? (
                     <Text style={{ fontSize: 12, margin: "3px 0", color: "#4d3800" }}>
-                      ⚠ {s.permitCounts.designedNoPermit} package{s.permitCounts.designedNoPermit === 1 ? "" : "s"} designed with no permit listed
+                      ⚠ {s.permitCounts.designedNoPermit} package{s.permitCounts.designedNoPermit === 1 ? "" : "s"}{" "}
+                      designed with no permit listed
                     </Text>
                   ) : null}
                 </div>
@@ -169,11 +196,14 @@ export function DigestEmail({
                 <div style={{ background: "#f0f6ff", borderRadius: 6, padding: "6px 12px", margin: "0 0 8px" }}>
                   {s.stoppage.quietDaysBehind !== null ? (
                     <Text style={{ fontSize: 12, margin: "3px 0", color: "#0969da" }}>
-                      ⚠ stoppage log looks quiet — {s.stoppage.quietDaysBehind} day{s.stoppage.quietDaysBehind === 1 ? "" : "s"} behind the newest completed work. Is the log being kept?
+                      ⚠ stoppage log looks quiet — {s.stoppage.quietDaysBehind} day
+                      {s.stoppage.quietDaysBehind === 1 ? "" : "s"} behind the newest completed work. Is the log being
+                      kept?
                     </Text>
                   ) : (
                     <Text style={{ fontSize: 12, margin: "3px 0", color: "#0969da" }}>
-                      ⛔ {s.stoppage.weekCount} stoppage{s.stoppage.weekCount === 1 ? "" : "s"} logged this week{s.stoppage.exemplar ? ` — ${s.stoppage.exemplar}` : ""}
+                      ⛔ {s.stoppage.weekCount} stoppage{s.stoppage.weekCount === 1 ? "" : "s"} logged this week
+                      {s.stoppage.exemplar ? ` — ${s.stoppage.exemplar}` : ""}
                     </Text>
                   )}
                 </div>
@@ -182,8 +212,18 @@ export function DigestEmail({
               {s.sampleChanges.length > 0 ? (
                 <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none" }}>
                   {s.sampleChanges.slice(0, 8).map((c, i) => (
-                    <li key={i} style={{ fontSize: 13, color: "#1f2328", padding: "3px 0", borderBottom: i < 7 ? "1px solid #f0f2f4" : "none" }}>
-                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#57606a" }}>{c.tab}</span>
+                    <li
+                      key={i}
+                      style={{
+                        fontSize: 13,
+                        color: "#1f2328",
+                        padding: "3px 0",
+                        borderBottom: i < 7 ? "1px solid #f0f2f4" : "none",
+                      }}
+                    >
+                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "#57606a" }}>
+                        {c.tab}
+                      </span>
                       {" — "}
                       {c.description}
                     </li>
@@ -222,9 +262,8 @@ export function DigestEmail({
           </Link>
           <Text style={{ fontSize: 11, color: "#8c959f", margin: "12px 0 0" }}>
             Notation: <span style={{ color: "#1a7f37" }}>+N</span> rows added,{" "}
-            <span style={{ color: "#cf222e" }}>−N</span> removed,{" "}
-            <span style={{ color: "#9a6700" }}>~N</span> changed — since the last collected
-            snapshot.
+            <span style={{ color: "#cf222e" }}>−N</span> removed, <span style={{ color: "#9a6700" }}>~N</span> changed —
+            since the last collected snapshot.
           </Text>
           <Text style={{ fontSize: 11, color: "#8c959f", margin: "12px 0 0" }}>
             Sent by your local SheetDiff instance while it&rsquo;s running.{" "}

@@ -1,9 +1,8 @@
-import { eq, and } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { changeAcks } from "./db/schema";
-import { rowContentKey, oldRowValues, type DiffRow, type SnapshotData, type DiffResult } from "./diff/engine";
-import { normalizeKey, compositeKey, norm } from "./diff/normalize";
-
+import { oldRowValues, rowContentKey, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
+import { compositeKey, norm, normalizeKey } from "./diff/normalize";
 
 /**
  * Per-change sync acknowledgment resolution.
@@ -180,9 +179,7 @@ export async function setAck(tabId: string, rowKey: string, on: boolean): Promis
         set: { ackedAt: Date.now() },
       });
   } else {
-    await db
-      .delete(changeAcks)
-      .where(and(eq(changeAcks.tabId, tabId), eq(changeAcks.rowKey, rowKey)));
+    await db.delete(changeAcks).where(and(eq(changeAcks.tabId, tabId), eq(changeAcks.rowKey, rowKey)));
   }
 }
 
@@ -196,10 +193,7 @@ export async function setAck(tabId: string, rowKey: string, on: boolean): Promis
  *  column for that snapshot and silently corrupt key presence. Rather than
  *  per-snapshot patching, bail to undefined entirely: the content-count walk
  *  is a consistent, if slightly blunter, fallback. */
-export function keySetsFor(
-  diff: Pick<DiffResult, "identityColumns">,
-  walk: WalkSnapshot[],
-): Set<string>[] | undefined {
+export function keySetsFor(diff: Pick<DiffResult, "identityColumns">, walk: WalkSnapshot[]): Set<string>[] | undefined {
   const cols = diff.identityColumns;
   if (!cols || walk.length === 0) return undefined;
   // Compare the ENTIRE header row (normalized), not just the identity indices:
@@ -211,11 +205,7 @@ export function keySetsFor(
   for (const w of walk) {
     if (headersOf(w) !== latestHeaders) return undefined;
   }
-  return walk.map((w) =>
-    new Set(
-      w.data.rows.map((r) =>
-        cols.length === 1 ? normalizeKey(r[cols[0]!]) : compositeKey(r, cols),
-      ),
-    ),
+  return walk.map(
+    (w) => new Set(w.data.rows.map((r) => (cols.length === 1 ? normalizeKey(r[cols[0]!]) : compositeKey(r, cols)))),
   );
 }

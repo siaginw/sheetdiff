@@ -27,9 +27,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -45,8 +43,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => children }));
 vi.mock("@/components/sheet/print-button", () => ({ PrintButton: () => null }));
 
-import { beforeAll, describe, expect, it } from "vitest";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("billing-page");
 
@@ -80,11 +78,16 @@ function textOf(node: unknown, out: string[] = []): string[] {
 const pageText = (el: unknown) => textOf(el).join(" ").replace(/\s+/g, " ");
 
 async function seedUser(id: string) {
-  await db.insert(users).values({ id, googleSub: `sub-${id}`, email: `${id}@corp.com`, name: id, tokensEnc: "unused", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id, googleSub: `sub-${id}`, email: `${id}@corp.com`, name: id, tokensEnc: "unused", createdAt: 1 });
 }
 async function seedSheet(id: string, title: string) {
   await db.insert(spreadsheets).values({
-    id, userId: "owner", googleId: `gid-${id}`, title,
+    id,
+    userId: "owner",
+    googleId: `gid-${id}`,
+    title,
     url: `https://docs.google.com/spreadsheets/d/gid-${id}/edit`,
     createdAt: 1,
   });
@@ -92,12 +95,25 @@ async function seedSheet(id: string, title: string) {
 async function seedTab(id: string, spreadsheetId: string, position: number) {
   await db.insert(tabs).values({ id, spreadsheetId, title: id, position, tracked: true, keyColumn: 0 });
 }
-async function seedSnapshot(id: string, tabId: string, runId: string, isBaseline: boolean, createdAt: number, grid: string[][]) {
+async function seedSnapshot(
+  id: string,
+  tabId: string,
+  runId: string,
+  isBaseline: boolean,
+  createdAt: number,
+  grid: string[][],
+) {
   const data = toSnapshotData(grid);
   await db.insert(snapshots).values({
-    id, tabId, runId, trigger: "manual", isBaseline,
-    rowCount: data.rows.length, colCount: data.headers.length,
-    dataBlob: encodeSnapshot(data), createdAt,
+    id,
+    tabId,
+    runId,
+    trigger: "manual",
+    isBaseline,
+    rowCount: data.rows.length,
+    colCount: data.headers.length,
+    dataBlob: encodeSnapshot(data),
+    createdAt,
   });
 }
 
@@ -109,15 +125,21 @@ const T3 = T0 + 5 * DAY; // copy tab's latest (newest — it may win the label, 
 
 // the working tab carries the office's own ledger vocabulary: a GIS check
 // column, an entered-downstream column, and an Invoice # column
-const H = ["Activity", "Start STA", "End STA", "Crew #", "Date Complete", "Bore Log in GIS?", "Entered in InEight", "Invoice #"];
+const H = [
+  "Activity",
+  "Start STA",
+  "End STA",
+  "Crew #",
+  "Date Complete",
+  "Bore Log in GIS?",
+  "Entered in InEight",
+  "Invoice #",
+];
 const grid = (...rows: string[][]) => [H, ...rows];
 const BASE_ROWS = [["Plow", "0", "500", "CREW A", "8/20/2026", "", "", ""]];
 // the new row's ACTIVITY literally contains "BILLABLE" — sheet-controlled
 // text that must never steer the page's section classification
-const LATE_ROWS = [
-  ...BASE_ROWS,
-  ["BILLABLE Bore", "700", "900", "CREW A", "8/27/2026", "y", "", ""],
-];
+const LATE_ROWS = [...BASE_ROWS, ["BILLABLE Bore", "700", "900", "CREW A", "8/27/2026", "y", "", ""]];
 
 const COPY_SHEET = "bp-copy";
 const NOBASE_SHEET = "bp-nobase";

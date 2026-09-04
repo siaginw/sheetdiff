@@ -1,6 +1,6 @@
+import { detectStationColumns, parseStation } from "./detect";
 import type { SnapshotData } from "./diff/engine";
 import { norm, normalizeKey, sameValue } from "./diff/normalize";
-import { parseStation, detectStationColumns } from "./detect";
 
 /**
  * Shot history: trace one row through a sequence of snapshots and report
@@ -52,11 +52,18 @@ function makeMatcher(needleRaw: string): RowMatcher {
     };
   }
   const needle = needleRaw.trim().toLowerCase();
-  const asKey = needle.split(/\s+/).map((p) => normalizeKey(p)).join("·");
+  const asKey = needle
+    .split(/\s+/)
+    .map((p) => normalizeKey(p))
+    .join("·");
   return (data) => {
     // exact key/composite match first
-    const exact = data.rows.find((row) =>
-      row.map((v) => normalizeKey(v)).filter((v) => v !== "").join("·") === asKey && asKey !== "",
+    const exact = data.rows.find(
+      (row) =>
+        row
+          .map((v) => normalizeKey(v))
+          .filter((v) => v !== "")
+          .join("·") === asKey && asKey !== "",
     );
     if (exact) return exact;
     // then containment: any cell contains the text

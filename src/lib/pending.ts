@@ -2,9 +2,9 @@ import { and, desc, eq, gt, inArray, lte } from "drizzle-orm";
 import { db } from "./db";
 import { snapshots, snapshotStats, type Snapshot, type Tab } from "./db/schema";
 import { diffSnapshots, type DiffResult, type DiffRow, type SnapshotData } from "./diff/engine";
-import { latestNonImportSnapshots } from "./snapshots";
 import { peekSnapshot, rememberSnapshot } from "./snapshot-cache";
-import { getAckMap, isResolved, computeIntroductions, keySetsFor, type WalkSnapshot } from "./sync";
+import { latestNonImportSnapshots } from "./snapshots";
+import { computeIntroductions, getAckMap, isResolved, keySetsFor, type WalkSnapshot } from "./sync";
 
 /**
  * The pending-change set for one tab: the diff from the latest baseline to
@@ -58,9 +58,7 @@ async function loadSheetMeta(tabId: string): Promise<TabSnapshotMeta[]> {
  * since" (the entry queue's no-collection-point message) ask here instead of
  * guessing from the null.
  */
-export async function hasCollectedBaseline(
-  tab: Pick<Tab, "id">,
-): Promise<{ latestAt: number } | null> {
+export async function hasCollectedBaseline(tab: Pick<Tab, "id">): Promise<{ latestAt: number } | null> {
   const sheetSnaps = (await loadSheetMeta(tab.id)).filter((s) => s.trigger !== "import");
   const latest = sheetSnaps[0];
   const baseline = sheetSnaps.find((s) => s.isBaseline && s.createdAt <= latest?.createdAt);
@@ -68,9 +66,7 @@ export async function hasCollectedBaseline(
   return { latestAt: latest.createdAt };
 }
 
-export async function getPendingChanges(
-  tab: Pick<Tab, "id" | "keyColumn">,
-): Promise<PendingChanges | null> {
+export async function getPendingChanges(tab: Pick<Tab, "id" | "keyColumn">): Promise<PendingChanges | null> {
   const sheetSnaps = (await loadSheetMeta(tab.id)).filter((s) => s.trigger !== "import");
   const latest = sheetSnaps[0];
   const baseline = sheetSnaps.find((s) => s.isBaseline && s.createdAt <= latest?.createdAt);
@@ -81,7 +77,12 @@ export async function getPendingChanges(
   // is nothing pending and the 2-blob diff + ack walk never run. Falls
   // through to the full path when stats are missing (legacy) or non-zero.
   const statRows = await db
-    .select({ snapshotId: snapshotStats.snapshotId, added: snapshotStats.added, removed: snapshotStats.removed, changed: snapshotStats.changed })
+    .select({
+      snapshotId: snapshotStats.snapshotId,
+      added: snapshotStats.added,
+      removed: snapshotStats.removed,
+      changed: snapshotStats.changed,
+    })
     .from(snapshotStats)
     .where(
       and(
@@ -94,12 +95,9 @@ export async function getPendingChanges(
   // stats row. Retention cascades delete stats with their snapshots, failed
   // stats inserts are skipped, and legacy rows predate the table — a hole in
   // the chain means unknown territory, never "no pending changes."
-  const windowSnaps = sheetSnaps.filter(
-    (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
-  );
+  const windowSnaps = sheetSnaps.filter((s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt);
   const statIds = new Set(statRows.map((r) => r.snapshotId));
-  const completeCoverage =
-    windowSnaps.length > 0 && windowSnaps.every((s) => statIds.has(s.id));
+  const completeCoverage = windowSnaps.length > 0 && windowSnaps.every((s) => statIds.has(s.id));
   if (completeCoverage) {
     const quiet = statRows.every((r) => r.added === 0 && r.removed === 0 && r.changed === 0);
     if (quiet) return null;
@@ -135,9 +133,7 @@ export async function getPendingChanges(
   // fresh sheet with no acks yet still wants oldest-first ordering (the entry
   // queue's primary sort). The quiet-day short-circuit above already keeps the
   // common no-change case free of the walk's blob fetches.
-  const windowAll = sheetSnaps.filter(
-    (s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt,
-  );
+  const windowAll = sheetSnaps.filter((s) => s.createdAt > baseline.createdAt && s.createdAt <= latest.createdAt);
   let introducedAt = new Map<string, number>();
   if ((ackMap.size > 0 || changeRows.length > 0) && windowAll.length > 0) {
     const walkSnaps = windowAll.slice(0, INTRO_WALK_LIMIT).concat([baseline]);
@@ -174,7 +170,6 @@ export async function getPendingChanges(
     introducedAt,
   };
 }
-
 
 async function fetchBlobs(ids: string[]): Promise<Map<string, SnapshotData>> {
   if (ids.length === 0) return new Map();

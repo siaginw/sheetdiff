@@ -35,7 +35,7 @@ Everything CI runs — all five must pass before you submit:
 npx drizzle-kit generate && git diff --exit-code -- drizzle/   # migration drift check
 npm run typecheck
 npm run lint
-npm test
+npm run verify
 npm run build
 ```
 

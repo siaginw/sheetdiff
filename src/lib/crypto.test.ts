@@ -1,8 +1,8 @@
 /** Crypto round-trips — pure, no DB. APP_SECRET set before any import. */
 process.env.APP_SECRET ??= "unit-test-secret-0123456789abcdef";
 
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { signValue, verifySigned, encryptJson, decryptJson } from "./crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decryptJson, encryptJson, signValue, verifySigned } from "./crypto";
 
 describe("signValue / verifySigned", () => {
   afterEach(() => vi.useRealTimers());

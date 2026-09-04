@@ -1,5 +1,5 @@
-import { AlertTriangle, CheckCircle2, CircleSlash, LayoutList } from "lucide-react";
 import type { GapReport } from "@/lib/gaps";
+import { AlertTriangle, CheckCircle2, CircleSlash, LayoutList } from "lucide-react";
 
 function ft(n: number): string {
   return n.toLocaleString("en-US");
@@ -17,7 +17,7 @@ function SegmentList({
   if (segments.length === 0) return null;
   return (
     <div className="px-4 py-2">
-      <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{title}</p>
+      <p className="mb-1 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">{title}</p>
       <ul className="space-y-0.5">
         {segments.map((g, i) => (
           <li
@@ -64,16 +64,26 @@ export function GapReportPanel({ report, tabTitle }: { report: GapReport; tabTit
           Gap report <span className="font-mono text-xs text-muted-foreground">· {tabTitle}</span>
         </span>
         <span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-[11px]">
-          <span title="first chain station → last">{ft(report.chainStart!)} → {ft(report.chainEnd!)} ({ft(report.designedSpan!)} ft)</span>
-          <span className="text-diff-add-fg" title="bore + plow footage">{ft(report.placedFt)} placed</span>
+          <span title="first chain station → last">
+            {ft(report.chainStart!)} → {ft(report.chainEnd!)} ({ft(report.designedSpan!)} ft)
+          </span>
+          <span className="text-diff-add-fg" title="bore + plow footage">
+            {ft(report.placedFt)} placed
+          </span>
           {knownFt > 0 && (
-            <span className="text-diff-move-fg" title="explicit GAP rows">{ft(knownFt)} known gaps</span>
+            <span className="text-diff-move-fg" title="explicit GAP rows">
+              {ft(knownFt)} known gaps
+            </span>
           )}
           {unaccountedFt > 0 && (
-            <span className="font-semibold text-diff-del-fg" title="holes nobody booked">{ft(unaccountedFt)} unaccounted</span>
+            <span className="font-semibold text-diff-del-fg" title="holes nobody booked">
+              {ft(unaccountedFt)} unaccounted
+            </span>
           )}
           {overlapFt > 0 && (
-            <span className="text-diff-del-fg" title="double-counted spans">{ft(overlapFt)} overlap</span>
+            <span className="text-diff-del-fg" title="double-counted spans">
+              {ft(overlapFt)} overlap
+            </span>
           )}
         </span>
         <span className="ml-auto font-mono text-[10px] text-muted-foreground group-open:hidden">expand</span>

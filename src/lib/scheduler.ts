@@ -26,11 +26,7 @@ async function loadDue(now: number): Promise<Spreadsheet[]> {
     .select()
     .from(spreadsheets)
     .where(
-      and(
-        ne(spreadsheets.scheduleKind, "off"),
-        isNotNull(spreadsheets.nextRunAt),
-        lte(spreadsheets.nextRunAt, now),
-      ),
+      and(ne(spreadsheets.scheduleKind, "off"), isNotNull(spreadsheets.nextRunAt), lte(spreadsheets.nextRunAt, now)),
     );
 }
 
@@ -54,8 +50,7 @@ async function tick() {
     const ping = process.env.HEALTHCHECK_PING_URL;
     // bounded ping: a dead-man monitor that hangs (or slowly drips bytes)
     // must never pin `ticking` and stall every later capture
-    if (ping && captured)
-      await fetch(ping, { method: "POST", signal: AbortSignal.timeout(10_000) }).catch(() => {});
+    if (ping && captured) await fetch(ping, { method: "POST", signal: AbortSignal.timeout(10_000) }).catch(() => {});
   } finally {
     ticking = false;
   }
@@ -76,15 +71,10 @@ async function tickInner(): Promise<boolean> {
   for (const sheet of due) {
     try {
       const result = await captureSnapshot(sheet.id, "scheduled");
-      console.log(
-        `[scheduler] snapshot of "${sheet.title}": ${result.tabCount} tab(s), ${result.rowCount} rows`,
-      );
+      console.log(`[scheduler] snapshot of "${sheet.title}": ${result.tabCount} tab(s), ${result.rowCount} rows`);
       anySuccess = true;
     } catch (err) {
-      console.error(
-        `[scheduler] snapshot of "${sheet.title}" failed:`,
-        err instanceof Error ? err.message : err,
-      );
+      console.error(`[scheduler] snapshot of "${sheet.title}" failed:`, err instanceof Error ? err.message : err);
       // Push the next attempt forward so a broken sheet can't loop every minute.
       // A null bump (unparsable schedule) must ALSO move nextRunAt — otherwise
       // the stale due time retries every minute forever.

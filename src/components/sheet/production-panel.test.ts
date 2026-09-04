@@ -5,10 +5,10 @@
  * The panel is a server component (plain function returning elements), so
  * assertions walk the returned React element tree.
  */
+import type { SnapshotData } from "@/lib/diff/engine";
+import { invoiceStatus, type InvoiceStatus } from "@/lib/production";
 import { describe, expect, it } from "vitest";
 import { ProductionPanel } from "./production-panel";
-import { invoiceStatus, type InvoiceStatus } from "@/lib/production";
-import type { SnapshotData } from "@/lib/diff/engine";
 
 function textOf(node: unknown, out: string[] = []): string[] {
   if (node == null || typeof node === "boolean") return out;

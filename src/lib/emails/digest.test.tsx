@@ -3,8 +3,8 @@
  * notation legend in the footer. Pure component test — @react-email/render
  * produces the same HTML sendDigestTo mails, no DB involved.
  */
-import { describe, it, expect } from "vitest";
 import { render } from "@react-email/render";
+import { describe, expect, it } from "vitest";
 import { DigestEmail, type DigestSheet } from "./digest";
 
 const base: DigestSheet = {
@@ -50,9 +50,7 @@ describe("digest email: permit + stoppage highlight lines", () => {
   });
 
   it("the quiet-log warning replaces the this-week line when the log trails the work", async () => {
-    const html = await renderSheets([
-      { ...base, stoppage: { weekCount: 0, exemplar: "", quietDaysBehind: 52 } },
-    ]);
+    const html = await renderSheets([{ ...base, stoppage: { weekCount: 0, exemplar: "", quietDaysBehind: 52 } }]);
     expect(html).toContain("stoppage log looks quiet");
     expect(html).toContain("52 days behind the newest completed work");
     expect(html).not.toContain("stoppage logged this week");
@@ -60,7 +58,11 @@ describe("digest email: permit + stoppage highlight lines", () => {
 
   it("all-clear sheets carry no highlight lines — the vocabulary gates, the email stays quiet", async () => {
     const html = await renderSheets([
-      { ...base, permitCounts: { unapprovedCrossings: 0, designedNoPermit: 0 }, stoppage: { weekCount: 0, exemplar: "", quietDaysBehind: null } },
+      {
+        ...base,
+        permitCounts: { unapprovedCrossings: 0, designedNoPermit: 0 },
+        stoppage: { weekCount: 0, exemplar: "", quietDaysBehind: null },
+      },
     ]);
     expect(html).not.toContain("placed under permits");
     expect(html).not.toContain("stoppage");

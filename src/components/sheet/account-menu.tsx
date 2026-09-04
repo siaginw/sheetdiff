@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { LogOut, Mail, UserPlus } from "lucide-react";
 import { DigestSettingsDialog } from "@/components/sheet/digest-settings";
 import { ShareDialog } from "@/components/sheet/share-dialog";
 import {
@@ -13,6 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logout } from "@/lib/actions";
+import { LogOut, Mail, UserPlus } from "lucide-react";
+import { useState } from "react";
 
 /**
  * The account avatar menu + the dialogs it launches.
@@ -69,7 +69,7 @@ export function AccountMenu({
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel className="font-normal">
             <div className="text-sm font-medium">{name ?? "Signed in"}</div>
-            <div className="text-xs text-muted-foreground truncate">{email}</div>
+            <div className="truncate text-xs text-muted-foreground">{email}</div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setDigestOpen(true)}>

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.5.1 — 2026-09-04
+
+**Identity-layer hardening + a real dev environment.** A fresh adversarial
+audit of v0.5's smart-identifier hierarchy found five real defects (all
+fixed, all regression-tested); a researched pass over comparable open-source
+Next.js repos added the standard 2026 tooling this project was missing.
+
+Fixed:
+
+- The auto-detected key column was re-detected per SNAPSHOT, not resolved
+  once on latest data — when uniqueness flipped between slices (two rows
+  share a date on the baseline), the same row keyed differently over time
+  and a copy tab's baseline escaped ownership, deflating placed-since. Both
+  identity columns now resolve on latest and thread through every slice.
+- Date/week columns no longer outrank real identifiers in detection scoring,
+  and the dedup's auto-tier skips them entirely (a date identifies a DAY —
+  two crew logs spanning the same period used to collapse into one tab and
+  vanish from billing). A deliberately chosen date key is still honored.
+- `sheetBillableNow` ignored the per-tab key column — the badge and the
+  money page could disagree, the exact invariant it exists to guarantee.
+- A 95%-copy tab that owned more than ~2% of its rows was still skipped as a
+  pure compilation tab, dropping its own work from every rollup; the
+  coverage branch now caps strays at 2% (the real Line List sits at 1.9%).
+- The slice walk's key-namespace exception was inverted: within-tab repeats
+  were dropped and cross-tab repeats kept — removals now net out per tab.
+
+Dev environment (researched against cal.com, dub, formbricks, documenso,
+vitest, drizzle-orm): Prettier with Tailwind class sorting + import
+organizing (repo formatted once, `npm run format`/`format:check`), husky +
+lint-staged pre-commit (ESLint --fix + Prettier on staged files), Vitest v8
+coverage with enforced thresholds, an aggregate `npm run verify`, knip for
+dead code (6 unused scaffold components removed), CodeQL + zizmor security
+workflows, hardened CI (least-privilege permissions, cancel-in-progress,
+timeouts, persist-credentials off, format + coverage steps), `.nvmrc`,
+`.editorconfig`, `.vscode` recommendations, PR template, feature-request
+form, FUNDING. The phantom `google-auth-library` type import is now derived
+from `googleapis` itself.
+
+Suite: **367 tests**. Node 22+.
+
 ## 0.5.0 — 2026-09-02
 
 **Works with any sheet.** SheetDiff's core loop was always sheet-agnostic;
@@ -223,6 +263,7 @@ production-unverified, because Testing-mode refresh tokens EXPIRE AFTER 7
 DAYS and an always-on snapshotter silently dies a week in.
 
 ## 0.3.0 — 2026-08-30
+
 Production analytics: date hygiene, late-entry detection, TOTALS reconciliation,
 crew productivity board, aging gap ledger. Capture-time stats materialization.
 Database migrations (auto-applied on startup; legacy DBs stamped non-destructively).
@@ -231,13 +272,16 @@ Auto gap report (bore/plow/gap chain). Retention + nightly verified backups.
 Docker image with health check and dead-man-switch heartbeat.
 
 ### Upgrading
+
 After `git pull`, run `docker compose up -d --build` (Docker) or
 `npm ci && npm run build && npm restart` (bare). Migrations apply automatically
 on startup — existing databases are stamped and preserved.
 
 ## 0.2.0 — 2026-08-29
+
 First public version. Snapshots, GitHub-style diffs, checks (gap linter),
 audit workflow (notes, acknowledgments, CSV worklist), footage ledger.
 
 ### Upgrading
-*(Superseded in 0.3.0: migrations apply automatically on startup — just `git pull` and restart.)*
+
+_(Superseded in 0.3.0: migrations apply automatically on startup — just `git pull` and restart.)_

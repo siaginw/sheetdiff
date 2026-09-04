@@ -1,5 +1,5 @@
-import { decodeSnapshot } from "./snapshots";
 import type { SnapshotData } from "./diff/engine";
+import { decodeSnapshot } from "./snapshots";
 
 /**
  * Per-snapshot decode LRU. Snapshots are write-once: every id maps to a

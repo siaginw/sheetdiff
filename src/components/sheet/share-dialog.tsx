@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,9 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { addMembers, removeMember } from "@/lib/actions";
+import { X } from "lucide-react";
+import { useState } from "react";
 
 /** Manage viewer access: members sign in with their own Google account
  *  (matched by email) and can see diffs, leave notes, tick off changes,
@@ -46,13 +46,12 @@ function ShareBody({ members }: { members: { id: string; email: string }[] }) {
   const [rejected, setRejected] = useState<string[]>([]);
   return (
     <>
-
       <DialogHeader>
         <DialogTitle>Share access</DialogTitle>
         <DialogDescription>
-          Add teammates by email. When they sign in with that Google account they can see your
-          sheets, read diffs and notes, tick changes off as entered, and mark collections —
-          they can&rsquo;t delete sheets, change schedules, or touch your settings.
+          Add teammates by email. When they sign in with that Google account they can see your sheets, read diffs and
+          notes, tick changes off as entered, and mark collections — they can&rsquo;t delete sheets, change schedules,
+          or touch your settings.
         </DialogDescription>
       </DialogHeader>
 
@@ -110,7 +109,6 @@ function ShareBody({ members }: { members: { id: string; email: string }[] }) {
           </Button>
         </DialogFooter>
       </form>
-    
     </>
   );
 }

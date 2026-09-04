@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { FileUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,14 +11,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { importGis } from "@/lib/actions";
+import { FileUp } from "lucide-react";
+import { useState } from "react";
 
 /**
  * Import a GIS export and diff it against the latest sheet snapshot.
@@ -54,8 +48,8 @@ export function ImportDialog({
           <DialogHeader>
             <DialogTitle>Compare a GIS export</DialogTitle>
             <DialogDescription>
-              Drop the latest GIS export and SheetDiff will diff it against your sheet — shots
-              missing on either side, station mismatches, type disagreements.
+              Drop the latest GIS export and SheetDiff will diff it against your sheet — shots missing on either side,
+              station mismatches, type disagreements.
             </DialogDescription>
           </DialogHeader>
 
@@ -69,7 +63,7 @@ export function ImportDialog({
                 accept=".csv,.xlsx"
                 required
                 onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
-                className="file:border-input file:bg-background file:text-foreground file:hover:bg-muted file:mr-3 file:rounded-md file:border file:px-3 file:py-1.5 file:text-sm text-sm text-muted-foreground"
+                className="text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:text-foreground file:hover:bg-muted"
               />
             </div>
 

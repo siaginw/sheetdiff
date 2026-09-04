@@ -1,12 +1,6 @@
-import { describe, it, expect } from "vitest";
-import {
-  isPermitTabTitle,
-  detectPermitTab,
-  buildPermitIndex,
-  permitIsApproved,
-  permitFindings,
-} from "./permits";
+import { describe, expect, it } from "vitest";
 import type { SnapshotData } from "./diff/engine";
+import { buildPermitIndex, detectPermitTab, isPermitTabTitle, permitFindings, permitIsApproved } from "./permits";
 
 const snap = (headers: string[], rows: string[][]): SnapshotData => ({ headers, rows });
 

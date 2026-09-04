@@ -1,16 +1,15 @@
-import { google } from "googleapis";
-import type { OAuth2Client } from "google-auth-library";
 import { eq } from "drizzle-orm";
+import { google } from "googleapis";
+import { decryptJson, encryptJson } from "./crypto";
 import { db } from "./db";
 import { users } from "./db/schema";
-import { encryptJson, decryptJson } from "./crypto";
 
-export const SCOPES = [
-  "openid",
-  "email",
-  "profile",
-  "https://www.googleapis.com/auth/spreadsheets.readonly",
-];
+// the client type derived from googleapis itself — importing from
+// google-auth-library directly is a phantom dep (it resolves only when npm's
+// hoisting puts it at the top level, which a version conflict can break)
+type OAuth2Client = InstanceType<(typeof google.auth)["OAuth2"]>;
+
+export const SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/spreadsheets.readonly"];
 
 export interface StoredTokens {
   refresh_token?: string | null;
@@ -27,9 +26,7 @@ const PLACEHOLDER_VALUES = new Set([
 export function googleConfigured(): boolean {
   const id = process.env.GOOGLE_CLIENT_ID;
   const secret = process.env.GOOGLE_CLIENT_SECRET;
-  return Boolean(
-    id && secret && !PLACEHOLDER_VALUES.has(id) && !PLACEHOLDER_VALUES.has(secret),
-  );
+  return Boolean(id && secret && !PLACEHOLDER_VALUES.has(id) && !PLACEHOLDER_VALUES.has(secret));
 }
 
 export function getRedirectUri(): string {
@@ -37,11 +34,7 @@ export function getRedirectUri(): string {
 }
 
 export function createOAuthClient(): OAuth2Client {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    getRedirectUri(),
-  );
+  return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, getRedirectUri());
 }
 
 export function generateAuthUrl(state: string): string {
@@ -97,21 +90,24 @@ export async function getUserClient(userId: string): Promise<OAuth2Client> {
     access_token: stored.access_token ?? undefined,
     expiry_date: stored.expiry_date ?? undefined,
   });
-  client.on("tokens", async (updated) => {
-    try {
-      const next: StoredTokens = {
-        refresh_token: updated.refresh_token ?? stored.refresh_token ?? null,
-        access_token: updated.access_token ?? null,
-        expiry_date: updated.expiry_date ?? null,
-      };
-      await db
-        .update(users)
-        .set({ tokensEnc: encryptJson(next) })
-        .where(eq(users.id, userId));
-    } catch (err) {
-      console.error("Failed to persist refreshed Google tokens:", err);
-    }
-  });
+  client.on(
+    "tokens",
+    async (updated: { refresh_token?: string | null; access_token?: string | null; expiry_date?: number | null }) => {
+      try {
+        const next: StoredTokens = {
+          refresh_token: updated.refresh_token ?? stored.refresh_token ?? null,
+          access_token: updated.access_token ?? null,
+          expiry_date: updated.expiry_date ?? null,
+        };
+        await db
+          .update(users)
+          .set({ tokensEnc: encryptJson(next) })
+          .where(eq(users.id, userId));
+      } catch (err) {
+        console.error("Failed to persist refreshed Google tokens:", err);
+      }
+    },
+  );
   return client;
 }
 
@@ -119,9 +115,7 @@ export async function getUserClient(userId: string): Promise<OAuth2Client> {
 export function parseSpreadsheetId(input: string): string | null {
   const t = input.trim();
   if (/^[a-zA-Z0-9-_]{20,}$/.test(t)) return t;
-  const m =
-    t.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/) ??
-    t.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+  const m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/) ?? t.match(/[?&]id=([a-zA-Z0-9-_]+)/);
   return m ? m[1] : null;
 }
 
@@ -168,10 +162,7 @@ export async function fetchTabValues(
   for (let i = 0; i < ranges.length; i += CHUNK) {
     const chunk = ranges.slice(i, i + CHUNK);
     const titles = tabTitles.slice(i, i + CHUNK);
-    const res = await sheets.spreadsheets.values.batchGet(
-      { spreadsheetId, ranges: chunk },
-      { timeout: 60_000 },
-    );
+    const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges: chunk }, { timeout: 60_000 });
     (res.data.valueRanges ?? []).forEach((vr, j) => {
       // Google returns one valueRange per requested range, in order — but the
       // pairing is an assumption, and a reordered/omitted response would

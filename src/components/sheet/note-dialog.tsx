@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { MessageSquarePlus, MessageSquareText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +13,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addNote } from "@/lib/actions";
+import { MessageSquarePlus, MessageSquareText, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 /** Attach an audit note ("why this changed") to a snapshot run or a row. */
 export function NoteDialog({
@@ -52,9 +52,7 @@ export function NoteDialog({
               aria-label={existingNote ? "Edit note" : "Add note"}
               title={existingNote ? `Note: ${existingNote}` : "Add note"}
               className={`rounded-md p-2 transition-colors ${
-                existingNote
-                  ? "text-diff-move-fg"
-                  : "text-muted-foreground/50 hover:bg-muted hover:text-foreground"
+                existingNote ? "text-diff-move-fg" : "text-muted-foreground/50 hover:bg-muted hover:text-foreground"
               }`}
             >
               {existingNote ? <MessageSquareText className="size-3.5" /> : <MessageSquarePlus className="size-3.5" />}
@@ -80,8 +78,8 @@ export function NoteDialog({
           <DialogHeader>
             <DialogTitle>Audit note</DialogTitle>
             <DialogDescription>
-              The &ldquo;why&rdquo; behind the change — shown next to the diff and in the daily digest,
-              so whoever collects the data doesn&rsquo;t need to ask.
+              The &ldquo;why&rdquo; behind the change — shown next to the diff and in the daily digest, so whoever
+              collects the data doesn&rsquo;t need to ask.
             </DialogDescription>
           </DialogHeader>
           <div className="py-3">

@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { spreadsheets } from "@/lib/db/schema";
-import { googleConfigured } from "@/lib/google";
 import { smtpConfigured } from "@/lib/digest";
+import { googleConfigured } from "@/lib/google";
 import { captureIsStale } from "@/lib/staleness";
+import { sql } from "drizzle-orm";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

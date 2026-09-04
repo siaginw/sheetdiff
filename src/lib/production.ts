@@ -1,9 +1,16 @@
+import { dedupeTabData } from "./dedupe";
+import {
+  detectActivityColumn,
+  detectStationColumns,
+  isAdderRow,
+  isFootageChainRow,
+  isGapRow,
+  parseStation,
+} from "./detect";
 import { rowContentKey, type SnapshotData } from "./diff/engine";
-import { compositeKey } from "./diff/normalize";
-import { norm } from "./diff/normalize";
-import { detectStationColumns, detectActivityColumn, parseStation, isFootageChainRow, isGapRow, isAdderRow } from "./detect";
+import { compositeKey, norm } from "./diff/normalize";
 
-const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
 function localDayKey(d: Date): string {
@@ -136,10 +143,7 @@ export interface LateEntry {
  * NOT late: first appearance is tracked across the whole walk via the shared
  * rowContentKey identity, not adjacent-snapshot membership.
  */
-export function detectLateEntries(
-  walk: { createdAt: number; data: SnapshotData }[],
-  toleranceDays = 2,
-): LateEntry[] {
+export function detectLateEntries(walk: { createdAt: number; data: SnapshotData }[], toleranceDays = 2): LateEntry[] {
   if (walk.length < 2) return [];
   const out: LateEntry[] = [];
   const dateCol = detectDateColumn(walk[walk.length - 1]!.data);
@@ -155,8 +159,7 @@ export function detectLateEntries(
   const refSt = detectStationColumns(ref);
   const refAct = detectActivityColumn(ref);
   const compositeCols: number[] | null = refSt && refAct !== null ? [refAct, refSt.start, refSt.end] : null;
-  const identityOf = (row: string[]): string =>
-    compositeCols ? compositeKey(row, compositeCols) : rowContentKey(row);
+  const identityOf = (row: string[]): string => (compositeCols ? compositeKey(row, compositeCols) : rowContentKey(row));
   const seenEver = new Set<string>();
   for (const row of walk[0]!.data.rows) seenEver.add(identityOf(row));
   for (let k = 1; k < walk.length; k++) {
@@ -206,9 +209,7 @@ export function reconcileTotals(
   const byLower = new Map([...perTabFootage].map(([k, v]) => [k.toLowerCase(), v]));
 
   // header-guided numeric column (falls back to any numeric cell)
-  const placedCol = totalsData.headers.findIndex((h) =>
-    /total.*(placed|conduit)|placed/i.test(norm(h)),
-  );
+  const placedCol = totalsData.headers.findIndex((h) => /total.*(placed|conduit)|placed/i.test(norm(h)));
 
   for (const row of totalsData.rows) {
     const nameCell = row.find((v) => {
@@ -225,9 +226,10 @@ export function reconcileTotals(
       if (Number.isFinite(n) && norm(row[c]) !== "") nums.push(n);
     }
     if (nums.length === 0) continue;
-    const placedNums = placedCol >= 0 && Number.isFinite(Number(norm(row[placedCol]).replace(/,/g, "")))
-      ? [Number(norm(row[placedCol]).replace(/,/g, ""))]
-      : nums;
+    const placedNums =
+      placedCol >= 0 && Number.isFinite(Number(norm(row[placedCol]).replace(/,/g, "")))
+        ? [Number(norm(row[placedCol]).replace(/,/g, ""))]
+        : nums;
     if (placedNums.length === 1 && norm(row[placedCol] ?? "") === "") continue; // not started
 
     const agrees = placedNums.some((n) => Math.abs(n - entry.ft) <= toleranceFt);
@@ -525,10 +527,7 @@ export function weeklyProduction(data: SnapshotData): WeekBucket[] {
     if (isGapRow(r, activityCol)) continue; // unworked span
     const d = parseCompletedDate(r[dateCol]);
     if (d === null) continue;
-    const ft = stations ? Math.max(
-      parseStation(r[stations.end])! - parseStation(r[stations.start])!,
-      0,
-    ) : 0;
+    const ft = stations ? Math.max(parseStation(r[stations.end])! - parseStation(r[stations.start])!, 0) : 0;
     if (stations && ft === 0) continue; // handholes/structures: counted, not footage
     // local-calendar Monday
     const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -765,11 +764,19 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   };
   let enteredCol: number | null = null;
   for (let i = 0; i < data.headers.length; i++) {
-    if (OFFICE_ENTERED_RE.test(norm(data.headers[i]))) { enteredCol = i; out.enteredColumn = norm(data.headers[i]); break; }
+    if (OFFICE_ENTERED_RE.test(norm(data.headers[i]))) {
+      enteredCol = i;
+      out.enteredColumn = norm(data.headers[i]);
+      break;
+    }
   }
   let invCol = -1;
   for (let i = 0; i < data.headers.length; i++) {
-    if (INVOICE_NUM_RE.test(norm(data.headers[i]))) { invCol = i; out.invoiceColumn = norm(data.headers[i]); break; }
+    if (INVOICE_NUM_RE.test(norm(data.headers[i]))) {
+      invCol = i;
+      out.invoiceColumn = norm(data.headers[i]);
+      break;
+    }
   }
   if (enteredCol === null) return out;
   const dateCol = detectDateColumn(data);
@@ -778,7 +785,10 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   const stations = detectStationColumns(data);
   let gisCol: number | null = null;
   for (let i = 0; i < data.headers.length; i++) {
-    if (GIS_COL_RE.test(norm(data.headers[i]))) { gisCol = i; break; }
+    if (GIS_COL_RE.test(norm(data.headers[i]))) {
+      gisCol = i;
+      break;
+    }
   }
 
   const invCounts = new Map<string, number>();
@@ -803,11 +813,7 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
           else invCounts.set(`queued: ${marker}`, (invCounts.get(`queued: ${marker}`) ?? 0) + 1);
         }
       } else {
-        const numeric = INVOICE_DIGITS_RE.test(entered)
-          ? entered
-          : INVOICE_COL_DIGITS_RE.test(invoice)
-            ? invoice
-            : "";
+        const numeric = INVOICE_DIGITS_RE.test(entered) ? entered : INVOICE_COL_DIGITS_RE.test(invoice) ? invoice : "";
         if (numeric !== "") {
           invCounts.set(numeric, (invCounts.get(numeric) ?? 0) + 1);
         } else {
@@ -816,7 +822,11 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
           const enteredRecognized = MONTH_RE.test(entered) || INVOICE_DIGITS_RE.test(entered);
           const from = enteredRecognized ? invoice : entered !== "" ? entered : invoice;
           if (out.unclassified.length < 20) {
-            out.unclassified.push({ row: i + 1, value: from, column: entered !== "" ? out.enteredColumn ?? "" : out.invoiceColumn ?? "" });
+            out.unclassified.push({
+              row: i + 1,
+              value: from,
+              column: entered !== "" ? (out.enteredColumn ?? "") : (out.invoiceColumn ?? ""),
+            });
           }
           out.unclassifiedCount++;
         }
@@ -855,29 +865,27 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
     out.medianAgeDays = ages[Math.floor(ages.length / 2)] ?? null;
     out.oldestAgeDays = ages[0] ?? null;
   }
-  out.billedByInvoice = [...invCounts.entries()].map(([invoice, rows]) => ({ invoice, rows })).sort((a, b) => b.rows - a.rows);
+  out.billedByInvoice = [...invCounts.entries()]
+    .map(([invoice, rows]) => ({ invoice, rows }))
+    .sort((a, b) => b.rows - a.rows);
   out.missedRun = [...missed.entries()].map(([invoice, rows]) => ({ invoice, rows }));
   return out;
 }
 
 export { dedupeTabData, type DedupedTabs } from "./dedupe";
-import { dedupeTabData } from "./dedupe";
 
 /** Sheet-wide "billable now" count on DEDUPED latest data — the number the
  *  billing dashboard shows, so the sheet-page badge and the money page can
  *  never disagree (a copy tab must not promise two invoices for one shot). */
 export function sheetBillableNow(
-  tabs: { title: string; data: SnapshotData }[],
+  tabs: { title: string; data: SnapshotData; keyColumn?: number | null }[],
   now = Date.now(),
 ): number {
   const { freshByTab, pureCopies } = dedupeTabData(tabs);
   let count = 0;
   for (const t of tabs) {
     if (pureCopies.has(t.title)) continue;
-    count += invoiceStatus(
-      { headers: t.data.headers, rows: freshByTab.get(t.title) ?? [] },
-      now,
-    ).billableNow.length;
+    count += invoiceStatus({ headers: t.data.headers, rows: freshByTab.get(t.title) ?? [] }, now).billableNow.length;
   }
   return count;
 }

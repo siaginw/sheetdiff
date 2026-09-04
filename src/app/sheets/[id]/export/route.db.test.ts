@@ -19,9 +19,7 @@ vi.mock("next/headers", () => ({
     const { signValue } = await import("@/lib/crypto");
     return {
       get: (name: string) =>
-        name === "sd_session" && state.userId
-          ? { value: signValue(state.userId, 30 * 24 * 3_600_000) }
-          : undefined,
+        name === "sd_session" && state.userId ? { value: signValue(state.userId, 30 * 24 * 3_600_000) } : undefined,
       delete: () => {},
     };
   },
@@ -33,9 +31,9 @@ vi.mock("@/lib/google", () => ({
   fetchTabValues: async () => ({}),
 }));
 
-import { beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
 import { setupMigratedTempDb } from "@/test/db-harness";
+import { eq } from "drizzle-orm";
+import { beforeAll, describe, expect, it } from "vitest";
 
 setupMigratedTempDb("worklist");
 
@@ -52,12 +50,26 @@ const signIn = (id: string | null) => {
 
 // tabs keyed on col 0; tab B changes a row with TWO cells (the row/cell unit
 // divergence case), tab A adds one row; tab C is UNTRACKED and must never show
-const GRID_A0 = [["ID", "Qty", "Note"], ["1", "40", ""]];
-const GRID_A1 = [["ID", "Qty", "Note"], ["1", "40", ""], ["2", "10", "new"]];
-const GRID_B0 = [["ID", "Qty", "Note"], ["9", "5", "a"]];
-const GRID_B1 = [["ID", "Qty", "Note"], ["9", "7", "b"]];
+const GRID_A0 = [
+  ["ID", "Qty", "Note"],
+  ["1", "40", ""],
+];
+const GRID_A1 = [
+  ["ID", "Qty", "Note"],
+  ["1", "40", ""],
+  ["2", "10", "new"],
+];
+const GRID_B0 = [
+  ["ID", "Qty", "Note"],
+  ["9", "5", "a"],
+];
+const GRID_B1 = [
+  ["ID", "Qty", "Note"],
+  ["9", "7", "b"],
+];
 
-const trackedTabs = async () => (await db.select().from(tabs).where(eq(tabs.spreadsheetId, "sh1"))).filter((t) => t.tracked);
+const trackedTabs = async () =>
+  (await db.select().from(tabs).where(eq(tabs.spreadsheetId, "sh1"))).filter((t) => t.tracked);
 
 /** What "Mark as collected (N to enter)" renders: the per-tab unresolved sum. */
 async function buttonRowCount(): Promise<number> {
@@ -81,19 +93,38 @@ async function expectedCsvLineCount(): Promise<number> {
 }
 
 beforeAll(async () => {
-  await db.insert(users).values({ id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x", createdAt: 1 });
+  await db
+    .insert(users)
+    .values({ id: "u1", googleSub: "s1", email: "u@x.com", name: "u1", tokensEnc: "x", createdAt: 1 });
   await db.insert(spreadsheets).values({
-    id: "sh1", userId: "u1", googleId: "g1", title: "W", url: "https://x", createdAt: 1,
+    id: "sh1",
+    userId: "u1",
+    googleId: "g1",
+    title: "W",
+    url: "https://x",
+    createdAt: 1,
   });
-  await db.insert(tabs).values({ id: "ta", spreadsheetId: "sh1", title: "A", position: 0, tracked: true, keyColumn: 0 });
-  await db.insert(tabs).values({ id: "tb", spreadsheetId: "sh1", title: "B", position: 1, tracked: true, keyColumn: 0 });
-  await db.insert(tabs).values({ id: "tc", spreadsheetId: "sh1", title: "C", position: 2, tracked: false, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "ta", spreadsheetId: "sh1", title: "A", position: 0, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "tb", spreadsheetId: "sh1", title: "B", position: 1, tracked: true, keyColumn: 0 });
+  await db
+    .insert(tabs)
+    .values({ id: "tc", spreadsheetId: "sh1", title: "C", position: 2, tracked: false, keyColumn: 0 });
   const snap = (id: string, tabId: string, runId: string, baseline: boolean, at: number, grid: string[][]) => {
     const data = toSnapshotData(grid);
     return {
-      id, tabId, runId, trigger: "manual" as const, isBaseline: baseline,
-      rowCount: data.rows.length, colCount: data.headers.length,
-      dataBlob: encodeSnapshot(data), createdAt: at,
+      id,
+      tabId,
+      runId,
+      trigger: "manual" as const,
+      isBaseline: baseline,
+      rowCount: data.rows.length,
+      colCount: data.headers.length,
+      dataBlob: encodeSnapshot(data),
+      createdAt: at,
     };
   };
   await db.insert(snapshots).values([
