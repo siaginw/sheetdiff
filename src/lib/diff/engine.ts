@@ -102,7 +102,7 @@ const KEY_HEADER_RE =
 /** date/week columns identify a DAY, not a row — they qualify as identity only
  *  when nothing better exists (two rows sharing a date are two rows, and two
  *  daily-log tabs spanning the same period would otherwise dedupe into one) */
-const DATEISH_HEADER_RE = /^(date|week)$/;
+const DATEISH_HEADER_RE = /^(date|week|day|month|wk)$/;
 export function isDateishHeader(header: string): boolean {
   return norm(header)
     .toLowerCase()

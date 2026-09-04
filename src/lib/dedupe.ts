@@ -1,7 +1,7 @@
 import { detectActivityColumn, detectStationColumns, parseStation } from "./detect";
 import type { SnapshotData } from "./diff/engine";
 import { detectKeyColumn, isDateishHeader } from "./diff/engine";
-import { normalizeKey } from "./diff/normalize";
+import { norm, normalizeKey } from "./diff/normalize";
 
 /**
  * Cross-tab dedup — the ONE algorithm every sheet-wide rollup uses (billing
@@ -196,7 +196,7 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
   // is never re-detected on a baseline (uniqueness is data-dependent; a
   // per-slice detection keys the same row differently over time and copy
   // baselines escape ownership)
-  const resolvedCols = new Map<string, { override: number | null; auto: number | null }>();
+  const resolvedCols = new Map<string, { override: number | null; auto: number | null; headers: string[] }>();
   for (const t of tabs) {
     const override = effectiveKeyColumn(t.data, t.keyColumn ?? null);
     // the auto tier never lands on a date/week column: a date identifies a
@@ -205,7 +205,7 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
     // honored — the owner said so
     const detected = override === null ? detectKeyColumn(t.data) : null;
     const auto = detected !== null && !isDateishHeader(t.data.headers[detected] ?? "") ? detected : null;
-    resolvedCols.set(t.title, { override, auto });
+    resolvedCols.set(t.title, { override, auto, headers: t.data.headers });
   }
   for (const t of tabs) {
     const out: string[][] = [];
@@ -266,10 +266,16 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
       const data = slice.get(title);
       if (!data) continue;
       const out: string[][] = [];
-      const { override, auto } = resolvedCols.get(title)!;
+      const { override, auto, headers: latestHeaders } = resolvedCols.get(title)!;
+      // header-drift guard: column indices are meaningless without the
+      // layout they were resolved on. When the slice's header at the index
+      // doesn't match the latest walk's, the column is a DIFFERENT column —
+      // drop to the content tier rather than key by the wrong values
+      const aligned = (idx: number | null): number | null =>
+        idx !== null && norm(latestHeaders[idx] ?? "") === norm(data.headers[idx] ?? "") ? idx : null;
       const seenHere = new Set<string>();
       for (const r of data.rows) {
-        const k = dedupeRowKey(data, r, override, auto);
+        const k = dedupeRowKey(data, r, aligned(override), aligned(auto));
         const c = rowContentKey(r);
         if (k === "" && c === "") {
           out.push(r);

@@ -45,8 +45,45 @@ jobs:
           # build-time placeholder; runtime config comes from the deployer's .env
           APP_SECRET: ci-placeholder-secret-not-used-at-build
 
-  docker-build:
+  e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        env:
+          HUSKY: "0"
+      # docs recommend NOT caching browsers — the download is ~10s and the OS
+      # deps can't be cached anyway
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+        env:
+          APP_SECRET: ci-placeholder-secret-not-used-at-build
+      - run: npx playwright test
+        env:
+          APP_SECRET: e2e-session-signing-key-not-secret
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  docker-build:
+    # arm64 is free for public repos and matches how self-hosters actually
+    # deploy this (NAS/Pi) — node:alpine + better-sqlite3 build fine on it
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read

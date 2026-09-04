@@ -96,7 +96,7 @@ export async function getUserClient(userId: string): Promise<OAuth2Client> {
       try {
         const next: StoredTokens = {
           refresh_token: updated.refresh_token ?? stored.refresh_token ?? null,
-          access_token: updated.access_token ?? null,
+          access_token: updated.access_token ?? stored.access_token ?? null,
           expiry_date: updated.expiry_date ?? null,
         };
         await db

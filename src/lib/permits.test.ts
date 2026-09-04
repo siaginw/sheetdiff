@@ -113,3 +113,17 @@ describe("permitFindings", () => {
     expect(out.filter((f) => f.kind === "placed-under-unapproved")).toEqual([]);
   });
 });
+
+describe("permit-status vocabulary (v0.5.2 audit fix)", () => {
+  it("negations of approval words are DENIED, not approved — the 'nots+' typo failed open", async () => {
+    const { permitIsApproved } = await import("./permits");
+    // before the fix, /approv|issu|releas/ matched these and they read APPROVED
+    for (const status of ["Not Issued", "Not Approved", "Not Released", "Not yet issued", "NOT  ISSUED"]) {
+      expect(permitIsApproved(status), status).toBe(false);
+    }
+    // and the positive vocabulary still passes
+    for (const status of ["Approved", "Issued", "Released", "APPROVED"]) {
+      expect(permitIsApproved(status), status).toBe(true);
+    }
+  });
+});

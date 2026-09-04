@@ -47,3 +47,8 @@ data/backups/
 
 # ZCode CLI session data
 .zcode/
+.eslintcache
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/

@@ -390,3 +390,53 @@ describe("audit-pass regression tests (identity stability + copy bounds)", () =>
     expect(bKept).toBe(0);
   });
 });
+
+describe("v0.5.2 audit fixes", () => {
+  it("H1: a layout drift since the baseline cannot key rows by the WRONG column", () => {
+    // Work's LATEST added a leading Ref column, so the auto key resolved on
+    // col 0 (Ref). Its BASELINE has Code at col 0 — without the header guard,
+    // the baseline's Code values key as k:<ref> and can collide with another
+    // tab's refs, blanking Work's OWN rows
+    const master = snap(
+      ["Code", "Note"],
+      [
+        ["T1", "a"],
+        ["T2", "b"],
+        ["T3", "c"],
+      ],
+    );
+    const workLatest = snap(
+      ["Ref", "Code2", "Qty"],
+      [
+        ["R1", "x", "1"],
+        ["R2", "y", "2"],
+      ],
+    );
+    const workBaseline = snap(
+      ["Code", "Qty"],
+      [
+        ["T1", "1"], // same VALUES as Master's codes — must NOT be misread as k:T1
+        ["T2", "2"],
+        ["T3", "3"],
+      ],
+    );
+    const out = dedupeTabData([
+      { title: "Master", data: master, keyColumn: null },
+      { title: "Work", data: workLatest, keyColumn: null },
+    ]);
+    const owned = out.ownedRows(new Map([["Work", workBaseline]]));
+    const kept = (owned.get("Work") ?? []).filter((r) => r.some((v) => v !== ""));
+    expect(kept).toHaveLength(3); // all of Work's own baseline rows survive
+  });
+
+  it("M1: a 'Day No' column does not become the identity (two same-week logs stay separate)", () => {
+    const H = ["Day No", "Task"];
+    const rows = (p: string) => Array.from({ length: 10 }, (_, i) => [String(i + 1), `${p} ${i + 1}`]);
+    const out = dedupeTabData([
+      { title: "Crew A", data: snap(H, rows("dig")), keyColumn: null },
+      { title: "Crew B", data: snap(H, rows("haul")), keyColumn: null },
+    ]);
+    expect(out.pureCopies.size).toBe(0);
+    expect(out.duplicatesDropped).toBe(0);
+  });
+});

@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.2 — 2026-09-04
+
+**Playwright E2E + two pre-existing accounting bugs the fresh audit pass
+surfaced.** The v0.5.1 fixes all held under attack; the findings below
+predate them.
+
+Fixed:
+
+- **Permit deny-list typo failed OPEN**: `nots+` in the negative-status
+  regex should have been `not\s+`, so "Not Issued" / "Not Approved" / "Not
+  Released" matched the APPROVED vocabulary instead — placed-under-
+  unapproved findings were silently missed on exactly the permits that
+  say no. Negations are now denied, with tests pinning the vocabulary.
+- **Header drift could key history by the wrong column**: the resolved
+  identity columns are indices, and a column inserted/removed since a
+  baseline shifts every index after it — the slice walk now drops to the
+  content tier whenever the slice's header at the resolved index isn't
+  the column the latest walk keyed on.
+- "Day No"/day-family headers join date/week as date-ish (a day-number
+  column no longer becomes row identity and collapses two same-week
+  logs); the token refresh preserves the stored access token when a
+  tokens event omits it; coverage thresholds leave ~1% of ratchet margin.
+
+Dev environment (round 2, researched):
+
+- **Playwright smoke E2E**: five tests against the production build —
+  health, the public landing, demo login → dashboard, the sheet diff
+  view, report + billing pages. Runs on its own port with a throwaway
+  temp-dir database (never the real one); CI job uploads the HTML report
+  on failure. `npm run test:e2e`.
+- `typecheck` runs `next typegen` first (Next 16's own recommendation).
+- `db:studio` (Drizzle Studio) script; CI badge in the README.
+- The docker boot-probe job now builds arm64 too (free for public repos —
+  and matches how self-hosters actually deploy: NAS and Pi).
+
+Suite: **369 tests + 5 E2E**. Node 22+.
+
 ## 0.5.1 — 2026-09-04
 
 **Identity-layer hardening + a real dev environment.** A fresh adversarial
