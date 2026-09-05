@@ -51,28 +51,24 @@ function isPrivateAddress(ip: string): boolean {
     if (lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb"))
       return true; // link-local fe80::/10
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA fc00::/7
-    // IPv4-mapped ::ffff:0:0/96 — the WHATWG URL parser canonicalizes the
-    // dotted spelling to HEX ("[::ffff:127.0.0.1]" -> "::ffff:7f00:1"), so a
-    // dotted-only regex never fires on URL-derived hostnames and every
-    // guarded target was reachable via the hex spelling. Parse both forms;
-    // anything in the mapped prefix is unwrapped and judged as IPv4, and an
-    // UNPARSEABLE ::ffff: spelling is refused outright (hostile spelling).
-    if (lower.startsWith("::ffff:")) {
-      const tail = lower.slice("::ffff:".length);
-      if (net.isIPv4(tail)) return isPrivateAddress(tail);
-      const groups = tail.split(":").map((g) => parseInt(g || "0", 16));
-      if (groups.length === 2 || groups.length === 4) {
-        if (groups.some((g) => Number.isNaN(g) || g < 0 || g > 0xffff)) return true;
-        const bytes: number[] = [];
-        for (const g of groups) bytes.push((g >> 8) & 0xff, g & 0xff);
-        if (bytes.length === 4) return isPrivateAddress(bytes.join("."));
-        // two groups = 32 bits: reject — a mapped address is exactly 32 bits
-        // and two full groups spell a /96 we cannot interpret as IPv4
-        const v4 = (groups[0]! << 16) | groups[1]!;
-        return isPrivateAddress([v4 >>> 24, (v4 >>> 16) & 0xff, (v4 >>> 8) & 0xff, v4 & 0xff].join("."));
+    // IPv4-mapped ::/96 (the "ffff" hextet followed by exactly two more,
+    // everything before it zeros) — STRUCTURAL, not prefix-string: the URL
+    // parser canonicalizes "[::ffff:127.0.0.1]" to hex "::ffff:7f00:1" (a
+    // dotted-only regex never fires) and non-canonical spellings like
+    // "0:0:0:0:0:ffff:7f00:1" exist too. Match the mapped shape, unwrap,
+    // judge as its IPv4; unparseable or non-canonical tails are refused.
+    const hextets = lower.split(":");
+    const fi = hextets.indexOf("ffff");
+    if (fi > 0 && hextets.slice(0, fi).every((h) => h === "" || h === "0") && hextets.length === fi + 3) {
+      const hi = parseInt(hextets[fi + 1] ?? "", 16);
+      const lo = parseInt(hextets[fi + 2] ?? "", 16);
+      if (Number.isNaN(hi) || Number.isNaN(lo) || hi < 0 || lo < 0 || hi > 0xffff || lo > 0xffff) {
+        return true; // unparseable mapped spelling — hostile
       }
-      return true;
+      const v4 = (hi << 16) | lo;
+      return isPrivateAddress([v4 >>> 24, (v4 >>> 16) & 0xff, (v4 >>> 8) & 0xff, v4 & 0xff].join("."));
     }
+    if (lower.startsWith("::ffff:")) return true; // mapped-shaped but non-canonical tail
     if (lower.startsWith("64:ff9b:")) return true; // NAT64 — translates to IPv4 we cannot inspect
     if (lower.startsWith("2002:")) return true; // 6to4 — embeds an arbitrary IPv4
     return false;

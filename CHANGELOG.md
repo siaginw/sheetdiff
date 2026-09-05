@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.3 — 2026-09-05
+
+**The clean-pass polish release.** The v0.6.2 audit found no CRITICAL and
+no HIGH issues — the first clean pass — so this ships its MEDIUM/LOW
+findings.
+
+- ARCHITECTURE.md still taught the pre-0.6.2 ownership rule ("first tab in
+  position order wins") — the exact sentence describing the bug 0.6.2
+  fixed. Rewritten to richest-first with the trade-off spelled out; also
+  removed a phantom `stoppages.ts` entry, fixed a garbled routes list, and
+  added /settings and the PDF route to the HTTP surface.
+- The SSRF guard's IPv4-mapped matcher is now STRUCTURAL (the "ffff"
+  hextet followed by exactly two more, zeros before it) instead of a
+  prefix string — non-canonical spellings like
+  `0:0:0:0:0:ffff:7f00:1` are caught too, and non-canonical tails are
+  refused rather than misread. Tests pin both.
+- Digest check findings no longer run on pure-copy tabs (a copy's findings
+  duplicated the working tab's — the email listed every hole twice).
+- The failed-test flash names NOTIFY_ALLOW_PRIVATE_URLS=1; the invalid-URL
+  flash says http(s); the onboarding "collection point" step's copy
+  acknowledges the automatic first baseline.
+- knip installed as a devDependency (the npx fetch was unlisted);
+  settings page drops a redundant user query; test counts corrected in
+  the docs; dead re-export cleanup.
+
+Suite: **394 tests + 7 E2E**. Node 22+.
+
 ## 0.6.2 — 2026-09-05
 
 **The guard-the-guard pass.** The v0.6.1 audit attacked v0.6.1's own fixes
@@ -39,7 +66,7 @@ and found them wanting; everything below is fixed and regression-tested.
 - .env.example documents LOG_LEVEL and NOTIFY_ALLOW_PRIVATE_URLS; dead
   STEP_ICONS export removed.
 
-Suite: **393 tests + 7 E2E**. Node 22+.
+Suite: **394 tests + 7 E2E**. Node 22+.
 
 ## 0.6.1 — 2026-09-05
 

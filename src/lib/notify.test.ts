@@ -58,6 +58,11 @@ describe("SSRF guard (resolve-at-send)", () => {
     expect(await notifyUrlBlockReason("https://[64:ff9b::7f00:1]/topic")).toBe("private address");
     expect(await notifyUrlBlockReason("https://[2002:7f00:1::]/topic")).toBe("private address");
     expect(await notifyUrlBlockReason("https://100.64.1.1/topic")).toBe("private address"); // CGNAT
+    // non-canonical mapped spellings (structural match, not prefix-string)
+    dns.lookup.mockResolvedValue([{ address: "0:0:0:0:0:ffff:7f00:1", family: 6 }]);
+    expect(await notifyUrlBlockReason("https://evil.example/topic")).toBe("private address");
+    dns.lookup.mockResolvedValue([{ address: "::ffff:0:0:808:808", family: 6 }]);
+    expect(await notifyUrlBlockReason("https://evil.example/topic")).toBe("private address"); // refused, not misread
   });
 
   it("allows public targets, refuses non-http(s) and DNS failures", async () => {

@@ -132,7 +132,7 @@ async function computeOnboarding(userId: string, ownSheetIds: string[], accessib
       id: "collect",
       title: "Mark a collection point",
       detail:
-        'After you pull data into your office system, click "Mark as collected" — everything after it is what still needs entering.',
+        'Your first snapshot sets the first collection point automatically. After each later pull, click "Mark as collected" — everything after it is what still needs entering.',
       done: hasBaseline,
       href: hasSheets ? `/sheets/${ownSheetIds[0]}` : "/sheets/new",
       cta: "Open the sheet",

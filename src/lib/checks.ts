@@ -26,7 +26,7 @@ import { compositeKey, norm, normalizeKey } from "./diff/normalize";
 import { computeGapReport } from "./gaps";
 
 // re-exported for existing callers/tests
-export { detectActivityColumn, detectStationColumns, parseStation } from "./detect";
+export { detectStationColumns, parseStation } from "./detect";
 
 export type CheckSeverity = "error" | "warning";
 

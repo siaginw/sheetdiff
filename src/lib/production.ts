@@ -12,6 +12,9 @@ import {
 import { rowContentKey, type SnapshotData } from "./diff/engine";
 import { compositeKey, norm } from "./diff/normalize";
 
+// re-exported for the pages that historically imported it from here
+export { dedupeTabData } from "./dedupe";
+
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 /** Local-calendar day key (never toISOString — that is UTC and shifts days). */
@@ -883,8 +886,6 @@ export function invoiceStatus(data: SnapshotData, now = Date.now()): InvoiceStat
   out.missedRun = [...missed.entries()].map(([invoice, rows]) => ({ invoice, rows }));
   return out;
 }
-
-export { dedupeTabData, type DedupedTabs } from "./dedupe";
 
 /** Sheet-wide "billable now" count on DEDUPED latest data — the number the
  *  billing dashboard shows, so the sheet-page badge and the money page can

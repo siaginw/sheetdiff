@@ -389,7 +389,7 @@ First start on Linux: Docker creates `./data` as root if the folder is missing, 
 
 ```bash
 npm run verify       # everything CI checks: format + lint + typecheck + tests — run before pushing
-npm test             # the domain suite alone (369 tests: engine, checks, gaps, dedupe, billing, DB gates)
+npm test             # the domain suite (394 tests: engine, checks, gaps, dedupe, billing, DB gates)
 npm run test:e2e     # Playwright smoke against the production build (demo login, dashboard, diff, billing)
 npm run test:coverage # the suite with v8 coverage and enforced thresholds
 npm run format       # Prettier (also runs automatically on staged files via the pre-commit hook)

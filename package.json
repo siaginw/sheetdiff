@@ -1,6 +1,6 @@
 {
   "name": "sheetdiff",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -69,6 +69,7 @@
     "eslint-config-next": "16.3.3",
     "husky": "^9.1.7",
     "jsdom": "^30.0.1",
+    "knip": "^6.34.0",
     "lint-staged": "^17.4.1",
     "msw": "^2.15.0",
     "prettier": "^3.9.6",

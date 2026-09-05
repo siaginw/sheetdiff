@@ -135,9 +135,14 @@ CSV worklist export, and the digest, so the three can never disagree.
   whole-row content — with the content key registered alongside every tier
   so verbatim copies match however each side keyed. The tier is decided once
   on latest data and applied to every slice. Ownership is decided once on latest data
-  (first tab in position order wins) and the same ownership is applied to
-  baseline and window snapshots via `ownedRows()`, so a compilation tab can
-  never swing placed-since negative. A tab whose keyed rows are ≥95% owned by
+  (richest tab first — column count desc, then position; compilation tabs
+  re-list with FEWER columns, so raw position let a leading Line List own
+  everything and flip the billing basis — and the same ownership is applied
+  to baseline and window snapshots via `ownedRows()`, so a compilation tab
+  can never swing placed-since negative. Known trade-off: a hypothetical
+  compilation that ADDS columns and FOLLOWS its sources can steal ownership
+  the other way; real compilation tabs drop columns, and same-width sheets
+  fall through to position). A tab whose keyed rows are ≥95% owned by
   earlier tabs (≥20 rows) is a pure copy — skipped by every rollup and every
   to-enter count, with its strays surfaced as a check finding. Output is
   position-preserving: dropped rows become blanks, "Row N" stays the sheet's
@@ -162,9 +167,13 @@ floor of 2) plus verified SQLite backups to `data/backups/` (keep 14). If
 
 ## HTTP surface & access control
 
-Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]`, `/sheets/[id]/export` (worklist CSV), `/export/queue` (entry-queue CSV), `/export/billing` (billing packet CSV)
-(worklist CSV), `/sheets/[id]/export/billing` (billing packet CSV),
-`/auth/{login,callback,demo}`, `/sheets/[id]/report`, `/sheets/[id]/billing` (billing day dashboard), `/api/health`.
+Routes: `/` dashboard, `/sheets/new`, `/sheets/[id]` (diff + panels),
+`/sheets/[id]/report` (weekly report), `/sheets/[id]/billing` (billing-day
+dashboard), `/settings` (notifications hub), `/sheets/[id]/export`
+(worklist CSV), `/export/queue` (entry-queue CSV),
+`/export/billing` (billing packet CSV) and `/export/billing/pdf` (same
+packet as PDF — one shared assembly),
+`/auth/{login,callback,demo}`, `/api/health`.
 
 `src/lib/access.ts`: owners control their sheets; `members` (matched by
 lowercased Google email) get viewer access to everything the owner shares —
@@ -185,24 +194,24 @@ role via `getSheetAccess`.
 
 ## Module map
 
-| Path                                                                       | Role                                                                    |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `src/instrumentation.ts`                                                   | Boot: fail-closed migrations, scheduler start                           |
-| `src/lib/db/{index,schema,migrate}.ts`                                     | SQLite (WAL), schema, boot migrations                                   |
-| `src/lib/diff/{engine,normalize,worddiff,widths}.ts`                       | Pure diff engine + normalization + layout math                          |
-| `src/lib/snapshots.ts`, `snapshot-cache.ts`                                | Capture, gzip storage, schedule math, stats materialization, decode LRU |
-| `src/lib/pending.ts`                                                       | Baseline→pending resolver with quiet-day short-circuit                  |
-| `src/lib/sync.ts`                                                          | Ack resolution + introduction walk                                      |
-| `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts`                | Pure analytics                                                          |
-| `src/lib/dedupe.ts`                                                        | Identity-keyed cross-tab dedup + ownership filter                       |
-| `src/lib/billing.ts`                                                       | Billing packet builder + CSV                                            |
-| `src/lib/import.ts`                                                        | GIS CSV/XLSX import (bomb-guarded)                                      |
-| `src/lib/actions.ts`, `access.ts`                                          | Server actions, owner/viewer gates                                      |
-| `src/lib/google.ts`, `session.ts`, `crypto.ts`                             | OAuth+reads, sessions, keys/AEAD                                        |
-| `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup                   |
-| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts`     | Station/column detection, helpers, shared capture-staleness rule        |
-| `src/lib/stoppages.ts`, `permits.ts`                                       | Stoppage-week join, permit-status join (header-gated, silent no-op)     |
-| `src/lib/emails/digest.tsx`                                                | Digest email template (react-email)                                     |
-| `src/app/…`                                                                | Pages, export/auth/health routes                                        |
-| `src/components/diff/diff-view.tsx`, `src/components/sheet/*`              | Diff UI, sheet panels                                                   |
-| `scripts/{generate-env,migrate,seed-demo}.mjs`                             | `npm run setup` / `db:migrate` / `seed-demo`                            |
+| Path                                                                       | Role                                                                                    |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/instrumentation.ts`                                                   | Boot: fail-closed migrations, scheduler start                                           |
+| `src/lib/db/{index,schema,migrate}.ts`                                     | SQLite (WAL), schema, boot migrations                                                   |
+| `src/lib/diff/{engine,normalize,worddiff,widths}.ts`                       | Pure diff engine + normalization + layout math                                          |
+| `src/lib/snapshots.ts`, `snapshot-cache.ts`                                | Capture, gzip storage, schedule math, stats materialization, decode LRU                 |
+| `src/lib/pending.ts`                                                       | Baseline→pending resolver with quiet-day short-circuit                                  |
+| `src/lib/sync.ts`                                                          | Ack resolution + introduction walk                                                      |
+| `src/lib/checks.ts`, `gaps.ts`, `production.ts`, `trace.ts`                | Pure analytics                                                                          |
+| `src/lib/dedupe.ts`                                                        | Identity-keyed cross-tab dedup + ownership filter                                       |
+| `src/lib/billing.ts`                                                       | Billing packet builder + CSV                                                            |
+| `src/lib/import.ts`                                                        | GIS CSV/XLSX import (bomb-guarded)                                                      |
+| `src/lib/actions.ts`, `access.ts`                                          | Server actions, owner/viewer gates                                                      |
+| `src/lib/google.ts`, `session.ts`, `crypto.ts`                             | OAuth+reads, sessions, keys/AEAD                                                        |
+| `src/lib/scheduler.ts`, `digest.ts`, `digest-actions.ts`, `maintenance.ts` | Tick loop, email + test-send action, retention/backup                                   |
+| `src/lib/detect.ts`, `csv.ts`, `format.ts`, `staleness.ts`, `utils.ts`     | Station/column detection, helpers, shared capture-staleness rule                        |
+| `src/lib/permits.ts`                                                       | Permit-status join (header-gated, silent no-op); stoppage weeks live in `production.ts` |
+| `src/lib/emails/digest.tsx`                                                | Digest email template (react-email)                                                     |
+| `src/app/…`                                                                | Pages, export/auth/health routes                                                        |
+| `src/components/diff/diff-view.tsx`, `src/components/sheet/*`              | Diff UI, sheet panels                                                                   |
+| `scripts/{generate-env,migrate,seed-demo}.mjs`                             | `npm run setup` / `db:migrate` / `seed-demo`                                            |

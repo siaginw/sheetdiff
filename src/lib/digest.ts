@@ -90,17 +90,20 @@ export async function buildDigestSheets(userId: string, now = Date.now()): Promi
 
     for (const tab of tracked) {
       const latestData = latestDataByTab.get(tab.id) ?? null;
+
+      // a pure compilation tab contributes NOTHING to any digest number —
+      // not changes, not footage, not samples, not check findings (a copy's
+      // findings duplicate the working tab's — the email listed every hole
+      // twice): the working tab's own pending already lists that work (the
+      // same rule the billing page and both CSV exports apply)
+      if (deduped.pureCopies.has(tab.title)) continue;
       if (latestData) {
+        // checks run only on non-copy tabs — a copy's findings duplicate the
+        // working tab's (the email listed every hole twice)
         const checkFindings = runChecks([{ tabTitle: tab.title, data: latestData, keyColumn: tab.keyColumn ?? null }]);
         digest.checkCount += checkFindings.length;
         for (const f of checkFindings.slice(0, 3)) digest.topChecks.push(`${tab.title}: ${f.message}`);
       }
-
-      // a pure compilation tab contributes NOTHING to any digest number —
-      // not changes, not footage, not samples: the working tab's own pending
-      // already lists that work (this is the same rule the billing page and
-      // both CSV exports apply, so the email can never disagree with them)
-      if (deduped.pureCopies.has(tab.title)) continue;
 
       const pending = await getPendingChanges(tab);
       if (!pending || !latestData) continue;

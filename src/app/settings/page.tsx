@@ -3,10 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { savePushSettings, sendTestPush } from "@/lib/actions";
-import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/session";
-import { eq } from "drizzle-orm";
 import { ArrowLeft, BellRing, Mail, Server } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -27,8 +25,9 @@ export default async function SettingsPage({
   const sp = await searchParams;
   const pushFlash = typeof sp.push === "string" ? sp.push : null;
 
-  const row = (await db.select().from(users).where(eq(users.id, user.id)).limit(1))[0];
-  const notifyUrl = row?.notifyUrl ?? "";
+  // the session row IS the user row — no second query
+  const row = user as typeof users.$inferSelect;
+  const notifyUrl = row.notifyUrl ?? "";
 
   return (
     <div className="min-h-dvh bg-background">
@@ -93,12 +92,13 @@ export default async function SettingsPage({
           {pushFlash === "failed" ? (
             <p className="mt-2 text-sm text-destructive">
               Test failed — the server couldn&apos;t reach that URL (wrong topic, unreachable server, plain http, or a
-              private address the SSRF guard refuses).
+              private address the SSRF guard refuses; plain http and LAN addresses need NOTIFY_ALLOW_PRIVATE_URLS=1).
             </p>
           ) : null}
           {pushFlash === "invalid" ? (
             <p className="mt-2 text-sm text-destructive">
-              That doesn&apos;t look like an https topic URL — it was not saved.
+              That doesn&apos;t look like an http(s) topic URL — it was not saved. (Plain-http topics are refused at
+              send time unless NOTIFY_ALLOW_PRIVATE_URLS=1.)
             </p>
           ) : null}
           {notifyUrl ? (

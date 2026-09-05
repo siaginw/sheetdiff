@@ -198,6 +198,11 @@ export function dedupeTabData(tabs: DedupTabInput[]): DedupedTabs {
   // basis (measured: 208,961 ft placed-since vs the true 0 for that window).
   // Same-width sheets fall through to position — identical to the old
   // behavior everywhere the old behavior was right.
+  //
+  // Known trade-off: a hypothetical compilation that ADDS columns and
+  // FOLLOWS its sources can steal ownership the other way (the wider tab
+  // wins). Real compilations drop columns; a tab with >2% unique rows
+  // survives any misclassification with exactly its uniques intact.
   const ownershipOrder = [...tabs].sort(
     (a, b) => b.data.headers.length - a.data.headers.length || tabs.indexOf(a) - tabs.indexOf(b),
   );
